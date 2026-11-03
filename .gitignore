@@ -1,0 +1,16 @@
+# Build products
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+
+# Downloaded third-party data (Riot card images and the community catalog are
+# fetched by Scripts/fetch-images.py and must never be committed).
+cache/
+data/cards.json
+data/*.json
+
+# Generated artefacts
+synthetic/
+.DS_Store

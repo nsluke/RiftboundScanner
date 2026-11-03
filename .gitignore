@@ -14,3 +14,8 @@ data/*.json
 # Generated artefacts
 synthetic/
 .DS_Store
+
+# iOS app build products and pulled test data
+App/Info.plist
+App/DerivedData/
+/scans/

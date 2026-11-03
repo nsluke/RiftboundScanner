@@ -180,6 +180,52 @@ sleeves, motion blur and the feeder's actual lighting are untested.
   never runs on the main actor.
 - The library has no UI dependencies and no third-party packages.
 
+## The iOS app
+
+`App/` is a SwiftUI test harness for the recogniser: a viewfinder with a card
+guide, a review sheet that shows the captured photo, the rectified card, the top
+candidates and the code the OCR read, and a scan log. Every scan is saved with
+its photo, the rectified canvas, the top five candidates with scores, and your
+verdict (correct, corrected to another printing, or rejected), grouped into
+batches so lighting setups can be compared. The History tab shows per-batch
+accuracy and can export a batch as a zip.
+
+The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+from `App/project.yml`; the card index is bundled from `cache/index.json`, so
+build it first. From the repository root:
+
+```bash
+swift run -c release riftscan build-index            # once, or after a catalog change
+(cd App && xcodegen generate)
+xcodebuild -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \
+  -destination 'id=<device udid>' -derivedDataPath App/DerivedData -allowProvisioningUpdates build
+xcrun devicectl device install app --device <device udid> \
+  App/DerivedData/Build/Products/Debug-iphoneos/RiftboundScannerApp.app
+```
+
+`xcrun devicectl list devices` prints the UDID. Unit tests for the app (scan log
+coding, the file store, and the scanner model with stubbed camera and recogniser)
+run on a simulator:
+
+```bash
+xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath App/DerivedData
+```
+
+### Reviewing the results
+
+The app writes `Documents/Scans/<batch>/batch.json`, `scans.json`, `photos/` and
+`rectified/`. The folder is visible in the Files app (file sharing is enabled)
+and can be pulled over USB or Wi-Fi with the phone's development pairing:
+
+```bash
+Scripts/pull-scans.sh                   # copies Documents/Scans into ./scans
+python3 -I Scripts/summarize-scans.py   # accuracy per batch, plus every miss with its photo
+```
+
+`riftscan evaluate` can then be pointed at the pulled photos by copying the ones
+you have judged into `samples/` with their printed code as the file name.
+
 ## Data, images and Riot's developer policy
 
 The catalog comes from

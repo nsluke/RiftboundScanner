@@ -12,6 +12,16 @@ public struct Match: Hashable, Sendable, Identifiable {
     public let codeAgreement: CodeAgreement?
 
     public var id: Card.ID { card.id }
+
+    /// Apps and their tests build matches directly, e.g. to stub a recogniser.
+    public init(card: Card, score: Double, descriptorScore: Double, components: ScoreComponents, orientation: CardOrientation, codeAgreement: CodeAgreement?) {
+        self.card = card
+        self.score = score
+        self.descriptorScore = descriptorScore
+        self.components = components
+        self.orientation = orientation
+        self.codeAgreement = codeAgreement
+    }
 }
 
 /// What one card-location hypothesis produced, for diagnostics.

@@ -119,6 +119,9 @@ struct ScannerView: View {
             }
             .padding()
 
+            feederStrip
+                .padding(.horizontal)
+
             Spacer()
 
             RoundedRectangle(cornerRadius: 14)
@@ -128,6 +131,12 @@ struct ScannerView: View {
                 .accessibilityHidden(true)
 
             Spacer()
+
+            if case .ended(let fed, let reason) = model.autoScan {
+                autoScanResult(fed: fed, reason: reason)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
 
             HStack(alignment: .center) {
                 summaryLabel
@@ -140,6 +149,119 @@ struct ScannerView: View {
             .padding(.horizontal)
             .padding(.bottom, 24)
         }
+    }
+
+    // MARK: - Feeder
+
+    /// One row for the feeder link: every `FeederState` and the running loop
+    /// gets its own presentation, with the one action that makes sense there.
+    @ViewBuilder
+    private var feederStrip: some View {
+        Group {
+            switch model.feeder.state {
+            case .idle:
+                feederRow(systemImage: "tray.and.arrow.down", text: Text("No feeder")) {
+                    Button("Connect") { model.connectFeeder() }
+                        .accessibilityHint("Looks for the card feeder over Bluetooth")
+                }
+            case .scanning:
+                feederRow(systemImage: "dot.radiowaves.left.and.right", text: Text("Looking for feeder…"), isWorking: true) {
+                    Button("Cancel") { model.disconnectFeeder() }
+                }
+            case .connecting:
+                feederRow(systemImage: "dot.radiowaves.left.and.right", text: Text("Connecting…"), isWorking: true) {
+                    Button("Cancel") { model.disconnectFeeder() }
+                }
+            case .ready(let version):
+                if case .running(let fed) = model.autoScan {
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Fed \(fed)"), isWorking: true) {
+                        Button("Stop", role: .destructive) { model.stopAutoScan() }
+                            .accessibilityHint("Ends automatic feeding after the current card")
+                    }
+                } else {
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: feederReadyText(version: version)) {
+                        Button("Feed and scan") { model.startAutoScan() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!model.canStartAutoScan)
+                            .accessibilityHint("Feeds, photographs and saves cards until the hopper is empty")
+                    }
+                }
+            case .feeding:
+                if case .running(let fed) = model.autoScan {
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Fed \(fed)"), isWorking: true) {
+                        Button("Stop", role: .destructive) { model.stopAutoScan() }
+                    }
+                } else {
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Feeding…"), isWorking: true) {
+                        EmptyView()
+                    }
+                }
+            case .failed(let failure):
+                feederRow(systemImage: "exclamationmark.triangle", text: Text(failure.message)) {
+                    switch failure {
+                    case .bluetoothUnauthorized:
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                openURL(url)
+                            }
+                        }
+                    case .bluetoothUnsupported:
+                        EmptyView()
+                    case .bluetoothOff, .connectionFailed, .disconnected:
+                        Button("Retry") { model.connectFeeder() }
+                    }
+                }
+            }
+        }
+        .buttonStyle(.bordered)
+        .tint(.white)
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(.white)
+        .padding(8)
+        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func feederReadyText(version: String?) -> Text {
+        if let version {
+            Text("Feeder ready · v\(version)")
+        } else {
+            Text("Feeder ready")
+        }
+    }
+
+    private func feederRow(systemImage: String, text: Text, isWorking: Bool = false, @ViewBuilder action: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            if isWorking {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: systemImage)
+            }
+            text.lineLimit(2)
+            Spacer(minLength: 8)
+            action()
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func autoScanResult(fed: Int, reason: ScannerModel.AutoScanEnd) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: reason == .hopperEmpty ? "tray" : "info.circle")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(fed) cards fed and saved")
+                Text(reason.message)
+            }
+            .lineLimit(2)
+            Spacer(minLength: 8)
+            Button("Done") { model.dismissAutoScanResult() }
+                .buttonStyle(.bordered)
+                .tint(.white)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(.white)
+        .padding(8)
+        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Done") { model.dismissAutoScanResult() }
     }
 
     private var summaryLabel: some View {
@@ -167,7 +289,7 @@ struct ScannerView: View {
             }
             .frame(width: 76, height: 76)
         }
-        .disabled(model.isBusy)
+        .disabled(model.isBusy || model.isAutoScanning)
         .accessibilityLabel("Take photo")
         .accessibilityHint("Identifies the card inside the frame")
     }

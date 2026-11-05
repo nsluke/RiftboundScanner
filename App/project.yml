@@ -43,6 +43,7 @@ targets:
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         NSCameraUsageDescription: Riftbound Scanner photographs your cards to identify them. Photos stay on this phone.
+        NSBluetoothAlwaysUsageDescription: Riftbound Scanner connects to your TCG Archivist card feeder over Bluetooth to advance cards while scanning.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}

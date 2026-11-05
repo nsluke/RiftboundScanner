@@ -8,11 +8,13 @@ struct ScannerModelTests {
 
     private func makeModel(
         camera: StubCamera = StubCamera(),
+        feeder: StubFeeder = StubFeeder(),
         identifier: any CardIdentifying = StubIdentifier(outcome: .success(Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx]))),
         store: InMemoryScanStore = InMemoryScanStore()
     ) -> ScannerModel {
         ScannerModel(
             camera: camera,
+            feeder: feeder,
             identifier: identifier,
             store: store,
             makeBatch: { label in

@@ -28,9 +28,35 @@ nonisolated enum ScanProblem: Error, Hashable {
     }
 }
 
-/// Drives one batch of scans: camera, recogniser, review, store.
+/// Drives one batch of scans: camera, recogniser, review, store, and the card
+/// feeder that can run them in a loop.
 @Observable
 final class ScannerModel {
+    /// The feed-and-scan loop. Exactly one of these holds at a time, so the
+    /// screen shows either nothing, a live count, or one ending with its reason.
+    enum AutoScan: Hashable {
+        case off
+        case running(fed: Int)
+        case ended(fed: Int, reason: AutoScanEnd)
+    }
+
+    enum AutoScanEnd: Hashable {
+        case stoppedByUser
+        /// The feeder stopped reporting cards; it says nothing when empty.
+        case hopperEmpty
+        case feederFailed(FeederError)
+        case scanFailed(ScanProblem)
+
+        var message: String {
+            switch self {
+            case .stoppedByUser: String(localized: "Stopped.")
+            case .hopperEmpty: String(localized: "The hopper looks empty.")
+            case .feederFailed(let error): error.message
+            case .scanFailed(let problem): problem.message
+            }
+        }
+    }
+
     enum CameraState: Hashable {
         case unknown
         case starting
@@ -67,29 +93,39 @@ final class ScannerModel {
     /// Increments whenever a verdict is saved; the view uses it to trigger haptics.
     private(set) var savedVerdictCount = 0
     private(set) var storageProblem: ScanProblem?
+    private(set) var autoScan: AutoScan = .off
+    /// Owned here so leaving the screen or stopping cancels the loop; tests await it.
+    private(set) var autoScanTask: Task<Void, Never>?
 
+    let feeder: any FeederControlling
     private let camera: any CameraOperating
     private let identifier: any CardIdentifying
     private let store: any ScanStoring
     private let makeBatch: @Sendable (_ label: String) -> ScanBatch
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
+    /// How long a fed card gets to come to rest before the photo.
+    private let settleDelay: Duration
     private let clock = ContinuousClock()
 
     init(
         camera: any CameraOperating,
+        feeder: any FeederControlling,
         identifier: any CardIdentifying,
         store: any ScanStoring,
         makeBatch: @escaping @Sendable (_ label: String) -> ScanBatch,
         now: @escaping @Sendable () -> Date,
-        makeID: @escaping @Sendable () -> UUID
+        makeID: @escaping @Sendable () -> UUID,
+        settleDelay: Duration = .milliseconds(350)
     ) {
         self.camera = camera
+        self.feeder = feeder
         self.identifier = identifier
         self.store = store
         self.makeBatch = makeBatch
         self.now = now
         self.makeID = makeID
+        self.settleDelay = settleDelay
     }
 
     var pendingScan: PendingScan? {
@@ -106,6 +142,20 @@ final class ScannerModel {
         switch phase {
         case .capturing, .recognizing: true
         case .idle, .reviewing, .failed: false
+        }
+    }
+
+    var isAutoScanning: Bool {
+        if case .running = autoScan { return true }
+        return false
+    }
+
+    /// The feeder is ready and nothing else is using the camera.
+    var canStartAutoScan: Bool {
+        guard case .idle = phase, cameraState == .ready, batch != nil, feeder.state.isReady else { return false }
+        switch autoScan {
+        case .off, .ended: return true
+        case .running: return false
         }
     }
 
@@ -132,6 +182,7 @@ final class ScannerModel {
     }
 
     func stopCamera() {
+        stopAutoScan()
         isTorchOn = false
         if cameraState == .ready {
             cameraState = .unknown
@@ -152,33 +203,112 @@ final class ScannerModel {
     // MARK: - Scanning
 
     func capture() async {
-        guard case .idle = phase, cameraState == .ready, let batch else { return }
-        phase = .capturing
+        guard case .idle = phase, cameraState == .ready, batch != nil, !isAutoScanning else { return }
         do {
-            let encoded = try await camera.capturePhoto()
-            let photo = try await PhotoDecoder.decode(encoded, maxPixelSize: 2048)
-            phase = .recognizing(photo)
-            let started = clock.now
-            let result = try await identifier.identify(photo)
-            let elapsed = clock.now - started
-            let photoData = try await PhotoDecoder.encodeJPEG(photo, quality: 0.85)
-            let rectifiedData = try await PhotoDecoder.encodeJPEG(result.rectifiedCard, quality: 0.8)
-            let id = ScanRecord.ID(rawValue: makeID())
-            let record = ScanRecord(
-                id: id,
-                batchID: batch.id,
-                capturedAt: now(),
-                photoFileName: "photos/\(id.rawValue.uuidString).jpg",
-                rectifiedFileName: "rectified/\(id.rawValue.uuidString).jpg",
-                processingSeconds: elapsed.seconds,
-                placement: Placement(result.location),
-                codeReading: result.codeReading.map(CodeReadingSummary.init),
-                candidates: result.matches.prefix(5).map(Candidate.init)
-            )
-            phase = .reviewing(PendingScan(record: record, photo: photo, rectified: result.rectifiedCard, photoData: photoData, rectifiedData: rectifiedData))
+            phase = .reviewing(try await captureScan())
         } catch {
             phase = .failed(ScanProblem(error))
         }
+    }
+
+    /// Photographs and identifies one card, moving `phase` through capturing
+    /// and recognizing on the way. Throws with the phase left where it failed;
+    /// the caller decides how to surface that.
+    private func captureScan() async throws -> PendingScan {
+        guard let batch else { throw ScanProblem.camera(String(localized: "No batch is open.")) }
+        phase = .capturing
+        let encoded = try await camera.capturePhoto()
+        let photo = try await PhotoDecoder.decode(encoded, maxPixelSize: 2048)
+        phase = .recognizing(photo)
+        let started = clock.now
+        let result = try await identifier.identify(photo)
+        let elapsed = clock.now - started
+        let photoData = try await PhotoDecoder.encodeJPEG(photo, quality: 0.85)
+        let rectifiedData = try await PhotoDecoder.encodeJPEG(result.rectifiedCard, quality: 0.8)
+        let id = ScanRecord.ID(rawValue: makeID())
+        let record = ScanRecord(
+            id: id,
+            batchID: batch.id,
+            capturedAt: now(),
+            photoFileName: "photos/\(id.rawValue.uuidString).jpg",
+            rectifiedFileName: "rectified/\(id.rawValue.uuidString).jpg",
+            processingSeconds: elapsed.seconds,
+            placement: Placement(result.location),
+            codeReading: result.codeReading.map(CodeReadingSummary.init),
+            candidates: result.matches.prefix(5).map(Candidate.init)
+        )
+        return PendingScan(record: record, photo: photo, rectified: result.rectifiedCard, photoData: photoData, rectifiedData: rectifiedData)
+    }
+
+    // MARK: - Feeder
+
+    func connectFeeder() {
+        feeder.connect()
+    }
+
+    func disconnectFeeder() {
+        stopAutoScan()
+        feeder.disconnect()
+    }
+
+    /// Feeds, photographs and saves cards (verdict pending) until the user
+    /// stops, the hopper runs dry, or something fails.
+    func startAutoScan() {
+        guard canStartAutoScan else { return }
+        autoScan = .running(fed: 0)
+        autoScanTask = Task { await runAutoScan() }
+    }
+
+    func stopAutoScan() {
+        autoScanTask?.cancel()
+    }
+
+    func dismissAutoScanResult() {
+        if case .ended = autoScan {
+            autoScan = .off
+        }
+    }
+
+    private func runAutoScan() async {
+        var fed = 0
+        let reason = await feedUntilDone(fed: &fed)
+        feeder.stop()
+        autoScan = .ended(fed: fed, reason: reason)
+        phase = .idle
+        autoScanTask = nil
+    }
+
+    private func feedUntilDone(fed: inout Int) async -> AutoScanEnd {
+        while !Task.isCancelled {
+            do {
+                try await feeder.feedOneCard()
+            } catch is CancellationError {
+                return .stoppedByUser
+            } catch FeederError.timedOut {
+                return .hopperEmpty
+            } catch let error as FeederError {
+                return .feederFailed(error)
+            } catch {
+                return .feederFailed(.writeFailed(String(describing: error)))
+            }
+            fed += 1
+            autoScan = .running(fed: fed)
+
+            do {
+                try await clock.sleep(for: settleDelay)
+                let pending = try await captureScan()
+                try Task.checkCancellation()
+                try await store.append(pending.record, photo: pending.photoData, rectified: pending.rectifiedData)
+                records.append(pending.record)
+            } catch is CancellationError {
+                return .stoppedByUser
+            } catch let error as ScanStoreError {
+                return .scanFailed(.storage(String(describing: error)))
+            } catch {
+                return .scanFailed(ScanProblem(error))
+            }
+        }
+        return .stoppedByUser
     }
 
     /// Saves the pending scan with the user's verdict.

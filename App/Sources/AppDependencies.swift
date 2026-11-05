@@ -5,6 +5,9 @@ import RiftboundRecognizer
 /// names concrete types; every model receives its collaborators through `init`.
 nonisolated struct AppDependencies: Sendable {
     let camera: CaptureEngine
+    /// Built on the main actor by the root view: the live driver is a main-actor
+    /// object whose CoreBluetooth callbacks land there.
+    let makeFeeder: @MainActor @Sendable () -> any FeederControlling
     let identifier: any CardIdentifying
     let store: any ScanStoring
     let directory: CardDirectory
@@ -34,6 +37,7 @@ nonisolated struct AppDependencies: Sendable {
         let makeID: @Sendable () -> UUID = { UUID() }
         return AppDependencies(
             camera: CaptureEngine(),
+            makeFeeder: { CSC100Feeder() },
             identifier: LiveCardIdentifier(recognizer: CardRecognizer.live(index: cardIndex)),
             store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory)),
             directory: CardDirectory(index: cardIndex),

@@ -9,6 +9,7 @@ struct RootView: View {
         self.dependencies = dependencies
         _scanner = State(wrappedValue: ScannerModel(
             camera: dependencies.camera,
+            feeder: dependencies.makeFeeder(),
             identifier: dependencies.identifier,
             store: dependencies.store,
             makeBatch: dependencies.makeBatch,

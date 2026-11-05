@@ -38,10 +38,10 @@ struct AutoScanTests {
         #expect(model.canStartAutoScan)
 
         model.startAutoScan()
-        #expect(model.autoScan == .running(fed: 0))
+        #expect(model.autoScan == .running(.init()))
         await model.autoScanTask?.value
 
-        #expect(model.autoScan == .ended(fed: 3, reason: .hopperEmpty))
+        #expect(model.autoScan == .ended(.init(fed: 3, identified: 3), reason: .hopperEmpty))
         #expect(feeder.feedCount == 4, "a fourth feed is what detects the empty hopper")
         #expect(feeder.stopCount == 1)
         #expect(model.records.count == 3)
@@ -69,7 +69,7 @@ struct AutoScanTests {
         model.stopAutoScan()
         await model.autoScanTask?.value
 
-        #expect(model.autoScan == .ended(fed: 1, reason: .stoppedByUser))
+        #expect(model.autoScan == .ended(.init(fed: 1, identified: 1), reason: .stoppedByUser))
         #expect(model.records.count == 1)
         #expect(feeder.stopCount == 1)
         #expect(feeder.state.isReady)
@@ -83,26 +83,79 @@ struct AutoScanTests {
         model.startAutoScan()
         await model.autoScanTask?.value
 
-        #expect(model.autoScan == .ended(fed: 1, reason: .feederFailed(.disconnected)))
+        #expect(model.autoScan == .ended(.init(fed: 1, identified: 1), reason: .feederFailed(.disconnected)))
         #expect(model.records.count == 1)
     }
 
-    @Test func recognitionFailureEndsTheLoopWithoutAnAlert() async {
-        let feeder = StubFeeder(script: [.fed, .fed])
+    @Test func recognitionFailureStopsFeedingAndDiscardsTheQueue() async {
+        let feeder = StubFeeder(script: [.fed, .fed, .fed, .fed, .fed])
         let model = makeModel(feeder: feeder, identifier: StubIdentifier(outcome: .failure(StubFailure())))
         await model.start()
         model.connectFeeder()
         model.startAutoScan()
         await model.autoScanTask?.value
 
-        guard case .ended(let fed, .scanFailed) = model.autoScan else {
+        guard case .ended(let progress, .scanFailed) = model.autoScan else {
             Issue.record("expected a scan failure, got \(model.autoScan)")
             return
         }
-        #expect(fed == 1)
+        #expect(progress.identified == 0)
+        #expect(progress.fed < 5, "feeding should stop once identification fails")
         #expect(model.problem == nil)
         #expect(model.records.isEmpty)
         #expect(feeder.stopCount == 1)
+        #expect(model.autoScanTask == nil)
+    }
+
+    @Test func aSlowIdentifierDoesNotHoldUpTheFeeder() async throws {
+        let feeder = StubFeeder(script: [.fed, .fed, .fed])
+        let identifier = GatedIdentifier()
+        let model = makeModel(feeder: feeder, identifier: identifier)
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+
+        // Every card is fed and photographed while the first identification is still held.
+        while feeder.feedCount < 4 || model.autoScan.progress?.fed != 3 {
+            await Task.yield()
+        }
+        while case .running = model.autoScan {
+            await Task.yield()
+        }
+        #expect(model.autoScan == .draining(.init(fed: 3, identified: 0), reason: .hopperEmpty))
+        #expect(model.records.isEmpty)
+        #expect(feeder.stopCount == 1, "the motor stops as soon as feeding ends, not when the queue drains")
+
+        for _ in 0..<3 {
+            await identifier.release()
+        }
+        await model.autoScanTask?.value
+        #expect(model.autoScan == .ended(.init(fed: 3, identified: 3), reason: .hopperEmpty))
+        #expect(model.records.count == 3)
+        #expect(await identifier.started == 3)
+    }
+
+    @Test func stoppingStillIdentifiesWhatWasAlreadyCaptured() async {
+        let feeder = StubFeeder(script: [.fed, .fed, .hangs])
+        let identifier = GatedIdentifier()
+        let model = makeModel(feeder: feeder, identifier: identifier)
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+        while feeder.feedCount < 3 {
+            await Task.yield()
+        }
+        model.stopAutoScan()
+        while case .running = model.autoScan {
+            await Task.yield()
+        }
+        #expect(model.autoScan == .draining(.init(fed: 2, identified: 0), reason: .stoppedByUser))
+
+        await identifier.release()
+        await identifier.release()
+        await model.autoScanTask?.value
+        #expect(model.autoScan == .ended(.init(fed: 2, identified: 2), reason: .stoppedByUser))
+        #expect(model.records.count == 2)
     }
 
     @Test func cannotStartWithoutAReadyFeeder() async {
@@ -140,7 +193,7 @@ struct AutoScanTests {
         }
         model.stopCamera()
         await model.autoScanTask?.value
-        #expect(model.autoScan == .ended(fed: 0, reason: .stoppedByUser))
+        #expect(model.autoScan == .ended(.init(), reason: .stoppedByUser))
     }
 
     @Test func modelDeallocatesAfterALoop() async {

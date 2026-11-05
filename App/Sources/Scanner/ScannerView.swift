@@ -10,6 +10,8 @@ struct ScannerView: View {
     @Environment(\.openURL) private var openURL
     @State private var isNamingBatch = false
     @State private var newBatchLabel = ""
+    @State private var previewFrame: CGRect = .zero
+    @State private var guideFrame: CGRect = .zero
 
     var body: some View {
         ZStack {
@@ -21,6 +23,10 @@ struct ScannerView: View {
         }
         .task { await model.start() }
         .onDisappear { model.stopCamera() }
+        .onChange(of: [previewFrame, guideFrame], initial: true) {
+            // The card sits inside the guide on the stand; the crop follows it.
+            model.guideCrop = guideFrame.isEmpty || previewFrame.isEmpty ? nil : GuideCrop(guideFrame: guideFrame, previewFrame: previewFrame)
+        }
         .sheet(item: pendingScan) { pending in
             ScanReviewView(
                 record: pending.record,
@@ -64,6 +70,7 @@ struct ScannerView: View {
         case .ready:
             CameraPreview(session: session)
                 .ignoresSafeArea()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { previewFrame = $0 }
         case .unknown, .starting:
             Color.black
                 .ignoresSafeArea()
@@ -129,11 +136,12 @@ struct ScannerView: View {
                 .aspectRatio(63.0 / 88.0, contentMode: .fit)
                 .padding(.horizontal, 48)
                 .accessibilityHidden(true)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { guideFrame = $0 }
 
             Spacer()
 
-            if case .ended(let fed, let reason) = model.autoScan {
-                autoScanResult(fed: fed, reason: reason)
+            if case .ended(let progress, let reason) = model.autoScan {
+                autoScanResult(progress: progress, reason: reason)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
             }
@@ -173,12 +181,17 @@ struct ScannerView: View {
                     Button("Cancel") { model.disconnectFeeder() }
                 }
             case .ready(let version):
-                if case .running(let fed) = model.autoScan {
-                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Fed \(fed)"), isWorking: true) {
+                switch model.autoScan {
+                case .running(let progress):
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: progressText(progress), isWorking: true) {
                         Button("Stop", role: .destructive) { model.stopAutoScan() }
-                            .accessibilityHint("Ends automatic feeding after the current card")
+                            .accessibilityHint("Stops feeding; photos already taken are still identified")
                     }
-                } else {
+                case .draining(let progress, _):
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Identifying \(progress.identified) of \(progress.fed)…"), isWorking: true) {
+                        EmptyView()
+                    }
+                case .off, .ended:
                     feederRow(systemImage: "tray.and.arrow.down.fill", text: feederReadyText(version: version)) {
                         Button("Feed and scan") { model.startAutoScan() }
                             .buttonStyle(.borderedProminent)
@@ -187,8 +200,8 @@ struct ScannerView: View {
                     }
                 }
             case .feeding:
-                if case .running(let fed) = model.autoScan {
-                    feederRow(systemImage: "tray.and.arrow.down.fill", text: Text("Fed \(fed)"), isWorking: true) {
+                if case .running(let progress) = model.autoScan {
+                    feederRow(systemImage: "tray.and.arrow.down.fill", text: progressText(progress), isWorking: true) {
                         Button("Stop", role: .destructive) { model.stopAutoScan() }
                     }
                 } else {
@@ -221,6 +234,10 @@ struct ScannerView: View {
         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private func progressText(_ progress: ScannerModel.AutoScanProgress) -> Text {
+        Text("Fed \(progress.fed) · Identified \(progress.identified)")
+    }
+
     private func feederReadyText(version: String?) -> Text {
         if let version {
             Text("Feeder ready · v\(version)")
@@ -243,11 +260,11 @@ struct ScannerView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func autoScanResult(fed: Int, reason: ScannerModel.AutoScanEnd) -> some View {
+    private func autoScanResult(progress: ScannerModel.AutoScanProgress, reason: ScannerModel.AutoScanEnd) -> some View {
         HStack(spacing: 10) {
             Image(systemName: reason == .hopperEmpty ? "tray" : "info.circle")
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(fed) cards fed and saved")
+                Text("\(progress.fed) fed, \(progress.identified) identified and saved")
                 Text(reason.message)
             }
             .lineLimit(2)

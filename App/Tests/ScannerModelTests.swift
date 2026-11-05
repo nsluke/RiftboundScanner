@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import RiftboundRecognizer
 import Testing
 @testable import RiftboundScannerApp
 
@@ -55,6 +57,33 @@ struct ScannerModelTests {
         #expect(pending.record.id == ScanRecord.ID(rawValue: recordID))
         #expect(pending.record.placement == .detected(confidence: 0.95))
         #expect(model.isBusy == false)
+    }
+
+    @Test func captureCropsToTheGuideAndKeepsTheCropAsThePhoto() async throws {
+        // A 63×88 fixture photo in a preview of the same aspect; the guide covers
+        // the middle half of each axis, and the 15 % margin grows it to 65 %.
+        let model = makeModel(camera: StubCamera(photo: try ImageFile.encode(Fixtures.image(width: 630, height: 880), as: .jpeg(quality: 0.9))))
+        model.guideCrop = GuideCrop(
+            guideFrame: CGRect(x: 78.75, y: 110, width: 157.5, height: 220),
+            previewFrame: CGRect(x: 0, y: 0, width: 315, height: 440)
+        )
+        await model.start()
+        await model.capture()
+        let pending = try #require(model.pendingScan)
+        #expect(pending.photo.width == 410)
+        #expect(pending.photo.height == 572)
+        let saved = try await PhotoDecoder.decode(pending.photoData, maxPixelSize: 4096)
+        #expect(saved.width == 410)
+        #expect(saved.height == 572)
+    }
+
+    @Test func captureWithoutAGuideUsesTheWholePhoto() async throws {
+        let model = makeModel()
+        await model.start()
+        await model.capture()
+        let pending = try #require(model.pendingScan)
+        #expect(pending.photo.width == 63)
+        #expect(pending.photo.height == 88)
     }
 
     @Test func resolvingPersistsTheRecordWithItsVerdict() async throws {

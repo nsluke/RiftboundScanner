@@ -78,3 +78,36 @@ actor InMemoryScanStore: ScanStoring {
 
     nonisolated func rectifiedURL(for record: ScanRecord) -> URL? { nil }
 }
+
+/// An identifier that answers only when released, one answer per release, so
+/// a test can hold identification back while feeding carries on.
+actor GatedIdentifier: CardIdentifying {
+    private let result: RecognitionResult
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var releases = 0
+    private(set) var started = 0
+
+    init(result: RecognitionResult = Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx])) {
+        self.result = result
+    }
+
+    var waitingCount: Int { waiting.count }
+
+    func identify(_ photo: CGImage) async throws -> RecognitionResult {
+        started += 1
+        if releases > 0 {
+            releases -= 1
+        } else {
+            await withCheckedContinuation { waiting.append($0) }
+        }
+        return result
+    }
+
+    func release() {
+        if waiting.isEmpty {
+            releases += 1
+        } else {
+            waiting.removeFirst().resume()
+        }
+    }
+}

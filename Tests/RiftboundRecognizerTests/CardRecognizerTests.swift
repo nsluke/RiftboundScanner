@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import Synchronization
 import Testing
 import RiftboundRecognizer
 
@@ -279,6 +280,267 @@ struct CardRecognizerTests {
         let turnedResult = try await rig.recognizer(index: index, locator: FakeCardLocator(quad: turnedQuad)).identify(turned)
         #expect(turnedResult.best?.id == battlefield.id)
         #expect(turnedResult.best?.orientation == .upsideDown)
+    }
+}
+
+@Suite("Card recogniser with learned exemplars (fakes)")
+struct CardRecognizerExemplarTests {
+    let rig = TestRig()
+
+    /// What the pre-overlay build (main before ADR-002 P3) produced for the
+    /// standard deck, printed from that build and pinned here so a refactor of
+    /// the fused path cannot silently move the no-overlay numbers. Hash
+    /// similarities are exact multiples of 1/64; the feature-print cosine is a
+    /// Float32 accumulation, hence the tolerance.
+    static let golden: [(ocr: [String], matches: [(id: String, score: Double, descriptor: Double, featurePrint: Double, wholeDifference: Double, wholePerceptual: Double, artDifference: Double, agreement: CodeAgreement?)])] = [
+        (ocr: [], matches: [
+            ("ogn-003-298", 1.0000000000, 1.0000000000, 1.0000000000, 1.0000000000, 1.0000000000, 1.0000000000, nil),
+            ("ogn-005-298", 0.8701409042, 0.8701409042, 0.9715318084, 0.8906250000, 0.7500000000, 0.6250000000, nil),
+            ("ogn-006-298", 0.8436961055, 0.8436961055, 0.9858297110, 0.8750000000, 0.6875000000, 0.4843750000, nil),
+            ("ogn-004-298", 0.8331545353, 0.8331545353, 0.9819340706, 0.8437500000, 0.7187500000, 0.4375000000, nil),
+            ("ogn-001-298", 0.8292974293, 0.8292974293, 0.9742198586, 0.8437500000, 0.6562500000, 0.5000000000, nil),
+            ("ogn-002-298", 0.7998662055, 0.7998662055, 0.9700449109, 0.7656250000, 0.6250000000, 0.4531250000, nil),
+        ]),
+        (ocr: ["OGN • 003/298"], matches: [
+            ("ogn-003-298", 1.5000000000, 1.0000000000, 1.0000000000, 1.0000000000, 1.0000000000, 1.0000000000, .exact),
+            ("ogn-005-298", 0.4701409042, 0.8701409042, 0.9715318084, 0.8906250000, 0.7500000000, 0.6250000000, .numberDiffers),
+            ("ogn-006-298", 0.4436961055, 0.8436961055, 0.9858297110, 0.8750000000, 0.6875000000, 0.4843750000, .numberDiffers),
+            ("ogn-004-298", 0.4331545353, 0.8331545353, 0.9819340706, 0.8437500000, 0.7187500000, 0.4375000000, .numberDiffers),
+            ("ogn-001-298", 0.4292974293, 0.8292974293, 0.9742198586, 0.8437500000, 0.6562500000, 0.5000000000, .numberDiffers),
+            ("ogn-002-298", 0.3998662055, 0.7998662055, 0.9700449109, 0.7656250000, 0.6250000000, 0.4531250000, .numberDiffers),
+        ]),
+    ]
+
+    @Test func theEmptyOverlayLeavesEveryResultAsItWas() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        for golden in Self.golden {
+            let plain = try await rig.recognizer(index: index, ocr: golden.ocr).identify(deck[2].image)
+            let empty = try await rig.recognizer(index: index, ocr: golden.ocr, overlay: .empty).identify(deck[2].image)
+            #expect(plain.matches == empty.matches)
+            #expect(plain.hypotheses == empty.hypotheses)
+            #expect(plain.location == empty.location && plain.descriptor == empty.descriptor)
+            #expect(plain.matches.allSatisfy { $0.descriptorScore == $0.referenceScore && $0.exemplarSimilarity == nil })
+            #expect(plain.hypotheses.allSatisfy { $0.referenceScore == $0.descriptorScore && $0.selectionScore == $0.bestScore })
+
+            // Both of those run the same new code, so pin the pre-overlay build's numbers as well.
+            #expect(empty.location == .assumedWholeImage && empty.codeReading?.code.canonical == (golden.ocr.isEmpty ? nil : "OGN-003/298"))
+            #expect(empty.matches.map(\.id.rawValue) == golden.matches.map(\.id), "ordering as the pre-overlay build ranked it")
+            for (match, expected) in zip(empty.matches, golden.matches) {
+                #expect(abs(match.score - expected.score) < 1e-6, "\(expected.id) score")
+                #expect(abs(match.descriptorScore - expected.descriptor) < 1e-6, "\(expected.id) descriptor score")
+                #expect(abs(match.referenceScore - expected.descriptor) < 1e-6, "\(expected.id) reference score")
+                #expect(abs(match.components.featurePrint - expected.featurePrint) < 1e-6, "\(expected.id) feature print")
+                #expect(match.components.wholeDifferenceHash == expected.wholeDifference, "\(expected.id) whole dHash")
+                #expect(match.components.wholePerceptualHash == expected.wholePerceptual, "\(expected.id) whole pHash")
+                #expect(match.components.artDifferenceHash == expected.artDifference, "\(expected.id) art dHash")
+                #expect(match.orientation == .upright && match.codeAgreement == expected.agreement, "\(expected.id) orientation and code agreement")
+            }
+        }
+    }
+
+    @Test func anExemplarEqualToTheQueryLiftsItsWholeArtGroupWithoutMovingTheReferenceScores() async throws {
+        var deck = rig.standardDeck()
+        let signature = (
+            card: TestRig.card("ogn-003*-298", code: "OGN-299*/298", printing: [.signature, .overnumbered]),
+            image: TestImages.card(seed: 3, code: "OGN • 299*/298", size: rig.canvas.size)
+        )
+        deck.append(signature)
+        let index = await rig.buildIndex(deck)
+        let baseline = try await rig.recognizer(index: index).identify(deck[0].image)
+
+        // The photo of card 1 is learned (wrongly, for the test's sake) as an exemplar of the ogn-003 pair.
+        let query = try await rig.extractor.descriptor(for: deck[0].image).featurePrint
+        let overlay = try await rig.overlay(group: ArtGroup(rawValue: "ogn-003"), prints: [query])
+        let learned = try await rig.recognizer(index: index, overlay: overlay).identify(deck[0].image)
+
+        #expect(learned.best?.id == deck[0].card.id, "a perfect reference match still beats exemplarScale × 1")
+        for id in ["ogn-003-298", "ogn-003*-298"] {
+            let before = try #require(baseline.matches.first { $0.id.rawValue == id })
+            let after = try #require(learned.matches.first { $0.id.rawValue == id })
+            #expect(after.referenceScore == before.referenceScore)
+            #expect(before.referenceScore < 0.95)
+            #expect(abs((after.exemplarSimilarity ?? 0) - 1) < 1e-6, "\(id): both members of the group see the same exemplar")
+            #expect(abs(after.descriptorScore - 0.95) < 1e-6, "\(id): fused = exemplarScale × 1")
+            #expect(after.score == after.descriptorScore, "no code was read")
+        }
+        let unrelated = try #require(learned.matches.first { $0.id == deck[4].card.id })
+        #expect(unrelated.exemplarSimilarity == nil && unrelated.descriptorScore == unrelated.referenceScore)
+        #expect(Array(learned.matches.dropFirst().prefix(2)).map(\.card.artGroup) == [ArtGroup(rawValue: "ogn-003"), ArtGroup(rawValue: "ogn-003")], "the lifted pair ranks right behind the true card")
+    }
+
+    @Test func exemplarsNeverChangeTheWinningHypothesisOrWholeImageEligibility() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let (photo, quad) = TestImages.photo(of: deck[1].image, at: CGRect(x: 420, y: 160, width: 500, height: 700), canvas: PixelSize(width: 1400, height: 1200))
+        // A second, wrong detection on the background, reported more confidently
+        // than the card and listed first, so that a tie or a flip in whichever
+        // score chooses the winner would move the result onto it. Both are
+        // salient-object fits (no frame-expanded variants), so both get OCR'd
+        // and both are candidates for the win.
+        let wrong = CardQuad(
+            topLeft: CGPoint(x: 20, y: 20), topRight: CGPoint(x: 320, y: 20),
+            bottomRight: CGPoint(x: 320, y: 440), bottomLeft: CGPoint(x: 20, y: 440)
+        )
+        let locator = FakeCardLocator([CardCandidate(quad: wrong, confidence: 0.95, source: .salientObject), CardCandidate(quad: quad, confidence: 0.9, source: .salientObject)])
+        let baseline = try await rig.recognizer(index: index, locator: locator).identify(photo)
+        #expect(baseline.best?.id == deck[1].card.id)
+        #expect(baseline.location == .detected(quad, confidence: 0.9))
+        let wholeBefore = try #require(baseline.hypotheses.first { $0.location == .assumedWholeImage })
+        #expect(wholeBefore.referenceScore < ScoringPolicy.default.wholeImageMinimumScore, "the whole photo does not look like a card")
+
+        // Learn the wrong rectangle's canvas and the whole photo as exemplars of
+        // card 6, with an absurd scale, but *not* the true card's canvas: the two
+        // losing hypotheses now carry a fused score (3 × 1.0) that dwarfs every
+        // reference score, while the true hypothesis's fused score stays lower.
+        // A recogniser choosing by fused score would pick the wrong rectangle, and
+        // one gating the whole image by fused score would let it compete; neither
+        // may happen.
+        var prints: [FeaturePrint] = []
+        for candidateQuad in [wrong, CardQuad(fullImageOfSize: PixelSize(width: photo.width, height: photo.height))] {
+            let canvas = try rig.rectifier.rectify(photo, quad: candidateQuad)
+            prints.append(try await rig.extractor.descriptor(for: canvas).featurePrint)
+        }
+        let overlay = try await rig.overlay(group: deck[5].card.artGroup, prints: prints)
+        var policy = ScoringPolicy.default
+        policy.exemplarScale = 3
+        let learned = try await rig.recognizer(index: index, locator: locator, policy: policy, overlay: overlay).identify(photo)
+
+        #expect(learned.location == baseline.location)
+        #expect(learned.hypotheses.count == 3 && learned.hypotheses.map(\.location) == baseline.hypotheses.map(\.location))
+        #expect(learned.hypotheses.map(\.referenceScore) == baseline.hypotheses.map(\.referenceScore))
+        #expect(learned.hypotheses.map(\.selectionScore) == baseline.hypotheses.map(\.selectionScore), "the score that chooses the winner is untouched by exemplars")
+        #expect(learned.descriptor == baseline.descriptor, "the winning hypothesis's query is unchanged")
+
+        // The trap was armed: by fused score the losers now outscore the winner.
+        let winner = try #require(learned.hypotheses.first { $0.location == learned.location })
+        let wrongAfter = try #require(learned.hypotheses.first { $0.location == .detected(wrong, confidence: 0.95) })
+        let wholeAfter = try #require(learned.hypotheses.first { $0.location == .assumedWholeImage })
+        #expect(wrongAfter.bestCard == deck[5].card.id && wrongAfter.descriptorScore > 2.9, "the wrong rectangle 'matches' card 6 overwhelmingly...")
+        #expect(wrongAfter.bestScore > winner.bestScore + 0.1, "...and would win on fused scores...")
+        #expect(wrongAfter.selectionScore < winner.selectionScore, "...but not on the selection score")
+        #expect(wholeAfter.bestCard == deck[5].card.id && wholeAfter.descriptorScore > 2.9, "the whole image 'matches' card 6 overwhelmingly...")
+        #expect(wholeAfter.descriptorScore > winner.bestScore, "...would outscore the winner if it were allowed to compete...")
+        #expect(wholeAfter.referenceScore == wholeBefore.referenceScore && learned.location != .assumedWholeImage, "...and is still not eligible")
+        #expect(winner.bestScore > winner.selectionScore, "within the winner card 6 was lifted too, just less")
+
+        // Within the winning hypothesis the exemplar does change the ranking: that is its job.
+        let best = try #require(learned.best)
+        #expect(best.id == deck[5].card.id && best.descriptorScore > 1 && best.descriptorScore < wrongAfter.descriptorScore)
+        #expect(best.referenceScore == baseline.matches.first { $0.id == deck[5].card.id }?.referenceScore)
+        #expect(learned.matches.first { $0.id == deck[1].card.id }?.referenceScore == baseline.best?.referenceScore, "the true card is still listed with its reference score")
+    }
+
+    @Test func exemplarsNeverMakeTheWholeImageEligible() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let (photo, _) = TestImages.photo(of: deck[1].image, at: CGRect(x: 420, y: 160, width: 500, height: 700), canvas: PixelSize(width: 1400, height: 1200))
+        // The detector misses the card and reports a patch that looks even less
+        // like a card than the whole photo does; neither reaches the whole-image
+        // threshold, so the patch wins by default and the whole photo is held out.
+        let patch = CardQuad(
+            topLeft: CGPoint(x: 300, y: 100), topRight: CGPoint(x: 600, y: 100),
+            bottomRight: CGPoint(x: 600, y: 500), bottomLeft: CGPoint(x: 300, y: 500)
+        )
+        let locator = FakeCardLocator([CardCandidate(quad: patch, confidence: 0.9, source: .salientObject)])
+        let baseline = try await rig.recognizer(index: index, locator: locator).identify(photo)
+        #expect(baseline.location == .detected(patch, confidence: 0.9))
+        let patchBefore = try #require(baseline.hypotheses.first { $0.location == baseline.location })
+        let wholeBefore = try #require(baseline.hypotheses.first { $0.location == .assumedWholeImage })
+        #expect(wholeBefore.referenceScore < ScoringPolicy.default.wholeImageMinimumScore)
+        #expect(patchBefore.referenceScore < wholeBefore.referenceScore, "the whole photo would win if it were allowed to compete")
+
+        // Learn the whole photo as an exemplar of card 6 with an absurd scale: its
+        // fused score is now far above the threshold, its reference score is not.
+        let wholeCanvas = try rig.rectifier.rectify(photo, quad: CardQuad(fullImageOfSize: PixelSize(width: photo.width, height: photo.height)))
+        let overlay = try await rig.overlay(group: deck[5].card.artGroup, prints: [try await rig.extractor.descriptor(for: wholeCanvas).featurePrint])
+        var policy = ScoringPolicy.default
+        policy.exemplarScale = 3
+        let learned = try await rig.recognizer(index: index, locator: locator, policy: policy, overlay: overlay).identify(photo)
+
+        #expect(learned.location == baseline.location, "the whole image stays ineligible")
+        #expect(learned.hypotheses.map(\.referenceScore) == baseline.hypotheses.map(\.referenceScore))
+        #expect(learned.hypotheses.map(\.selectionScore) == baseline.hypotheses.map(\.selectionScore))
+        let wholeAfter = try #require(learned.hypotheses.first { $0.location == .assumedWholeImage })
+        #expect(wholeAfter.bestCard == deck[5].card.id && wholeAfter.descriptorScore > 2.9 && wholeAfter.bestScore > 2.9, "the trap was armed: by fused score the whole image is far past the threshold")
+        #expect(wholeAfter.referenceScore == wholeBefore.referenceScore)
+    }
+
+    @Test func excludedBatchesAreIgnoredEndToEnd() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let query = try await rig.extractor.descriptor(for: deck[0].image).featurePrint
+        let batch = UUID()
+        let overlay = try await rig.overlay(group: deck[5].card.artGroup, prints: [query], batch: batch)
+        let withExemplar = try await rig.recognizer(index: index, overlay: overlay).identify(deck[0].image)
+        #expect(abs((withExemplar.matches.first { $0.id == deck[5].card.id }?.exemplarSimilarity ?? 0) - 1) < 1e-6)
+
+        let excluded = try await rig.recognizer(index: index, overlay: overlay, excludedBatches: [batch]).identify(deck[0].image)
+        let plain = try await rig.recognizer(index: index).identify(deck[0].image)
+        #expect(excluded.matches == plain.matches, "with its only batch excluded the overlay is inert")
+        #expect(excluded.matches.allSatisfy { $0.exemplarSimilarity == nil })
+    }
+
+    @Test func replacingKeepsTheCollaboratorsAndSwapsTheData() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let ocr = CountingTextRecognizer(["OGN • 003/298"])
+        let original = CardRecognizer(
+            index: index,
+            locator: FakeCardLocator(),
+            rectifier: rig.rectifier,
+            descriptorExtractor: rig.extractor,
+            codeReader: PrintedCodeReader(textRecognizer: ocr, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: rig.fingerprint
+        )
+        let first = try await original.identify(rectifiedCard: deck[2].image)
+        #expect(first.best?.id == deck[2].card.id)
+        #expect(ocr.calls == 4, "one OCR pass per edge band")
+
+        let query = try await rig.extractor.descriptor(for: deck[2].image).featurePrint
+        let overlay = try await rig.overlay(group: deck[5].card.artGroup, prints: [query], version: 4)
+        var policy = ScoringPolicy.default
+        policy.exemplarScale = 0.9
+        let replaced = original.replacing(overlay: overlay, policy: policy)
+        let second = try await replaced.identify(rectifiedCard: deck[2].image)
+        #expect(ocr.calls == 8, "the very same text recogniser instance served the replacement")
+        #expect(replaced.fingerprint == original.fingerprint && replaced.fingerprint == rig.fingerprint)
+        #expect(replaced.overlay == overlay && replaced.policy == policy)
+        #expect(replaced.index.entries == index.entries && replaced.excludedBatches.isEmpty)
+        #expect(second.best?.id == deck[2].card.id)
+        #expect(abs((second.matches.first { $0.id == deck[5].card.id }?.descriptorScore ?? 0) - 0.9) < 1e-6, "the new overlay and policy are in force")
+        #expect(second.engine == rig.fingerprint)
+
+        // Leaving every argument out changes nothing; naming the index swaps the reference data.
+        let same = original.replacing()
+        #expect(same.overlay == original.overlay && same.policy == original.policy && same.index.entries == original.index.entries)
+        let other = (card: TestRig.card("ogn-007-298", code: "OGN-007/298"), image: TestImages.card(seed: 7, code: "OGN • 007/298", size: rig.canvas.size))
+        let otherIndex = await rig.buildIndex([other])
+        let reindexed = original.replacing(index: otherIndex)
+        let third = try await reindexed.identify(rectifiedCard: other.image)
+        #expect(third.best?.id == other.card.id && third.matches.count == 1)
+        #expect(ocr.calls == 12)
+        let excluded = replaced.replacing(excludedBatches: Set(overlay.exemplars.map(\.batchID)))
+        #expect(excluded.overlay == overlay && excluded.excludedBatches.count == 1)
+        #expect(try await excluded.identify(rectifiedCard: deck[2].image).matches.allSatisfy { $0.exemplarSimilarity == nil })
+    }
+}
+
+/// A text recogniser with identity: counts the calls it receives so a test can
+/// tell whether two recognisers share it.
+final class CountingTextRecognizer: TextRecognizing, Sendable {
+    private let lines: [TextLine]
+    private let count = Mutex(0)
+
+    init(_ strings: [String]) {
+        lines = strings.map { TextLine(string: $0, confidence: 1) }
+    }
+
+    var calls: Int { count.withLock { $0 } }
+
+    func recognizeText(in image: CGImage) async throws -> [TextLine] {
+        count.withLock { $0 += 1 }
+        return lines
     }
 }
 

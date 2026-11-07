@@ -32,6 +32,12 @@ public struct FeaturePrint: Hashable, Sendable, Codable {
         self.init(elements: Self.floats(from: data))
     }
 
+    /// Reads values that were normalised already (the bytes ``float32Data``
+    /// produced), so a stored print comes back bit-exact, as it does from JSON.
+    public init(normalizedFloat32Data data: Data) {
+        self.init(normalized: Self.floats(from: data))
+    }
+
     private static func floats(from data: Data) -> [Float] {
         data.withUnsafeBytes { raw -> [Float] in
             (0..<(raw.count / 4)).map { index in

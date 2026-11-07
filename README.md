@@ -338,7 +338,9 @@ coding incl. the v1 and v2 fixtures, the file store, decisions through the
 store, the confident tier with the 024/014 veto fixture and crafted audit ids,
 the scanner model with stubbed camera and recogniser, the review queue's audit
 and spot-check rows, the server client against a stubbed `URLProtocol`,
-endpoint discovery with an injected clock) run on a simulator;
+endpoint discovery with an injected clock, the ledger delta builder, the
+syncing store and the sync engine against a scripted server with a
+hand-advanced clock) run on a simulator;
 `sh Scripts/check-verdict-writers.sh` is the matching CI grep:
 
 ```bash
@@ -376,6 +378,78 @@ inject a `TestClock`; nothing in the suite touches the network. To try the real
 client against a local server, run the server repo's
 `RC_PORT=<port> python -m riftbound_collection serve`, enter `127.0.0.1:<port>` as
 the fallback address in a simulator build and tap Test connection.
+
+### Syncing scans and the ledger
+
+Decisions reach the server through `App/Sources/Sync/` (ADR-002, decisions 2
+and 4). Durable truth on the phone is `Documents/Scans/<batch>/scans.json`
+(the decisions) plus `Library/Application Support/Riftbound/Sync/<batch>/sync.json`
+(what the server has acknowledged); `Sync/outbox.json` is a cache rebuilt
+from the two and can be deleted at any time.
+
+- `SyncingScanStore` is the live `ScanStoring`: it wraps `FileScanStore`,
+  writes `scans.json` first and `sync.json` second, and fixes a batch's
+  `purpose` once any scan in it has a decision (`ScanStoreError.purposeImmutable`).
+  `voidBatch` appends a `human` `voided` decision to every scan and marks the
+  batch; `closeBatch` records `closedAt` for the pruner (A5).
+- `LedgerDeltaBuilder.items(record:previousState:batch:vault:)` is pure: a
+  `correct`/`corrected` decision in a `collection` batch owes `+1` as
+  `scan:<scan id>:<seq>` (printing key from the decision's override or the
+  card id, finish forced for single-finish printings, otherwise the override
+  or the batch default); a changed effect also owes an undo
+  `scan:<scan id>:<seq>:undo` naming the previously **applied** reference
+  (`undo_of`), while a previous `+1` the server never applied is simply
+  withdrawn. Unchanged effects, `legacy` decisions and `calibration` batches
+  emit nothing; acknowledged references are never sent twice.
+- `SyncEngine` (main-actor, built by `RootView` through
+  `AppDependencies.makeSyncEngine`) runs `reconcile()` on launch, on **Retry
+  now** and before every flush, then drains batch metadata, ledger items in
+  pages of 100 (`POST /api/sync/ledger`), scan records, `photo_small`,
+  canvases and photos. Triggers: launch, foreground, 2 s after a decision, a
+  path to the home network appearing, every 60 s on the Scan tab. Transport
+  failures back off 5 s to 5 min; `unauthorized`/`forbidden`/outdated server
+  stop the flush with a message. Per-item statuses are terminal states in
+  `sync.json`: `applied(ledgerID, cardID, finish)` or
+  `terminal(duplicate | duplicateMismatch | unknownCard(catalogVersion) |
+  wouldGoNegative | nothingToUndo | invalid | unrecognized)`; an
+  `unknownCard` item is re-queued unchanged when `/health.catalog_version`
+  changes, nothing else ever is. An item is marked `sent` before its page
+  goes out; one whose answer was lost is replayed (the server answers
+  `duplicate` or `applied`) and, if its effect changed meanwhile, reversed by
+  reference, so a timeout after the server's commit never leaves a stale
+  row. A `+1` the server answers `duplicate` is recorded `applied` from the
+  row the answer names, because the server holds that row and a later
+  correction or void must undo it. A refusal of the ledger route as a whole
+  (404, or the 422 the server gives only for a request shape it does not
+  accept) leaves the items owed and ends the flush with the server's detail;
+  nothing is marked `invalid` for it. Record uploads: `uploaded(at)` with the
+  decision count the server accepted, `conflict(serverSeq)` on 409 (terminal),
+  `failed(reason)` for refusals that are retried on the next flush. Every
+  drain writes only the fields it owns through the store's closure, so a
+  void or close written mid-flush is never overwritten. A flush decodes each
+  batch's `scans.json` once, and skips a batch that owes nothing and whose
+  file stamp has not moved since its last reconcile.
+- UI: the batch overview shows a sync line with needs-attention rows
+  (refused undos, unknown printings, record conflicts), **Close batch**,
+  **Void batch** and **Sync now**; History shows purpose and sync badges and
+  a Void swipe action. A voided batch's folder is removed once every ledger
+  item is acknowledged, every voided record is on the server and no undo was
+  refused; refused undos keep the batch with their count ("Resolve on the
+  web") until the user deletes it.
+
+`App/Sources/Sync/ScanUploads.swift` holds the two seams A5 fills in:
+`ScanUploadComposing` (`RecordUploadComposer` sends the record minus image
+URLs, the oriented descriptor with its calibration hash, the analysis stamp
+and the engine) and `ScanAssetProviding` (`StoredAssetProvider` downsamples
+`photo_small` and re-encodes anything over the server's caps at the sizes and
+JPEG qualities in `AssetEncodingPolicy`, a value the composition root injects).
+
+To check the wire contract against a local server, run the server repo's
+`RC_DB_PATH=/tmp/x.sqlite RC_PRICE_SYNC=0 RC_BACKUPS=0 RC_PORT=8197 python -m riftbound_collection serve`
+and `POST /api/sync/ledger` a page with a `+1`, its replay, an undo naming
+the applied reference and an undo of a missing one: the statuses come back
+`applied`, `duplicate`, `applied` (card and finish copied from the row) and
+`nothing_to_undo`, and `GET /api/holdings` reflects the net result.
 
 ### Decks
 

@@ -29,6 +29,9 @@ nonisolated struct AppDependencies: Sendable {
     /// the learning sync (A8) installs a downloaded policy and the server's
     /// audit count.
     let confidenceRule: @Sendable () -> ConfidenceRule
+    /// Built on the main actor by the root view (the feeder pattern): the
+    /// engine is main-actor state and cannot be constructed inside `live()`.
+    let makeSyncEngine: @MainActor @Sendable () -> SyncEngine
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
     /// takes long enough to count as a hang.
@@ -71,10 +74,11 @@ nonisolated struct AppDependencies: Sendable {
             throw .storageUnavailable(String(describing: error))
         }
         let settings = DefaultsServerSettingsStore(defaults: .standard, secrets: KeychainSecretStore())
+        let pathSource = LiveNetworkPathSource()
         let endpoints = EndpointResolver(
             candidates: { await settings.load().candidates },
             probe: URLSessionEndpointProbe(),
-            paths: LiveNetworkPathSource(),
+            paths: pathSource,
             clock: ContinuousClock(),
             now: now
         )
@@ -84,11 +88,22 @@ nonisolated struct AppDependencies: Sendable {
             clientIdentity: HTTPCollectionClient.clientIdentity(appVersion: appVersion, device: device),
             cache: ResponseCache(directory: paths.catalog.appending(path: "responses", directoryHint: .isDirectory))
         )
+        // One store seam: the file store under Documents, wrapped so every
+        // decision also updates sync.json beside it (ADR-002, decision 4).
+        let store = SyncingScanStore(
+            inner: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory), now: now, makeID: makeID),
+            directory: paths.sync,
+            now: now
+        )
+        let outbox = Outbox(fileURL: paths.sync.appending(path: "outbox.json"))
+        // The sizes assets are shrunk to; a policy value here, not a literal
+        // in the uploader (ADR-002, principle 4).
+        let assetEncoding = AssetEncodingPolicy()
         return AppDependencies(
             camera: CaptureEngine(),
             makeFeeder: { CSC100Feeder() },
             identifier: LiveCardIdentifier(recognizer: recognizer),
-            store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory), now: now, makeID: makeID),
+            store: store,
             directory: CardDirectory(index: cardIndex),
             vault: vault,
             priceSource: TCGCSVPriceSource(cacheURL: caches.appending(path: "tcgcsv-prices.json"), now: now),
@@ -115,7 +130,21 @@ nonisolated struct AppDependencies: Sendable {
             client: client,
             deckCache: FileDeckCacheStore(url: paths.catalog.appending(path: "decks.json")),
             appVersion: appVersion,
-            confidenceRule: { .default }
+            confidenceRule: { .default },
+            makeSyncEngine: {
+                SyncEngine(
+                    store: store,
+                    outbox: outbox,
+                    client: client,
+                    endpoints: endpoints,
+                    paths: pathSource,
+                    vault: vault,
+                    device: device.model,
+                    uploads: RecordUploadComposer(),
+                    assets: StoredAssetProvider(store: store, policy: assetEncoding),
+                    now: now
+                )
+            }
         )
     }
 }

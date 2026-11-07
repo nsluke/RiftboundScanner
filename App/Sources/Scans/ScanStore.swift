@@ -20,9 +20,38 @@ nonisolated protocol ScanStoring: Sendable {
     /// each other (ADR-002, decision 2).
     func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) async throws -> ScanRecord
     func deleteBatch(_ id: ScanBatch.ID) async throws
+    /// Appends a `voided` decision to every scan in the batch that is not
+    /// already voided, so each one's ledger effect is undone (ADR-002,
+    /// decision 2). Returns how many scans were voided.
+    @discardableResult
+    func voidBatch(_ id: ScanBatch.ID) async throws -> Int
     func batchDirectory(for id: ScanBatch.ID) -> URL
     func photoURL(for record: ScanRecord) -> URL
     func rectifiedURL(for record: ScanRecord) -> URL?
+}
+
+nonisolated extension ScanStoring {
+    /// Voiding is decisions like any other: one `human` `voided` per scan,
+    /// through `decide`.
+    @discardableResult
+    func voidBatch(_ id: ScanBatch.ID) async throws -> Int {
+        var voided = 0
+        for record in try await records(in: id) where record.verdict != .voided {
+            _ = try await decide(record.id, in: id, DecisionInput(.voided, source: .human))
+            voided += 1
+        }
+        return voided
+    }
+}
+
+/// A store that can say cheaply whether a batch's records changed since it
+/// was last asked, so the sync engine can skip decoding a settled batch's
+/// `scans.json` (megabytes of analysis per batch) on every flush.
+nonisolated protocol ScanRecordStamping: Sendable {
+    /// A value that differs whenever `records(in:)` would answer differently
+    /// from the last time this stamp was taken; `nil` when the store cannot
+    /// tell, which makes every reader decode the records.
+    func recordsStamp(for batch: ScanBatch.ID) async -> String?
 }
 
 nonisolated enum ScanStoreError: Error, Hashable {
@@ -32,6 +61,8 @@ nonisolated enum ScanStoreError: Error, Hashable {
     case staleRecord(ScanRecord.ID)
     /// `.pending` is the absence of a decision, not one.
     case invalidDecision(ScanRecord.ID)
+    /// A batch's purpose cannot change once any of its scans has a decision.
+    case purposeImmutable(ScanBatch.ID)
 }
 
 /// ```
@@ -40,7 +71,7 @@ nonisolated enum ScanStoreError: Error, Hashable {
 ///                           /photos/<scan id>.jpg
 ///                           /rectified/<scan id>.jpg
 /// ```
-actor FileScanStore: ScanStoring {
+actor FileScanStore: ScanStoring, ScanRecordStamping {
     private let root: URL
     private let fileManager = FileManager()
     private let encoder: JSONEncoder
@@ -87,6 +118,16 @@ actor FileScanStore: ScanStoring {
         let file = batchDirectory(for: batch).appending(path: "scans.json")
         guard fileManager.fileExists(atPath: file.path(percentEncoded: false)) else { return [] }
         return try decoder.decode([ScanRecord].self, from: try Data(contentsOf: file))
+    }
+
+    /// The modification time and size of `scans.json`: every write replaces
+    /// the file atomically, so both move together with its content.
+    func recordsStamp(for batch: ScanBatch.ID) -> String? {
+        let file = batchDirectory(for: batch).appending(path: "scans.json")
+        guard let attributes = try? fileManager.attributesOfItem(atPath: file.path(percentEncoded: false)),
+              let modified = attributes[.modificationDate] as? Date,
+              let size = attributes[.size] as? NSNumber else { return nil }
+        return "\(modified.timeIntervalSinceReferenceDate):\(size.intValue)"
     }
 
     func save(_ batch: ScanBatch) throws {

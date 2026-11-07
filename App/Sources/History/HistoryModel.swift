@@ -28,6 +28,18 @@ final class HistoryModel {
             batches = .failed(.storage(String(describing: error)))
         }
     }
+
+    /// Voids every scan in the batch (ADR-002, decision 2): each gets a
+    /// `voided` decision, the sync engine sends the undos, and the folder is
+    /// removed once the server has answered every one.
+    func void(_ batch: ScanBatch) async {
+        do {
+            try await store.voidBatch(batch.id)
+            await load()
+        } catch {
+            batches = .failed(.storage(String(describing: error)))
+        }
+    }
 }
 
 @Observable
@@ -92,6 +104,16 @@ final class BatchDetailModel {
                 records = .loaded(list)
             }
             resetShare()
+        } catch {
+            records = .failed(.storage(String(describing: error)))
+        }
+    }
+
+    /// Voids the whole batch through the store; see `HistoryModel.void`.
+    func void() async {
+        do {
+            try await store.voidBatch(batch.id)
+            await load()
         } catch {
             records = .failed(.storage(String(describing: error)))
         }

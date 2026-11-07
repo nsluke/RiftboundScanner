@@ -287,13 +287,14 @@ extension Fixtures {
         marketNormal: Double? = nil,
         marketFoil: Double? = nil,
         hasNormal: Bool = true,
+        hasFoil: Bool = true,
         promo: Bool = false,
         banned: Bool = false
     ) -> VaultCard {
         VaultCard(
             code: code, name: name, set: set, setName: set == "OGN" ? "Origins" : set, rarity: rarity, type: type, supertype: nil,
             domains: domains, energy: 2, might: 2, power: 0, text: text, flavor: nil, tags: tags, tcgplayerID: tcgplayerID,
-            marketNormal: marketNormal, marketFoil: marketFoil, hasNormal: hasNormal, hasFoil: true, promo: promo, banned: banned,
+            marketNormal: marketNormal, marketFoil: marketFoil, hasNormal: hasNormal, hasFoil: hasFoil, promo: promo, banned: banned,
             cardmarketURL: nil, image: URL(string: "https://example.invalid/\(code).webp")!
         )
     }
@@ -302,7 +303,8 @@ extension Fixtures {
         vaultCard(code: "OGN-001", name: "Vi, Piltover Enforcer", rarity: "Rare", tcgplayerID: 1001, marketNormal: 2.5, marketFoil: 9),
         vaultCard(code: "OGN-001a", name: "Vi, Piltover Enforcer", rarity: "Showcase", tcgplayerID: 1002, marketFoil: 40, hasNormal: false),
         vaultCard(code: "OGN-002", name: "Jinx, Loose Cannon", rarity: "Epic", domains: ["Chaos"], tags: ["Jinx", "Zaun"], text: "Deal 2 to a unit.", tcgplayerID: 1003, marketNormal: 0.4, marketFoil: 1.2),
-        vaultCard(code: "RAD-R01", name: "Calm Rune", set: "RAD", type: "Rune", domains: ["Calm"], tcgplayerID: 1004, marketNormal: 0.1),
+        // Normal only: the one printing in the fixture vault that forces `.normal`.
+        vaultCard(code: "RAD-R01", name: "Calm Rune", set: "RAD", type: "Rune", domains: ["Calm"], tcgplayerID: 1004, marketNormal: 0.1, hasFoil: false),
         vaultCard(code: "OGN-002-P", name: "Jinx, Loose Cannon (Promo)", rarity: "Epic", domains: ["Chaos"], promo: true),
     ])
 }

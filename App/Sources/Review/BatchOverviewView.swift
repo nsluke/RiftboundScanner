@@ -42,9 +42,12 @@ struct BatchOverviewView: View {
     @State private var model: BatchDetailModel
     let directory: CardDirectory
 
+    @Environment(SyncEngine.self) private var sync: SyncEngine?
+    @Environment(\.dismiss) private var dismiss
     @State private var filter: Filter = .toReview
     @State private var isShowingConfident = false
     @State private var selectedRecord: ScanRecord?
+    @State private var isConfirmingVoid = false
 
     init(model: @autoclosure @escaping () -> BatchDetailModel, directory: CardDirectory) {
         _model = State(wrappedValue: model())
@@ -83,10 +86,25 @@ struct BatchOverviewView: View {
             ToolbarItem(placement: .primaryAction) {
                 exportButton
             }
+            if sync != nil {
+                ToolbarItem(placement: .secondaryAction) {
+                    batchMenu
+                }
+            }
         }
         .task { await model.load() }
         .sheet(item: $selectedRecord) { record in
             StoredScanReview(record: record, model: model, directory: directory)
+        }
+        .confirmationDialog("Void this batch?", isPresented: $isConfirmingVoid) {
+            Button("Void \(model.batch.displayName)", role: .destructive) {
+                Task {
+                    await model.void()
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("Every card it added to the collection is taken back out. The batch disappears once the server has confirmed each undo.")
         }
     }
 
@@ -114,6 +132,13 @@ struct BatchOverviewView: View {
                 }
                 if counts.toReview > 0 {
                     exportFootnote(counts.toReview)
+                }
+                if let sync, let syncSummary = sync.summary(for: model.batch.id) {
+                    SyncSection(summary: syncSummary, status: sync.status, records: records, photoURL: model.photoURL(for:)) { attention in
+                        selectedRecord = records.first { $0.id == attention.scanID }
+                    } retry: {
+                        Task { await sync.retryNow() }
+                    }
                 }
                 summary
             }
@@ -281,10 +306,148 @@ struct BatchOverviewView: View {
         }
     }
 
+    @ViewBuilder
+    private var batchMenu: some View {
+        let summary = sync?.summary(for: model.batch.id)
+        Menu {
+            if model.batch.purpose == .collection, summary?.isClosed != true {
+                Button {
+                    Task { await sync?.closeBatch(model.batch.id) }
+                } label: {
+                    Label("Close batch", systemImage: "lock")
+                }
+            }
+            if model.batch.purpose == .collection, summary?.voiding == nil {
+                Button(role: .destructive) {
+                    isConfirmingVoid = true
+                } label: {
+                    Label("Void batch…", systemImage: "arrow.uturn.backward")
+                }
+            }
+            Button {
+                Task { await sync?.retryNow() }
+            } label: {
+                Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+            }
+        } label: {
+            Label("Batch", systemImage: "ellipsis.circle")
+        }
+    }
+
     private func exportSummary(_ export: CollectionExporter.Export) -> String {
         var parts = [String(localized: "\(export.totalCards) cards confirmed")]
         if export.pending > 0 { parts.append(String(localized: "\(export.pending) pending left out")) }
         if export.rejected > 0 { parts.append(String(localized: "\(export.rejected) rejected left out")) }
         return parts.joined(separator: " · ")
+    }
+}
+
+
+/// The sync line for one batch: what the ledger holds, what is still owed,
+/// and every terminal outcome that needs the user (ADR-002, principle 2).
+struct SyncSection: View {
+    let summary: BatchSyncSummary
+    let status: SyncEngine.Status
+    let records: [ScanRecord]
+    let photoURL: (ScanRecord) -> URL
+    let open: (SyncAttention) -> Void
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                Text(headline)
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                if showsRetry {
+                    Button("Retry now", action: retry)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.blue)
+                        .accessibilityHint("Looks for the server again and sends what is waiting")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if let detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.muted)
+            }
+            ForEach(summary.attention) { attention in
+                Button {
+                    open(attention)
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        if let record = records.first(where: { $0.id == attention.scanID }) {
+                            ScanThumbnail(record: record, url: photoURL(record), width: 36)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(records.first { $0.id == attention.scanID }?.topCandidate?.card.displayName ?? String(localized: "Scan"))
+                                .font(.footnote.weight(.medium))
+                            Text(attention.message)
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(8)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .accessibilityHint("Opens this scan")
+            }
+        }
+        .padding(12)
+        .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var headline: String {
+        switch summary.voiding {
+        case .inProgress(let remaining): return String(localized: "Voiding · \(remaining) undos waiting")
+        case .complete(let rejected): return String(localized: "Voided · \(rejected) undos refused")
+        case nil: break
+        }
+        if !summary.isSettled {
+            return String(localized: "\(summary.queuedItems) ledger items and \(summary.pendingUploads) uploads waiting")
+        }
+        if summary.appliedItems > 0 {
+            return String(localized: "Synced · \(summary.appliedItems) in the ledger")
+        }
+        return summary.isClosed ? String(localized: "Closed · nothing to sync") : String(localized: "Nothing to sync")
+    }
+
+    private var detail: String? {
+        var parts: [String] = []
+        switch status {
+        case .idle, .syncing: break
+        case .offline, .waiting, .failed: parts.append(status.message)
+        }
+        if summary.failedUploads > 0 { parts.append(String(localized: "\(summary.failedUploads) uploads failed; retried next time.")) }
+        if !summary.attention.isEmpty { parts.append(String(localized: "\(summary.attention.count) items need a look.")) }
+        if case .complete(let rejected) = summary.voiding, rejected > 0 {
+            parts.append(String(localized: "Resolve the refused undos on the web, then delete the batch."))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    private var showsRetry: Bool {
+        switch status {
+        case .offline, .waiting, .failed: true
+        case .idle, .syncing: !summary.isSettled
+        }
+    }
+
+    private var icon: String {
+        if summary.voiding != nil { return "arrow.uturn.backward.circle" }
+        if !summary.attention.isEmpty { return "exclamationmark.triangle" }
+        if case .syncing = status { return "arrow.triangle.2.circlepath" }
+        return summary.isSettled ? "checkmark.icloud" : "icloud.and.arrow.up"
+    }
+
+    private var tint: Color {
+        if !summary.attention.isEmpty { return .red }
+        if summary.voiding != nil || !summary.isSettled { return Theme.amber }
+        return Theme.blue
     }
 }

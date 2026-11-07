@@ -103,11 +103,21 @@ nonisolated struct NetworkPathSummary: Hashable, Sendable {
 
 nonisolated protocol NetworkPathObserving: Sendable {
     func currentPath() async -> NetworkPathSummary
+    /// Every change of path after the call, for the sync engine's
+    /// "path became satisfied" trigger. The default never emits.
+    func pathUpdates() async -> AsyncStream<NetworkPathSummary>
+}
+
+nonisolated extension NetworkPathObserving {
+    func pathUpdates() async -> AsyncStream<NetworkPathSummary> {
+        AsyncStream { $0.finish() }
+    }
 }
 
 /// Reads the live path from `NWPathMonitor`.
 actor LiveNetworkPathSource: NetworkPathObserving {
     private let monitor: NWPathMonitor
+    private var subscribers: [UUID: AsyncStream<NetworkPathSummary>.Continuation] = [:]
 
     init() {
         monitor = NWPathMonitor()
@@ -116,6 +126,35 @@ actor LiveNetworkPathSource: NetworkPathObserving {
 
     func currentPath() -> NetworkPathSummary {
         NetworkPathSummary(monitor.currentPath)
+    }
+
+    func pathUpdates() -> AsyncStream<NetworkPathSummary> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<NetworkPathSummary>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeSubscriber(id) }
+        }
+        if subscribers.count == 1 {
+            monitor.pathUpdateHandler = { [weak self] path in
+                let summary = NetworkPathSummary(path)
+                Task { await self?.publish(summary) }
+            }
+        }
+        return stream
+    }
+
+    private func publish(_ summary: NetworkPathSummary) {
+        for continuation in subscribers.values {
+            continuation.yield(summary)
+        }
+    }
+
+    private func removeSubscriber(_ id: UUID) {
+        subscribers[id] = nil
+        if subscribers.isEmpty {
+            monitor.pathUpdateHandler = nil
+        }
     }
 }
 

@@ -20,9 +20,28 @@ nonisolated protocol ScanStoring: Sendable {
     /// each other (ADR-002, decision 2).
     func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) async throws -> ScanRecord
     func deleteBatch(_ id: ScanBatch.ID) async throws
+    /// Appends a `voided` decision to every scan in the batch that is not
+    /// already voided, so each one's ledger effect is undone (ADR-002,
+    /// decision 2). Returns how many scans were voided.
+    @discardableResult
+    func voidBatch(_ id: ScanBatch.ID) async throws -> Int
     func batchDirectory(for id: ScanBatch.ID) -> URL
     func photoURL(for record: ScanRecord) -> URL
     func rectifiedURL(for record: ScanRecord) -> URL?
+}
+
+nonisolated extension ScanStoring {
+    /// Voiding is decisions like any other: one `human` `voided` per scan,
+    /// through `decide`.
+    @discardableResult
+    func voidBatch(_ id: ScanBatch.ID) async throws -> Int {
+        var voided = 0
+        for record in try await records(in: id) where record.verdict != .voided {
+            _ = try await decide(record.id, in: id, DecisionInput(.voided, source: .human))
+            voided += 1
+        }
+        return voided
+    }
 }
 
 nonisolated enum ScanStoreError: Error, Hashable {
@@ -32,6 +51,8 @@ nonisolated enum ScanStoreError: Error, Hashable {
     case staleRecord(ScanRecord.ID)
     /// `.pending` is the absence of a decision, not one.
     case invalidDecision(ScanRecord.ID)
+    /// A batch's purpose cannot change once any of its scans has a decision.
+    case purposeImmutable(ScanBatch.ID)
 }
 
 /// ```

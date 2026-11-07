@@ -131,7 +131,7 @@ final class ScannerModel {
     private let camera: any CameraOperating
     private let identifier: any CardIdentifying
     private let store: any ScanStoring
-    private let makeBatch: @Sendable (_ label: String) -> ScanBatch
+    private let makeBatch: @Sendable (ScanBatch.Setup) -> ScanBatch
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
     /// How long a fed card gets to come to rest before the photo.
@@ -143,7 +143,7 @@ final class ScannerModel {
         feeder: any FeederControlling,
         identifier: any CardIdentifying,
         store: any ScanStoring,
-        makeBatch: @escaping @Sendable (_ label: String) -> ScanBatch,
+        makeBatch: @escaping @Sendable (ScanBatch.Setup) -> ScanBatch,
         now: @escaping @Sendable () -> Date,
         makeID: @escaping @Sendable () -> UUID,
         settleDelay: Duration = .milliseconds(350)
@@ -302,7 +302,8 @@ final class ScannerModel {
             photo = try await PhotoDecoder.decode(captured.jpeg, maxPixelSize: 4096)
         }
         let started = clock.now
-        let result = try await identifier.identify(photo)
+        let identified = try await identifier.identify(photo)
+        let result = identified.result
         let elapsed = clock.now - started
         let rectifiedData = try await PhotoDecoder.encodeJPEG(result.rectifiedCard, quality: 0.8)
         let record = ScanRecord(
@@ -315,7 +316,10 @@ final class ScannerModel {
             placement: Placement(result.location),
             codeReading: result.codeReading.map(CodeReadingSummary.init),
             candidates: result.matches.prefix(5).map(Candidate.init),
-            crop: captured.crop
+            crop: captured.crop,
+            analysis: ScanAnalysis(result, at: now()),
+            engine: identified.engine,
+            captureQuality: CaptureQuality(crop: captured.crop, photoSize: PixelSize(width: photo.width, height: photo.height))
         )
         return IdentifiedScan(record: record, rectified: result.rectifiedCard, rectifiedData: rectifiedData)
     }
@@ -359,21 +363,23 @@ final class ScannerModel {
         store.photoURL(for: record)
     }
 
-    /// Marks this run's confident, still-pending scans correct in one write.
-    /// The uncertain ones stay pending for the review queue.
+    /// Records an `autoAccepted` correct decision for each of this run's
+    /// confident scans that is still pending on disk. The batch is re-read
+    /// first, so a scan someone judged on another screen since the run is
+    /// left alone; the uncertain ones stay pending for the review queue.
     func acceptConfidentScans() async {
-        let accepted = runRecords.filter(\.isAutoConfirmable).map { record in
-            var changed = record
-            changed.verdict = .correct
-            changed.verdictAt = now()
-            return changed
-        }
-        guard !accepted.isEmpty else { return }
+        guard let batch else { return }
         do {
-            try await store.update(accepted)
-            let byID = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            records = records.map { byID[$0.id] ?? $0 }
-            runRecords = runRecords.map { byID[$0.id] ?? $0 }
+            let onDisk = try await store.records(in: batch.id)
+            let runIDs = Set(runRecords.map(\.id))
+            let eligible = onDisk.filter { runIDs.contains($0.id) && $0.isAutoConfirmable }
+            guard !eligible.isEmpty else { return }
+            var accepted: [ScanRecord.ID: ScanRecord] = [:]
+            for record in eligible {
+                accepted[record.id] = try await store.decide(record.id, in: batch.id, DecisionInput(.correct, source: .autoAccepted))
+            }
+            records = records.map { accepted[$0.id] ?? $0 }
+            runRecords = runRecords.map { accepted[$0.id] ?? $0 }
             acceptedCount += accepted.count
         } catch {
             storageProblem = .storage(String(describing: error))
@@ -468,15 +474,14 @@ final class ScannerModel {
         }
     }
 
-    /// Saves the pending scan with the user's verdict.
+    /// Saves the pending scan, then records the user's verdict as a `human`
+    /// decision through the store, the one path every verdict takes.
     func resolve(_ verdict: Verdict) async {
         guard case .reviewing(let pending) = phase else { return }
-        var record = pending.record
-        record.verdict = verdict
-        record.verdictAt = now()
         do {
-            try await store.append(record, photo: pending.photoData, rectified: pending.rectifiedData)
-            records.append(record)
+            try await store.append(pending.record, photo: pending.photoData, rectified: pending.rectifiedData)
+            let decided = try await store.decide(pending.record.id, in: pending.record.batchID, DecisionInput(verdict, source: .human))
+            records.append(decided)
             savedVerdictCount += 1
             phase = .idle
         } catch {
@@ -503,9 +508,17 @@ final class ScannerModel {
 
     // MARK: - Batches
 
+    /// Starts a calibration batch: until the start-run sheet asks what a
+    /// batch is for, nothing scanned reaches the ledger.
     func beginNewBatch(label: String) async {
+        await beginNewBatch(.calibration(label: label))
+    }
+
+    func beginNewBatch(_ setup: ScanBatch.Setup) async {
+        var setup = setup
+        setup.label = setup.label.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try await createBatch(label: label.trimmingCharacters(in: .whitespacesAndNewlines))
+            try await createBatch(setup)
         } catch {
             storageProblem = .storage(String(describing: error))
         }
@@ -517,15 +530,15 @@ final class ScannerModel {
                 batch = latest
                 records = try await store.records(in: latest.id)
             } else {
-                try await createBatch(label: "")
+                try await createBatch(.calibration(label: ""))
             }
         } catch {
             storageProblem = .storage(String(describing: error))
         }
     }
 
-    private func createBatch(label: String) async throws {
-        let created = makeBatch(label)
+    private func createBatch(_ setup: ScanBatch.Setup) async throws {
+        let created = makeBatch(setup)
         try await store.save(created)
         batch = created
         records = []

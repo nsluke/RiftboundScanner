@@ -213,6 +213,32 @@ verdict (correct, corrected to another printing, or rejected), grouped into
 batches so lighting setups can be compared. The History tab shows per-batch
 accuracy and can export a batch as a zip.
 
+Verdicts are an append-only log (`docs/adr/002-collection-system.md`, decision
+6). Each `ScanRecord` carries `decisions`: one `Decision` per verdict with a
+`seq` (1, 2, 3…), a snapshot `cardID` of what was confirmed, a `source`
+(`human`, `autoAccepted`, `audit`, `spotCheck` or `legacy`), the time, and two
+`Override`s (`{"inherit":true}` or `{"value":…}`) for the finish and the
+printing to ledger. `verdict`/`verdictAt` are still written, derived from the
+last decision. Only the store appends decisions, through
+`ScanStoring.decide(_:in:_:)`; `verdict`, `verdictAt` and `decisions` are
+`private(set)`, and `Scripts/check-verdict-writers.sh` fails CI if anything
+outside `ScanRecord.swift` assigns them. `update(_:)` refuses a record whose
+log is not what is on disk plus new decisions (`ScanStoreError.staleRecord`),
+so two screens holding copies cannot overwrite each other's verdicts. Records
+also carry the recogniser's `analysis` (winning oriented descriptor, corner
+quad, code source and alternatives, a shortlist of up to 12 candidate ids with
+score components; no images or URLs), the `engine` stamp (package version,
+calibration hash, platform, OS, overlay and policy versions) and a
+`captureQuality` (`standard` for a guide crop at full resolution, about
+1454 × 2030 px; `legacy` otherwise). Batches carry a `purpose` (`collection`
+or `calibration`), an optional `product` and `defaultFinish`, and a
+`trainingQuality`. Every new key is optional on decode: a v1 `scans.json`
+decodes with a synthesised seq-1 `legacy` decision per judged scan, `legacy`
+capture quality and no analysis, and a v1 `batch.json` is a `calibration`
+batch with `legacy` training quality, so nothing recorded before the ledger
+existed is ever ledgered or learned from. Until the start-run sheet exists,
+batches started in the app are `calibration` too.
+
 The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 from `App/project.yml`; the card index is bundled from `cache/index.json`, so
 build it first. From the repository root:
@@ -227,8 +253,9 @@ xcrun devicectl device install app --device <device udid> \
 ```
 
 `xcrun devicectl list devices` prints the UDID. Unit tests for the app (scan log
-coding, the file store, and the scanner model with stubbed camera and recogniser)
-run on a simulator:
+coding incl. the v1 and v2 fixtures, the file store, decisions through the
+store, and the scanner model with stubbed camera and recogniser) run on a
+simulator; `sh Scripts/check-verdict-writers.sh` is the matching CI grep:
 
 ```bash
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \
@@ -243,7 +270,20 @@ and can be pulled over USB or Wi-Fi with the phone's development pairing:
 
 ```bash
 Scripts/pull-scans.sh                   # copies Documents/Scans into ./scans
-python3 -I Scripts/summarize-scans.py   # accuracy per batch, plus every miss with its photo
+python3 -I Scripts/summarize-scans.py   # accuracy per batch, who decided, plus every miss with its photo
+```
+
+The script reads v1 and v2 files alike and reports, per batch, the purpose,
+capture qualities, how many scans each decision source settled, and the voided
+count. `App/Tests/Fixtures/` holds a frozen v1 sample (`scans-v1.json`,
+`batch-v1.json`, five real records with the image URLs replaced), a v2 sample
+(`scans-v2.json`, `batch-v2.json`) and the crop/size table of the Testing
+batch; the app tests decode all of them. To run the script over the v2 sample:
+
+```bash
+d=$(mktemp -d)/2B0E6D3C-0000-4000-8000-000000000002 && mkdir -p "$d" \
+  && cp App/Tests/Fixtures/batch-v2.json "$d/batch.json" && cp App/Tests/Fixtures/scans-v2.json "$d/scans.json" \
+  && python3 -I Scripts/summarize-scans.py "$(dirname "$d")"
 ```
 
 `riftscan evaluate` can then be pointed at the pulled photos by copying the ones

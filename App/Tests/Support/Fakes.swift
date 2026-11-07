@@ -24,18 +24,35 @@ nonisolated struct StubCamera: CameraOperating {
 nonisolated struct StubFailure: Error {}
 
 nonisolated struct StubIdentifier: CardIdentifying {
-    let outcome: Result<RecognitionResult, StubFailure>
+    let outcome: Result<IdentifiedCard, StubFailure>
 
-    func identify(_ photo: CGImage) async throws -> RecognitionResult {
+    init(identified: Result<IdentifiedCard, StubFailure>) {
+        outcome = identified
+    }
+
+    /// Stamps a canned result with the fixture engine.
+    init(outcome: Result<RecognitionResult, StubFailure>) {
+        self.outcome = outcome.map { IdentifiedCard(result: $0, engine: Fixtures.engineStamp) }
+    }
+
+    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
         try outcome.get()
     }
 }
 
-/// A behaviourally real store with no disk.
+/// A behaviourally real store with no disk: the same staleness rule and
+/// decision numbering as `FileScanStore`, with an injected clock and ids.
 actor InMemoryScanStore: ScanStoring {
     private var batchesByID: [ScanBatch.ID: ScanBatch] = [:]
     private var recordsByBatch: [ScanBatch.ID: [ScanRecord]] = [:]
     private(set) var photos: [ScanRecord.ID: Data] = [:]
+    private let now: @Sendable () -> Date
+    private let makeID: @Sendable () -> UUID
+
+    init(now: @escaping @Sendable () -> Date = { Fixtures.epoch }, makeID: @escaping @Sendable () -> UUID = { UUID() }) {
+        self.now = now
+        self.makeID = makeID
+    }
 
     func batches() -> [ScanBatch] {
         batchesByID.values.sorted { $0.startedAt > $1.startedAt }
@@ -59,6 +76,7 @@ actor InMemoryScanStore: ScanStoring {
         guard var list = recordsByBatch[record.batchID], let position = list.firstIndex(where: { $0.id == record.id }) else {
             throw ScanStoreError.recordMissing(record.id)
         }
+        guard list[position].isExtended(by: record) else { throw ScanStoreError.staleRecord(record.id) }
         list[position] = record
         recordsByBatch[record.batchID] = list
     }
@@ -67,6 +85,17 @@ actor InMemoryScanStore: ScanStoring {
         for change in changes {
             try update(change)
         }
+    }
+
+    func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) throws -> ScanRecord {
+        guard input.verdict != .pending else { throw ScanStoreError.invalidDecision(id) }
+        guard var list = recordsByBatch[batch], let position = list.firstIndex(where: { $0.id == id }) else {
+            throw ScanStoreError.recordMissing(id)
+        }
+        let decided = list[position].deciding(input, id: Decision.ID(rawValue: makeID()), at: now())
+        list[position] = decided
+        recordsByBatch[batch] = list
+        return decided
     }
 
     func deleteBatch(_ id: ScanBatch.ID) {
@@ -88,18 +117,18 @@ actor InMemoryScanStore: ScanStoring {
 /// An identifier that answers only when released, one answer per release, so
 /// a test can hold identification back while feeding carries on.
 actor GatedIdentifier: CardIdentifying {
-    private let result: RecognitionResult
+    private let result: IdentifiedCard
     private var waiting: [CheckedContinuation<Void, Never>] = []
     private var releases = 0
     private(set) var started = 0
 
     init(result: RecognitionResult = Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx])) {
-        self.result = result
+        self.result = IdentifiedCard(result: result, engine: Fixtures.engineStamp)
     }
 
     var waitingCount: Int { waiting.count }
 
-    func identify(_ photo: CGImage) async throws -> RecognitionResult {
+    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
         started += 1
         if releases > 0 {
             releases -= 1

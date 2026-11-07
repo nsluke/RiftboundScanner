@@ -5,7 +5,6 @@ struct HistoryView: View {
     let store: any ScanStoring
     let directory: CardDirectory
     let index: IndexSummary
-    let now: @Sendable () -> Date
 
     @State private var batchToDelete: ScanBatch?
 
@@ -56,9 +55,9 @@ struct HistoryView: View {
         }
         .navigationTitle("History")
         .navigationDestination(for: ScanBatch.self) { batch in
-            BatchOverviewView(model: BatchDetailModel(batch: batch, store: store, directory: directory, now: now), directory: directory)
+            BatchOverviewView(model: BatchDetailModel(batch: batch, store: store, directory: directory), directory: directory)
         }
-        .reviewDestinations(store: store, directory: directory, now: now)
+        .reviewDestinations(store: store, directory: directory)
         .task { await model.load() }
         .refreshable { await model.load() }
         .confirmationDialog("Delete this batch and its photos?", isPresented: isConfirmingDelete, presenting: batchToDelete) { batch in

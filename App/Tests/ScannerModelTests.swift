@@ -19,15 +19,7 @@ struct ScannerModelTests {
             feeder: feeder,
             identifier: identifier,
             store: store,
-            makeBatch: { label in
-                ScanBatch(
-                    id: ScanBatch.ID(rawValue: UUID()),
-                    startedAt: Fixtures.epoch,
-                    label: label,
-                    device: ScanBatch.Device(model: "iPhone17,1", systemVersion: "26.1", appVersion: "0.1.0"),
-                    index: IndexSummary(builtAt: Fixtures.epoch, entryCount: 2, formatVersion: 1)
-                )
-            },
+            makeBatch: Fixtures.makeBatch,
             now: { Fixtures.epoch },
             makeID: { recordID }
         )
@@ -54,8 +46,17 @@ struct ScannerModelTests {
         let pending = try #require(model.pendingScan)
         #expect(pending.record.candidates.map(\.card.id) == [Fixtures.vi.id, Fixtures.jinx.id])
         #expect(pending.record.verdict == .pending)
+        #expect(pending.record.decisions.isEmpty)
         #expect(pending.record.id == ScanRecord.ID(rawValue: recordID))
         #expect(pending.record.placement == .detected(confidence: 0.95))
+        #expect(pending.record.engine == Fixtures.engineStamp)
+        let analysis = try #require(pending.record.analysis)
+        #expect(analysis.descriptor == Fixtures.descriptor)
+        #expect(analysis.shortlist.map(\.cardID) == [Fixtures.vi.id, Fixtures.jinx.id])
+        #expect(analysis.quad != nil)
+        #expect(analysis.codeSource == nil, "the fixture result reads no code")
+        #expect(analysis.codeAlternatives.isEmpty)
+        #expect(pending.record.captureQuality == .legacy, "an uncropped 63x88 photo cannot train")
         #expect(model.isBusy == false)
     }
 
@@ -98,6 +99,9 @@ struct ScannerModelTests {
         #expect(stored.count == 1)
         #expect(stored.first?.verdict == .corrected(Fixtures.jinx.id))
         #expect(stored.first?.verdictAt == Fixtures.epoch)
+        #expect(stored.first?.decisions.map(\.source) == [.human])
+        #expect(stored.first?.confirmedCardID == Fixtures.jinx.id)
+        #expect(model.records.first?.decisions.count == 1)
         #expect(await store.photos[ScanRecord.ID(rawValue: recordID)] != nil)
         #expect(model.pendingScan == nil)
         #expect(model.records.count == 1)
@@ -132,6 +136,13 @@ struct ScannerModelTests {
         await model.beginNewBatch(label: "lamp")
         #expect(model.batch?.id != first)
         #expect(model.batch?.label == "lamp")
+        #expect(model.batch?.purpose == .calibration, "a batch started without the run sheet ledgers nothing")
+
+        await model.beginNewBatch(ScanBatch.Setup(label: " box 1 ", purpose: .collection, product: .sealedBox(set: SetCode(rawValue: "OGN")!), defaultFinish: .normal))
+        #expect(model.batch?.label == "box 1")
+        #expect(model.batch?.purpose == .collection)
+        #expect(model.batch?.product?.expectedSet?.rawValue == "OGN")
+        #expect(model.batch?.defaultFinish == .normal)
     }
 
     @Test func modelDeallocates() async {

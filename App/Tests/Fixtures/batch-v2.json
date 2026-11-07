@@ -1,0 +1,22 @@
+{
+  "defaultFinish": "normal",
+  "device": {
+    "appVersion": "0.2.0",
+    "model": "iPhone17,1",
+    "systemVersion": "Version 26.6.1 (Build 23G83)"
+  },
+  "id": "2B0E6D3C-0000-4000-8000-000000000002",
+  "index": {
+    "builtAt": "2026-11-03T18:01:34Z",
+    "entryCount": 1408,
+    "formatVersion": 1
+  },
+  "label": "Box 1, v2 fixture",
+  "product": {
+    "kind": "sealedBox",
+    "set": "OGN"
+  },
+  "purpose": "collection",
+  "startedAt": "2026-11-08T14:59:00Z",
+  "trainingQuality": "standard"
+}

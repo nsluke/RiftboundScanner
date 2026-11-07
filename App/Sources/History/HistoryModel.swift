@@ -57,13 +57,11 @@ final class BatchDetailModel {
     private(set) var records: Loadable<[ScanRecord], ScanProblem> = .idle
     private(set) var share: Loadable<ShareFile, ScanProblem> = .idle
     private let store: any ScanStoring
-    private let now: @Sendable () -> Date
 
-    init(batch: ScanBatch, store: any ScanStoring, directory: CardDirectory, now: @escaping @Sendable () -> Date) {
+    init(batch: ScanBatch, store: any ScanStoring, directory: CardDirectory) {
         self.batch = batch
         self.store = store
         self.directory = directory
-        self.now = now
     }
 
     /// The confirmed cards and what the list leaves out, once records are loaded.
@@ -84,14 +82,13 @@ final class BatchDetailModel {
         }
     }
 
+    /// Re-judging a stored scan is a `human` decision appended by the store;
+    /// the copy shown here may be behind, and the store's answer replaces it.
     func update(_ record: ScanRecord, verdict: Verdict) async {
-        var changed = record
-        changed.verdict = verdict
-        changed.verdictAt = now()
         do {
-            try await store.update(changed)
+            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: .human))
             if var list = records.value, let position = list.firstIndex(where: { $0.id == record.id }) {
-                list[position] = changed
+                list[position] = decided
                 records = .loaded(list)
             }
             resetShare()

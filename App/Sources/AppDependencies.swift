@@ -14,7 +14,7 @@ nonisolated struct AppDependencies: Sendable {
     let vault: CardVault
     let priceSource: any PriceQuoting
     let index: IndexSummary
-    let makeBatch: @Sendable (_ label: String) -> ScanBatch
+    let makeBatch: @Sendable (ScanBatch.Setup) -> ScanBatch
     let now: @Sendable () -> Date
     let makeID: @Sendable () -> UUID
 
@@ -56,13 +56,24 @@ nonisolated struct AppDependencies: Sendable {
             camera: CaptureEngine(),
             makeFeeder: { CSC100Feeder() },
             identifier: LiveCardIdentifier(recognizer: recognizer),
-            store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory)),
+            store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory), now: now, makeID: makeID),
             directory: CardDirectory(index: cardIndex),
             vault: vault,
             priceSource: TCGCSVPriceSource(cacheURL: caches.appending(path: "tcgcsv-prices.json"), now: now),
             index: summary,
-            makeBatch: { label in
-                ScanBatch(id: ScanBatch.ID(rawValue: makeID()), startedAt: now(), label: label, device: device, index: summary)
+            makeBatch: { setup in
+                ScanBatch(
+                    id: ScanBatch.ID(rawValue: makeID()),
+                    startedAt: now(),
+                    label: setup.label,
+                    device: device,
+                    index: summary,
+                    purpose: setup.purpose,
+                    product: setup.product,
+                    defaultFinish: setup.defaultFinish,
+                    // Guide crops at full resolution: new batches may train.
+                    trainingQuality: .standard
+                )
             },
             now: now,
             makeID: makeID

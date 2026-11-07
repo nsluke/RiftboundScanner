@@ -14,15 +14,7 @@ struct AutoScanTests {
             feeder: feeder,
             identifier: identifier,
             store: store,
-            makeBatch: { label in
-                ScanBatch(
-                    id: ScanBatch.ID(rawValue: UUID()),
-                    startedAt: Fixtures.epoch,
-                    label: label,
-                    device: ScanBatch.Device(model: "iPhone17,1", systemVersion: "26.1", appVersion: "0.1.0"),
-                    index: IndexSummary(builtAt: Fixtures.epoch, entryCount: 2, formatVersion: 1)
-                )
-            },
+            makeBatch: Fixtures.makeBatch,
             now: { Fixtures.epoch },
             makeID: { UUID() },
             settleDelay: .zero
@@ -71,6 +63,8 @@ struct AutoScanTests {
         let batch = try #require(model.batch)
         let stored = await store.records(in: batch.id)
         #expect(stored.allSatisfy { $0.verdict == .correct && $0.verdictAt == Fixtures.epoch })
+        #expect(stored.allSatisfy { $0.decisions.map(\.source) == [.autoAccepted] && $0.decisions.first?.seq == 1 }, "bulk acceptance is a machine label")
+        #expect(stored.allSatisfy { $0.confirmedCardID == Fixtures.vi.id })
         #expect(model.records.allSatisfy { $0.verdict == .correct })
         #expect(model.runRecords.allSatisfy { $0.verdict == .correct })
         #expect(model.acceptedCount == 2)

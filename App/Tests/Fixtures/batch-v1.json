@@ -1,0 +1,15 @@
+{
+  "device" : {
+    "appVersion" : "0.1.0",
+    "model" : "iPhone17,1",
+    "systemVersion" : "Version 26.6.1 (Build 23G83)"
+  },
+  "id" : "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93",
+  "index" : {
+    "builtAt" : "2026-11-03T18:01:34Z",
+    "entryCount" : 1408,
+    "formatVersion" : 1
+  },
+  "label" : "Testing",
+  "startedAt" : "2026-11-05T19:06:37Z"
+}

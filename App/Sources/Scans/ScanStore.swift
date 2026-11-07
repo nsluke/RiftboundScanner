@@ -8,18 +8,30 @@ nonisolated protocol ScanStoring: Sendable {
     func save(_ batch: ScanBatch) async throws
     /// Stores the images, then appends the record to the batch.
     func append(_ record: ScanRecord, photo: Data, rectified: Data?) async throws
+    /// Replaces a record. Throws `staleRecord` unless the incoming decision
+    /// log extends the stored one: an update can add decisions, never drop one.
     func update(_ record: ScanRecord) async throws
-    /// Replaces several of one batch's records in a single write.
+    /// Replaces several of one batch's records in a single write, with the
+    /// same staleness rule per record.
     func update(_ records: [ScanRecord]) async throws
+    /// Appends a decision to the stored record and returns the result. The
+    /// only way a verdict changes: the store numbers the decision after
+    /// whatever is on disk, so two screens holding copies cannot overwrite
+    /// each other (ADR-002, decision 2).
+    func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) async throws -> ScanRecord
     func deleteBatch(_ id: ScanBatch.ID) async throws
     func batchDirectory(for id: ScanBatch.ID) -> URL
     func photoURL(for record: ScanRecord) -> URL
     func rectifiedURL(for record: ScanRecord) -> URL?
 }
 
-nonisolated enum ScanStoreError: Error {
+nonisolated enum ScanStoreError: Error, Hashable {
     case batchMissing(ScanBatch.ID)
     case recordMissing(ScanRecord.ID)
+    /// The update's decisions are not what is on disk plus zero or more new ones.
+    case staleRecord(ScanRecord.ID)
+    /// `.pending` is the absence of a decision, not one.
+    case invalidDecision(ScanRecord.ID)
 }
 
 /// ```
@@ -33,9 +45,13 @@ actor FileScanStore: ScanStoring {
     private let fileManager = FileManager()
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let now: @Sendable () -> Date
+    private let makeID: @Sendable () -> UUID
 
-    init(root: URL) {
+    init(root: URL, now: @escaping @Sendable () -> Date, makeID: @escaping @Sendable () -> UUID) {
         self.root = root
+        self.now = now
+        self.makeID = makeID
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -96,10 +112,7 @@ actor FileScanStore: ScanStoring {
     }
 
     func update(_ record: ScanRecord) throws {
-        var records = try records(in: record.batchID)
-        guard let position = records.firstIndex(where: { $0.id == record.id }) else { throw ScanStoreError.recordMissing(record.id) }
-        records[position] = record
-        try write(records, to: record.batchID)
+        try update([record])
     }
 
     func update(_ changes: [ScanRecord]) throws {
@@ -107,9 +120,20 @@ actor FileScanStore: ScanStoring {
         var records = try records(in: batchID)
         for change in changes where change.batchID == batchID {
             guard let position = records.firstIndex(where: { $0.id == change.id }) else { throw ScanStoreError.recordMissing(change.id) }
+            guard records[position].isExtended(by: change) else { throw ScanStoreError.staleRecord(change.id) }
             records[position] = change
         }
         try write(records, to: batchID)
+    }
+
+    func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) throws -> ScanRecord {
+        guard input.verdict != .pending else { throw ScanStoreError.invalidDecision(id) }
+        var records = try records(in: batch)
+        guard let position = records.firstIndex(where: { $0.id == id }) else { throw ScanStoreError.recordMissing(id) }
+        let decided = records[position].deciding(input, id: Decision.ID(rawValue: makeID()), at: now())
+        records[position] = decided
+        try write(records, to: batch)
+        return decided
     }
 
     func deleteBatch(_ id: ScanBatch.ID) throws {

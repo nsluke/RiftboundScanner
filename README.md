@@ -226,6 +226,30 @@ python3 -I Scripts/summarize-scans.py   # accuracy per batch, plus every miss wi
 `riftscan evaluate` can then be pointed at the pulled photos by copying the ones
 you have judged into `samples/` with their printed code as the file name.
 
+### Printing identity
+
+The app joins two spellings of every printing (ADR-002, decision 1). The
+recogniser's index writes `sfd-227*-221` and `ven-038a-166`; the bundled
+`App/Resources/CardVault.json` writes `SFD-227-STAR` and `VEN-038A`. Both reduce
+to one `PrintingKey` (`App/Sources/Catalog/PrintingKey.swift`): set, collector
+number and variant with no denominator, in the index's spelling (`SFD-227*`,
+`VEN-038a`). Vault rows the recogniser can never produce keep their raw code as
+the key so they never collide with the base printing: promo suffixes
+(`OGN-066-P`, `SFD-178a-P`), rune and token backs (`RAD-R01b-P`) and the four
+oversized rows with a denominator (`OGN-279/298`). The rule resolves 1,403 of
+the 1,408 index printings; the five misses are token backs the vault spells
+differently (`UNL-T01g`), and the collection server resolves the same key
+through its `card_aliases` table, so the app never sends vault spellings.
+
+`CardVault.siblings(of:)` lists every printing of the same art (same set and
+collector number, any suffix, oversized rows excluded) in vault order, which is
+what "Pick printing" offers; `CardVault.vaultCode(for:)` maps an index id back
+to the vault row. `FinishPolicy.resolve(card:batchDefault:)` turns the vault's
+`hasNormal`/`hasFoil` flags into `forced(finish)` for single-finish printings,
+`prompt(default:)` for both-finish ones (the batch default pre-selected) and
+`unknown` when the vault lists neither or lacks the printing. The CSV export
+carries a `Key` column with the printing key next to the printed code.
+
 ## Data, images and Riot's developer policy
 
 The catalog comes from

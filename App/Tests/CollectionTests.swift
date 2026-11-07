@@ -6,12 +6,13 @@ import Testing
 @Suite("Card vault")
 struct CardVaultTests {
     @Test func keysDropTheDenominatorAndKeepPromoSuffixes() {
-        #expect(Fixtures.vaultCard(code: "OGN-066a", name: "Ahri").key == "OGN-066a")
-        #expect(Fixtures.vaultCard(code: "RAD-SP1", name: "Ahri").key == "RAD-SP1")
-        #expect(Fixtures.vaultCard(code: "OGN-066-P", name: "Ahri promo").key == "OGN-066-P")
-        #expect(Fixtures.vaultCard(code: "SFD-227-STAR", name: "Ahri").key == "SFD-227-STAR")
-        #expect(Fixtures.vi.code.key == "OGN-001")
-        #expect(Fixtures.viAlt.code.key == "OGN-001a")
+        #expect(Fixtures.vaultCard(code: "OGN-066a", name: "Ahri").key == PrintingKey(rawValue: "OGN-066a"))
+        #expect(Fixtures.vaultCard(code: "RAD-SP1", name: "Ahri").key == PrintingKey(rawValue: "RAD-SP1"))
+        #expect(Fixtures.vaultCard(code: "OGN-066-P", name: "Ahri promo").key == PrintingKey(rawValue: "OGN-066-P"))
+        // Was "SFD-227-STAR" before ADR-002: the vault's STAR spelling now joins the index's `*`.
+        #expect(Fixtures.vaultCard(code: "SFD-227-STAR", name: "Ahri").key == PrintingKey(rawValue: "SFD-227*"))
+        #expect(PrintingKey(Fixtures.vi.code) == PrintingKey(rawValue: "OGN-001"))
+        #expect(PrintingKey(Fixtures.viAlt.code) == PrintingKey(rawValue: "OGN-001a"))
     }
 
     @Test func joinsTheIndexCardByCode() {
@@ -175,7 +176,7 @@ struct CollectionModelTests {
         let model = CollectionModel(store: store, directory: Fixtures.directory, vault: Fixtures.vault, priceSource: StubPriceSource(outcome: .success(live)))
         await model.load()
 
-        #expect(model.owned.value == ["OGN-001": 2, "OGN-001a": 1])
+        #expect(model.owned.value == [PrintingKey(rawValue: "OGN-001"): 2, PrintingKey(rawValue: "OGN-001a"): 1])
         let byID = Dictionary(uniqueKeysWithValues: model.entries.map { ($0.id, $0) })
         #expect(byID["OGN-001"]?.quantity == 2)
         #expect(byID["OGN-001"]?.normalPrice == 5, "the live feed overrides the snapshot")

@@ -5,6 +5,8 @@ import RiftboundRecognizer
 /// card list for spreadsheets and collection trackers, and a plain decklist
 /// (`2 Vi, Piltover Enforcer (OGN-001/298)`) for deck builders. Only scans
 /// with a named card count; pending and rejected ones are reported, not listed.
+/// Every line carries the printing's `PrintingKey`, the identity the
+/// collection server resolves, so a CSV can be imported without the vault spelling.
 nonisolated enum CollectionExporter {
     enum Format: Hashable, Sendable, CaseIterable {
         case csv
@@ -29,6 +31,9 @@ nonisolated enum CollectionExporter {
     struct Line: Hashable, Sendable {
         let card: Card
         let quantity: Int
+
+        /// The code without its denominator, as the server keys printings.
+        var key: PrintingKey { PrintingKey(card.code) }
     }
 
     struct Export: Hashable, Sendable {
@@ -83,12 +88,13 @@ nonisolated enum CollectionExporter {
 
     /// RFC 4180 rows with a header; names with commas or quotes are quoted.
     static func csv(_ export: Export) -> String {
-        var rows = ["Quantity,Name,Code,Set,Rarity,Type,Card ID"]
+        var rows = ["Quantity,Name,Code,Key,Set,Rarity,Type,Card ID"]
         for line in export.lines {
             rows.append([
                 String(line.quantity),
                 line.card.displayName,
                 line.card.code.canonical,
+                line.key.rawValue,
                 line.card.setName,
                 line.card.rarity.label,
                 line.card.kind?.label ?? "",

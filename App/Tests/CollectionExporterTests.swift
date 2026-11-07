@@ -22,6 +22,7 @@ struct CollectionExporterTests {
     @Test func countsConfirmedCardsAndReportsTheRest() {
         let export = CollectionExporter.export(records, directory: Fixtures.directory)
         #expect(export.lines.map { ($0.card.id.rawValue, $0.quantity) }.map { "\($0.0)×\($0.1)" } == ["ogn-001-298×2", "ogn-002-298×1", "rad-r01×1"])
+        #expect(export.lines.map(\.key.rawValue) == ["OGN-001", "OGN-002", "RAD-R01"], "lines carry the server's printing key")
         #expect(export.totalCards == 4)
         #expect(export.pending == 1)
         #expect(export.rejected == 1)
@@ -41,10 +42,10 @@ struct CollectionExporterTests {
     @Test func csvHasAHeaderAndQuotesNamesWithCommas() {
         let export = CollectionExporter.export(records, directory: Fixtures.directory)
         let rows = CollectionExporter.csv(export).split(separator: "\r\n").map(String.init)
-        #expect(rows.first == "Quantity,Name,Code,Set,Rarity,Type,Card ID")
+        #expect(rows.first == "Quantity,Name,Code,Key,Set,Rarity,Type,Card ID")
         #expect(rows.count == 4)
-        #expect(rows[1] == "2,\"Vi, Piltover Enforcer\",OGN-001/298,Origins,Common,Unit,ogn-001-298")
-        #expect(rows[3] == "1,Calm Rune,RAD-R01,Origins,Common,Unit,rad-r01")
+        #expect(rows[1] == "2,\"Vi, Piltover Enforcer\",OGN-001/298,OGN-001,Origins,Common,Unit,ogn-001-298")
+        #expect(rows[3] == "1,Calm Rune,RAD-R01,RAD-R01,Origins,Common,Unit,rad-r01")
     }
 
     @Test func quotesInsideNamesAreDoubled() {
@@ -57,7 +58,7 @@ struct CollectionExporterTests {
     @Test func emptyExportsAreWellFormed() {
         let export = CollectionExporter.export([], directory: Fixtures.directory)
         #expect(CollectionExporter.decklist(export) == "")
-        #expect(CollectionExporter.csv(export) == "Quantity,Name,Code,Set,Rarity,Type,Card ID\r\n")
+        #expect(CollectionExporter.csv(export) == "Quantity,Name,Code,Key,Set,Rarity,Type,Card ID\r\n")
     }
 
     @Test func writesAFileWithTheFormatsExtension() async throws {

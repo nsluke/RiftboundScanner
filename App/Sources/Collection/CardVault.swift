@@ -34,43 +34,62 @@ nonisolated struct VaultCard: Hashable, Sendable, Codable, Identifiable {
 
     var id: String { code }
 
-    /// The code without its denominator, the key shared with the index's
-    /// `PrintedCode`. Promo and special suffixes keep the raw code so they
-    /// never collide with the base printing.
-    var key: String {
-        guard code.wholeMatch(of: #/[A-Z]{3}-[A-Z]{0,2}[0-9]{1,3}[aA*]?/#) != nil, let parsed = PrintedCode(parsing: code) else {
-            return code
-        }
-        return parsed.key
-    }
+    /// The identity shared with the index's printings; the raw code for rows
+    /// the recogniser can never produce (promos, backs, oversized rows).
+    var key: PrintingKey { PrintingKey(vaultCode: code) }
+
+    /// Set and collector number, shared by every printing of one piece of art;
+    /// `nil` for oversized `/NNN` rows.
+    var artGroupCode: String? { key.artGroupCode }
 
     var tcgplayerURL: URL? {
         tcgplayerID.flatMap { URL(string: "https://www.tcgplayer.com/product/\($0)") }
     }
 }
 
-nonisolated extension PrintedCode {
-    /// Set, number and variant with no denominator: `OGN-066a`.
-    var key: String { "\(set.rawValue)-\(number.rawValue)\(variant.rawValue)" }
-}
-
 /// The bundled vault, keyed for joining with the index.
 nonisolated struct CardVault: Sendable {
     let asOf: Date
     let cards: [VaultCard]
-    private let byKey: [String: VaultCard]
+    private let byKey: [PrintingKey: VaultCard]
+    private let byCode: [String: VaultCard]
+    /// Rows per art group, in vault order.
+    private let byArtGroup: [String: [VaultCard]]
 
     init(asOf: Date, cards: [VaultCard]) {
         self.asOf = asOf
         self.cards = cards
         byKey = Dictionary(cards.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        byCode = Dictionary(cards.map { ($0.code, $0) }, uniquingKeysWith: { first, _ in first })
+        var groups: [String: [VaultCard]] = [:]
+        for card in cards {
+            if let group = card.artGroupCode { groups[group, default: []].append(card) }
+        }
+        byArtGroup = groups
     }
 
     static let empty = CardVault(asOf: .distantPast, cards: [])
 
-    subscript(key: String) -> VaultCard? { byKey[key] }
+    subscript(key: PrintingKey) -> VaultCard? { byKey[key] }
 
-    subscript(card: Card) -> VaultCard? { byKey[card.code.key] }
+    subscript(card: Card) -> VaultCard? { byKey[PrintingKey(card.code)] }
+
+    /// The vault's spelling of an index printing (`SFD-227-STAR` for
+    /// `sfd-227*-221`), `nil` when the vault has no row for it.
+    func vaultCode(for id: Card.ID) -> String? {
+        PrintingKey(cardID: id).flatMap { byKey[$0] }?.code
+    }
+
+    /// Every printing of the same art as `code`, itself included, in vault
+    /// order: same set and collector number with any suffix (`SFD-178`,
+    /// `SFD-178a-P`, `SFD-178-P`). Oversized `/NNN` rows never join a group,
+    /// so such a row is only its own sibling. Empty for a code the vault lacks.
+    func siblings(of code: String) -> [VaultCard] {
+        guard let group = PrintingKey(vaultCode: code).artGroupCode else {
+            return byCode[code].map { [$0] } ?? []
+        }
+        return byArtGroup[group] ?? []
+    }
 
     private struct File: Decodable {
         let asOf: String

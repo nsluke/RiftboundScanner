@@ -6,6 +6,7 @@ nonisolated struct CardDirectory: Sendable {
     /// Sorted by set, then collector number, then variant.
     let cards: [Card]
     private let byID: [Card.ID: Card]
+    private let byKey: [PrintingKey: Card]
 
     init(cards: [Card]) {
         self.cards = cards.sorted { lhs, rhs in
@@ -14,6 +15,7 @@ nonisolated struct CardDirectory: Sendable {
             return lhs.code.canonical < rhs.code.canonical
         }
         byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        byKey = Dictionary(self.cards.map { (PrintingKey($0.code), $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     init(index: CardIndex) {
@@ -22,6 +24,12 @@ nonisolated struct CardDirectory: Sendable {
 
     subscript(id: Card.ID) -> Card? {
         byID[id]
+    }
+
+    /// The printing with `key`, the join from a vault row (`VaultCard.key`)
+    /// back to the index; the first in catalog order when two share a key.
+    func card(forKey key: PrintingKey) -> Card? {
+        byKey[key]
     }
 
     /// Every set in the index, in code order.

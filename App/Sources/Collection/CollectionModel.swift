@@ -5,7 +5,7 @@ import RiftboundRecognizer
 /// printing and joined with the vault and the price feed.
 @Observable
 final class CollectionModel {
-    private(set) var owned: Loadable<[String: Int], ScanProblem> = .idle
+    private(set) var owned: Loadable<[PrintingKey: Int], ScanProblem> = .idle
     private(set) var prices: Loadable<PriceSheet, PriceSourceError> = .idle
     /// Every printing in the vault with the user's count and current price;
     /// rebuilt when counts or prices change, not on every read.
@@ -16,14 +16,12 @@ final class CollectionModel {
     private let store: any ScanStoring
     private let directory: CardDirectory
     private let priceSource: any PriceQuoting
-    private let cardsByKey: [String: Card]
 
     init(store: any ScanStoring, directory: CardDirectory, vault: CardVault, priceSource: any PriceQuoting) {
         self.store = store
         self.directory = directory
         self.vault = vault
         self.priceSource = priceSource
-        cardsByKey = Dictionary(directory.cards.map { ($0.code.key, $0) }, uniquingKeysWith: { first, _ in first })
         rebuildEntries()
     }
 
@@ -34,7 +32,7 @@ final class CollectionModel {
             let live = vaultCard.tcgplayerID.flatMap { sheet?[$0] }
             return CollectionEntry(
                 vault: vaultCard,
-                card: cardsByKey[vaultCard.key],
+                card: directory.card(forKey: vaultCard.key),
                 quantity: counts[vaultCard.key] ?? 0,
                 normalPrice: live?.normal ?? vaultCard.marketNormal,
                 foilPrice: live?.foil ?? vaultCard.marketFoil
@@ -78,11 +76,11 @@ final class CollectionModel {
     private func loadOwned() async {
         if case .loaded = owned {} else { owned = .loading }
         do {
-            var counts: [String: Int] = [:]
+            var counts: [PrintingKey: Int] = [:]
             for batch in try await store.batches() {
                 for record in try await store.records(in: batch.id) {
                     guard let id = record.confirmedCardID, let card = directory[id] else { continue }
-                    counts[card.code.key, default: 0] += 1
+                    counts[PrintingKey(card.code), default: 0] += 1
                 }
             }
             owned = .loaded(counts)

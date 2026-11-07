@@ -1,5 +1,5 @@
 /// A query descriptor together with the canvas rotation it was computed from.
-public struct OrientedDescriptor: Hashable, Sendable {
+public struct OrientedDescriptor: Hashable, Sendable, Codable {
     public let descriptor: CardDescriptor
     public let orientation: CardOrientation
 

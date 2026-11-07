@@ -2,8 +2,11 @@ import CoreGraphics
 import Foundation
 import RiftboundRecognizer
 
-/// One captured photo, what the recogniser made of it, and what the user said.
-/// Written to `scans.json` in the batch folder; the survey script reads it.
+/// One captured photo, what the recogniser made of it, and what was decided
+/// about it. Written to `scans.json` in the batch folder; the survey script
+/// reads it. Version 2 (ADR-002, decision 6) adds the decision log, the
+/// analysis, the engine stamp and the capture quality as optional keys with
+/// legacy defaults, so v1 files keep decoding.
 nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
     /// Encodes as the bare UUID string, so the JSON stays readable by scripts.
     struct ID: RawRepresentable, Hashable, Sendable, Codable {
@@ -34,11 +37,21 @@ nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
     let codeReading: CodeReadingSummary?
     /// Best first; at most five.
     let candidates: [Candidate]
-    var verdict: Verdict
-    var verdictAt: Date?
+    /// Every verdict ever given, oldest first; `seq` runs 1, 2, 3. Appended
+    /// only by the store (`ScanStoring.decide`), never edited.
+    private(set) var decisions: [Decision]
+    /// The latest decision's verdict, kept encoded for the Python readers.
+    private(set) var verdict: Verdict
+    private(set) var verdictAt: Date?
     /// How the photo was cropped to the viewfinder guide, for diagnosing the
     /// mapping from screen to sensor; absent for uncropped or older scans.
     let crop: CropDebug?
+    /// What the recogniser computed; `nil` on v1 records until re-identified.
+    let analysis: ScanAnalysis?
+    /// The engine that produced `candidates` and `analysis`; `nil` on v1 records.
+    let engine: EngineStamp?
+    /// Whether the photo can train the recogniser; v1 records are `legacy`.
+    let captureQuality: CaptureQuality
 
     init(
         id: ID,
@@ -50,11 +63,12 @@ nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
         placement: Placement,
         codeReading: CodeReadingSummary?,
         candidates: [Candidate],
-        verdict: Verdict = .pending,
-        verdictAt: Date? = nil,
-        crop: CropDebug? = nil
+        decisions: [Decision] = [],
+        crop: CropDebug? = nil,
+        analysis: ScanAnalysis? = nil,
+        engine: EngineStamp? = nil,
+        captureQuality: CaptureQuality = .legacy
     ) {
-        self.crop = crop
         self.id = id
         self.batchID = batchID
         self.capturedAt = capturedAt
@@ -64,19 +78,137 @@ nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
         self.placement = placement
         self.codeReading = codeReading
         self.candidates = candidates
-        self.verdict = verdict
-        self.verdictAt = verdictAt
+        self.decisions = decisions
+        self.verdict = decisions.last?.verdict ?? .pending
+        self.verdictAt = decisions.last?.decidedAt
+        self.crop = crop
+        self.analysis = analysis
+        self.engine = engine
+        self.captureQuality = captureQuality
     }
 
     var topCandidate: Candidate? { candidates.first }
 
-    /// The card that was actually in the photo, as far as the user has said.
+    var lastDecision: Decision? { decisions.last }
+
+    /// The card that was actually in the photo, as the latest decision
+    /// recorded it. A snapshot: reordering `candidates` cannot change it.
     var confirmedCardID: Card.ID? {
+        decisions.last?.cardID
+    }
+
+    /// The finish the decision log settled on; `nil` means inherit the batch
+    /// default (or whatever `FinishPolicy` forces for the printing).
+    var effectiveFinish: Finish? {
+        decisions.reduce(nil) { $1.finish.value ?? $0 }
+    }
+
+    /// The printing to ledger when a decision chose one the recogniser cannot
+    /// see; `nil` means the confirmed card's own key.
+    var effectivePrintingCode: PrintingKey? {
+        decisions.reduce(nil) { $1.ledgerPrintingCode.value ?? $0 }
+    }
+
+    /// The card a verdict names on this record, as a decision would snapshot it.
+    func cardID(for verdict: Verdict) -> Card.ID? {
         switch verdict {
-        case .pending, .rejected: nil
+        case .pending, .rejected, .voided: nil
         case .correct: topCandidate?.card.id
         case .corrected(let id): id
         }
+    }
+
+    /// A copy with one more decision, numbered after the last. The store is
+    /// the only caller; models ask it to decide and take back the result.
+    func deciding(_ input: DecisionInput, id: Decision.ID, at decidedAt: Date) -> ScanRecord {
+        appending(Decision(
+            id: id,
+            seq: decisions.count + 1,
+            verdict: input.verdict,
+            cardID: cardID(for: input.verdict),
+            source: input.source,
+            decidedAt: decidedAt,
+            finish: input.finish,
+            ledgerPrintingCode: input.ledgerPrintingCode
+        ))
+    }
+
+    /// Whether `other` is this record with zero or more decisions appended,
+    /// i.e. an update that cannot lose a decision already on disk.
+    func isExtended(by other: ScanRecord) -> Bool {
+        other.decisions.count >= decisions.count && Array(other.decisions.prefix(decisions.count)) == decisions
+    }
+
+    private func appending(_ decision: Decision) -> ScanRecord {
+        var copy = self
+        copy.decisions.append(decision)
+        copy.verdict = decision.verdict
+        copy.verdictAt = decision.decidedAt
+        return copy
+    }
+
+    // MARK: - Coding
+
+    private enum CodingKeys: String, CodingKey {
+        case id, batchID, capturedAt, photoFileName, rectifiedFileName, processingSeconds, placement, codeReading, candidates
+        case decisions, verdict, verdictAt, crop, analysis, engine, captureQuality
+    }
+
+    /// v1 files carry `verdict`/`verdictAt` and no `decisions`; a judged v1
+    /// record gets one synthesised `legacy` decision so every reader sees
+    /// the same shape, and `legacy` ledgers and trains nothing.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(ID.self, forKey: .id)
+        let capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        let candidates = try container.decode([Candidate].self, forKey: .candidates)
+        var decisions = try container.decodeIfPresent([Decision].self, forKey: .decisions) ?? []
+        let encodedVerdict = try container.decodeIfPresent(Verdict.self, forKey: .verdict) ?? .pending
+        let encodedVerdictAt = try container.decodeIfPresent(Date.self, forKey: .verdictAt)
+        if decisions.isEmpty, encodedVerdict != .pending {
+            let cardID: Card.ID? = switch encodedVerdict {
+            case .correct: candidates.first?.card.id
+            case .corrected(let corrected): corrected
+            case .pending, .rejected, .voided: nil
+            }
+            decisions = [Decision(id: .legacy(for: id), seq: 1, verdict: encodedVerdict, cardID: cardID, source: .legacy, decidedAt: encodedVerdictAt ?? capturedAt)]
+        }
+        self.init(
+            id: id,
+            batchID: try container.decode(ScanBatch.ID.self, forKey: .batchID),
+            capturedAt: capturedAt,
+            photoFileName: try container.decode(String.self, forKey: .photoFileName),
+            rectifiedFileName: try container.decodeIfPresent(String.self, forKey: .rectifiedFileName),
+            processingSeconds: try container.decode(Double.self, forKey: .processingSeconds),
+            placement: try container.decode(Placement.self, forKey: .placement),
+            codeReading: try container.decodeIfPresent(CodeReadingSummary.self, forKey: .codeReading),
+            candidates: candidates,
+            decisions: decisions,
+            crop: try container.decodeIfPresent(CropDebug.self, forKey: .crop),
+            analysis: try container.decodeIfPresent(ScanAnalysis.self, forKey: .analysis),
+            engine: try container.decodeIfPresent(EngineStamp.self, forKey: .engine),
+            captureQuality: try container.decodeIfPresent(CaptureQuality.self, forKey: .captureQuality) ?? .legacy
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(batchID, forKey: .batchID)
+        try container.encode(capturedAt, forKey: .capturedAt)
+        try container.encode(photoFileName, forKey: .photoFileName)
+        try container.encodeIfPresent(rectifiedFileName, forKey: .rectifiedFileName)
+        try container.encode(processingSeconds, forKey: .processingSeconds)
+        try container.encode(placement, forKey: .placement)
+        try container.encodeIfPresent(codeReading, forKey: .codeReading)
+        try container.encode(candidates, forKey: .candidates)
+        try container.encode(decisions, forKey: .decisions)
+        try container.encode(verdict, forKey: .verdict)
+        try container.encodeIfPresent(verdictAt, forKey: .verdictAt)
+        try container.encodeIfPresent(crop, forKey: .crop)
+        try container.encodeIfPresent(analysis, forKey: .analysis)
+        try container.encodeIfPresent(engine, forKey: .engine)
+        try container.encode(captureQuality, forKey: .captureQuality)
     }
 }
 
@@ -167,6 +299,8 @@ nonisolated enum Verdict: Hashable, Sendable {
     /// The card was a different printing.
     case corrected(Card.ID)
     case rejected(RejectionReason)
+    /// The batch was voided after this scan was judged; its ledger effect is undone.
+    case voided
 }
 
 nonisolated enum RejectionReason: String, Hashable, Sendable, Codable, CaseIterable {
@@ -189,7 +323,7 @@ extension Verdict: Codable {
     }
 
     private enum Kind: String, Codable {
-        case pending, correct, corrected, rejected
+        case pending, correct, corrected, rejected, voided
     }
 
     init(from decoder: any Decoder) throws {
@@ -199,6 +333,7 @@ extension Verdict: Codable {
         case .correct: self = .correct
         case .corrected: self = .corrected(try container.decode(Card.ID.self, forKey: .cardID))
         case .rejected: self = .rejected(try container.decode(RejectionReason.self, forKey: .reason))
+        case .voided: self = .voided
         }
     }
 
@@ -215,6 +350,8 @@ extension Verdict: Codable {
         case .rejected(let reason):
             try container.encode(Kind.rejected, forKey: .kind)
             try container.encode(reason, forKey: .reason)
+        case .voided:
+            try container.encode(Kind.voided, forKey: .kind)
         }
     }
 }

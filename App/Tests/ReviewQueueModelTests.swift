@@ -13,7 +13,7 @@ struct ReviewQueueModelTests {
         for record in records {
             try await store.append(record, photo: Data(), rectified: nil)
         }
-        let model = ReviewQueueModel(batch: batch, store: store, directory: Fixtures.directory, now: { Fixtures.epoch })
+        let model = ReviewQueueModel(batch: batch, store: store, directory: Fixtures.directory)
         await model.load()
         return model
     }
@@ -39,8 +39,11 @@ struct ReviewQueueModelTests {
         #expect(model.current?.id == second.id)
         #expect(model.progress == .reviewing(position: 2, of: 2))
         let stored = await store.records(in: batch.id)
-        #expect(stored.first { $0.id == first.id }?.verdict == .correct)
-        #expect(stored.first { $0.id == first.id }?.verdictAt == Fixtures.epoch)
+        let decided = try #require(stored.first { $0.id == first.id })
+        #expect(decided.verdict == .correct)
+        #expect(decided.verdictAt == Fixtures.epoch)
+        #expect(decided.decisions.map(\.source) == [.human], "a reviewed verdict is a human label")
+        #expect(decided.decisions.first?.cardID == Fixtures.vi.id)
         #expect(model.tally.confirmed == 1)
     }
 
@@ -53,7 +56,9 @@ struct ReviewQueueModelTests {
         await model.correct(to: Fixtures.vi.id)
         let stored = await store.records(in: batch.id)
         #expect(stored.first { $0.id == first.id }?.verdict == .corrected(Fixtures.jinx.id))
+        #expect(stored.first { $0.id == first.id }?.confirmedCardID == Fixtures.jinx.id)
         #expect(stored.first { $0.id == second.id }?.verdict == .correct)
+        #expect(stored.allSatisfy { $0.decisions.allSatisfy { $0.source == .human } })
         #expect(model.tally == .init(confirmed: 1, corrected: 1, rejected: 0, skipped: 0))
     }
 

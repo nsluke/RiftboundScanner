@@ -5,17 +5,20 @@ nonisolated struct BatchSummary: Hashable, Sendable {
     let correct: Int
     let corrected: Int
     let rejected: Int
+    /// Judged scans whose batch was voided afterwards; they no longer count anywhere.
+    let voided: Int
     /// Judged scans whose confirmed card was among the top three candidates.
     let topThreeHits: Int
 
     init(records: [ScanRecord]) {
-        var pending = 0, correct = 0, corrected = 0, rejected = 0, topThreeHits = 0
+        var pending = 0, correct = 0, corrected = 0, rejected = 0, voided = 0, topThreeHits = 0
         for record in records {
             switch record.verdict {
             case .pending: pending += 1
             case .correct: correct += 1
             case .corrected: corrected += 1
             case .rejected: rejected += 1
+            case .voided: voided += 1
             }
             if let confirmed = record.confirmedCardID, record.candidates.prefix(3).contains(where: { $0.card.id == confirmed }) {
                 topThreeHits += 1
@@ -26,6 +29,7 @@ nonisolated struct BatchSummary: Hashable, Sendable {
         self.correct = correct
         self.corrected = corrected
         self.rejected = rejected
+        self.voided = voided
         self.topThreeHits = topThreeHits
     }
 

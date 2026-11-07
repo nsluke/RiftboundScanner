@@ -32,13 +32,11 @@ final class ReviewQueueModel {
     private(set) var dominantSet: SetCode?
 
     private let store: any ScanStoring
-    private let now: @Sendable () -> Date
 
-    init(batch: ScanBatch, store: any ScanStoring, directory: CardDirectory, now: @escaping @Sendable () -> Date) {
+    init(batch: ScanBatch, store: any ScanStoring, directory: CardDirectory) {
         self.batch = batch
         self.store = store
         self.directory = directory
-        self.now = now
     }
 
     var current: ScanRecord? {
@@ -100,12 +98,15 @@ final class ReviewQueueModel {
         storageProblem = nil
     }
 
+    /// Every verdict here is a `human` decision, appended by the store.
     private func decide(_ verdict: Verdict, counting: (inout Tally) -> Void) async {
-        guard var record = current else { return }
-        record.verdict = verdict
-        record.verdictAt = now()
+        guard let record = current else { return }
         do {
-            try await store.update(record)
+            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: .human))
+            if var records = queue.value, records.indices.contains(position) {
+                records[position] = decided
+                queue = .loaded(records)
+            }
             counting(&tally)
             position += 1
         } catch {

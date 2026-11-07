@@ -33,7 +33,7 @@ struct BatchOverviewView: View {
                 case .correct: confirmed += 1
                 case .corrected: corrected += 1
                 case .rejected: rejected += 1
-                case .pending: break
+                case .pending, .voided: break
                 }
             }
         }

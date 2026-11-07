@@ -1,0 +1,522 @@
+{
+ "batch": "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93",
+ "note": "crop presence and saved photo pixel size per record of the Testing batch; 15 are standard captures",
+ "records": [
+  {
+   "id": "62F63796-C35E-44AA-ABF3-6B65277BB7A8",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "6270FFE9-1A0E-4F7E-A8F8-844DFF2ADD1B",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "B86B77AB-4CB5-4978-94E4-B50BA9376971",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "6A63F86F-978C-4CC7-88B6-82962BB39395",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "3D00F6AA-2AD0-4ADC-A4AB-1CCB36CF237D",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "0A01C01B-CA8C-406B-8585-5931F680CEC0",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "10D38028-FEA4-45C7-AC7D-9DFECD9EF07E",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "77C412E5-1858-4BBA-8D65-B70D16CBDCE7",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "F410E728-4A44-48B1-853A-A27913EEEF48",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "F9039375-52EA-4580-ADD8-EEE19E9C1BB6",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "3C1A7D32-608E-4389-BAC3-7E9B46A6258D",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "FBDD1A26-1995-4AA2-98B9-008DC4922DAB",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "7B0254A9-506E-4643-B426-81D5E362C8F1",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "58112E12-84E1-41F0-9787-6734ADE7F3CA",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "4D456E79-420D-4E13-B1B2-6D43D46B4343",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "FEF72B21-DC5E-4AB2-AF91-1722B4626B67",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "CE999666-DB90-4124-AB87-912E39B2DEAB",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "F3BAF461-B995-4430-B919-2770D1C270A8",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "F1798B3B-6C0F-4BF5-B3CF-59580B3360FC",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "5B1EACEF-BE02-4C8E-B805-B73AB576E09B",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "982B0661-8D4B-4092-B176-ED3476C2B18B",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "1D7D0FC2-329D-4BC7-937C-0352DD4E8E40",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "DFDE0FB3-ACEA-4614-B63C-27321CD3B1E1",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "4656F8F1-D4E6-42C6-82A3-59D6503B6AE3",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "C127474F-5806-4B22-A89B-F4D66BA5B075",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "AC504A1E-E651-4DE7-88F7-F715172E6D32",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "2B2B092E-1D79-47AC-9AC0-894D7B7644EF",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "1E38607B-3CF3-4894-A322-93632682B88B",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "38C1D8C4-AE7E-429A-AAC3-C38F6CF01ABC",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "DAFF140E-4812-40DB-9D31-B7BB6DA90E5F",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "9C383751-BA84-4BDB-BE1A-2AF97EA5B61A",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "27314A52-D833-4EAD-93EB-1616110973BB",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "A670FF60-65CB-4D26-BC98-B86F0D799ECE",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "ADC903B3-7F08-4D51-BD20-00D7F8C8E1C3",
+   "hasCrop": false,
+   "photoWidth": 1536,
+   "photoHeight": 2048
+  },
+  {
+   "id": "09A0B775-435E-4AD8-BCF2-3608DE44823C",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "E51D0ADE-D261-4129-9870-7750D4102345",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "2FB8852D-C07F-446F-9C32-487FF577DA1A",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "2D8A1F50-826D-4510-8F6C-678EF2748099",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "9265E2C6-B6EC-47DC-A310-FAAD081C6EE0",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "F598D322-5F26-4B44-A16A-51FB76576508",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "9148C52C-D239-4C7C-B21D-AC3E8C928886",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "337F1D97-CAEE-4B77-8173-2325B283C8E2",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "209299D1-8E82-484F-99BE-4E066FD83C47",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "F5519683-28DE-4A6F-B027-790884082859",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "F1419B75-986F-4516-86A4-DDFF931586C4",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "BB62732D-3CB6-4150-8A1F-AC0422D20412",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "ED751924-834A-438D-9925-C23793C6ADE9",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "C0C689F2-B734-4869-A81B-C03FE1257133",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "8636149C-C02E-40A0-819E-261367028CB3",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "A4A62E20-15ED-4CD2-B3F1-41C2E09A8DC2",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "CF3F54DF-D07A-488B-955A-81A3AA45F854",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "1784E785-15BC-41E7-9040-D993FA743929",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "F09267A3-8249-4343-BFD5-B20623EC70A5",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "934FD41B-88DA-46AE-8866-1DEEE72E26C7",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "1E243A98-CADD-48E9-BDBA-432AD020D15A",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "416A8A3E-0787-46AE-9056-35AE257F85DC",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "0F4F5C2E-3AD7-49DF-BC9C-4EA915860A91",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "1CFB413B-4BFA-4C1C-9F26-C08F9858FBB4",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "7F4F89C6-F16F-4F8F-A14C-0CC97757DF2A",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "7DC12C86-8547-4071-8A0E-3CBCDCD82C49",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "77F8AD82-8777-4E27-9F0B-4FF3440F3721",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "7B46C2C1-F702-4618-B9D3-B4FEB671275F",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "F3DB184F-CD65-4664-ABC9-A1A58DB52A14",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "07A8B0D9-C5FC-4A8D-82F2-7455C78C46B2",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "CE035519-8757-4D0C-965A-6CFB8609ED58",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "1743A33A-DA9D-4CEB-9495-AC7F6A6427A3",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "3B8D5D47-30CE-4CCE-A7DB-62DC040513A9",
+   "hasCrop": false,
+   "photoWidth": 2892,
+   "photoHeight": 3074
+  },
+  {
+   "id": "0EDBA322-499D-4B42-8CDC-BE2D263D3ECE",
+   "hasCrop": true,
+   "photoWidth": 2892,
+   "photoHeight": 2030
+  },
+  {
+   "id": "C2F7AD42-65FB-49EB-9A6A-954962F23599",
+   "hasCrop": true,
+   "photoWidth": 2892,
+   "photoHeight": 2030
+  },
+  {
+   "id": "250B0F8E-52DF-478F-A627-ADEFEE4C5625",
+   "hasCrop": true,
+   "photoWidth": 2892,
+   "photoHeight": 2030
+  },
+  {
+   "id": "60EADB8A-FD30-4DF9-AE84-E4A21FCF3B43",
+   "hasCrop": true,
+   "photoWidth": 2892,
+   "photoHeight": 2030
+  },
+  {
+   "id": "B1F54E9F-6176-42B2-A246-807420E27809",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "40379C4E-5711-45E5-9D1E-0A6614A811E8",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "80CDD343-16BD-42BD-8547-CDC23F99BC46",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "5D4F851E-81DB-4236-983B-F97CDB689CBB",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "C5A7E853-1A63-4591-92D6-66AADFEEAA80",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "BA585DFA-0474-46FA-9BF4-C8F9FFB73404",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "8D596A94-6E10-49EC-8AC4-93A4DB32C220",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "2786DA5D-14E3-41CC-A467-A5090225898C",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "EAF9BC6F-3461-4E4A-BA2A-3B4D5B7EC206",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "615E1FE1-AE23-4954-93B5-D8658E19BF0C",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "838CCF0C-BE7E-41F9-9233-354E834FA5B5",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "AC868519-5025-4B1A-928D-BB2E414C308E",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "1DF8A9D2-2776-4F84-890B-50BD9DD8AE63",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "16D360C4-56C7-4FCD-908A-34C9E7D4608B",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  },
+  {
+   "id": "2F22CD2C-5515-4113-99BB-B7CC7967DFEB",
+   "hasCrop": true,
+   "photoWidth": 1454,
+   "photoHeight": 2030
+  }
+ ]
+}

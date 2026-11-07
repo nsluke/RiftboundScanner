@@ -40,7 +40,7 @@ nonisolated enum CollectionExporter {
         let lines: [Line]
         /// Scans with no verdict yet; left out of the list.
         let pending: Int
-        /// Scans the user rejected; left out of the list.
+        /// Scans the user rejected, or whose batch was voided; left out of the list.
         let rejected: Int
         /// Confirmed scans whose card the directory no longer knows; left out.
         let unresolved: Int
@@ -58,7 +58,7 @@ nonisolated enum CollectionExporter {
             switch record.verdict {
             case .pending:
                 pending += 1
-            case .rejected:
+            case .rejected, .voided:
                 rejected += 1
             case .correct, .corrected:
                 guard let id = record.confirmedCardID, directory[id] != nil else {

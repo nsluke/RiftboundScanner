@@ -53,6 +53,12 @@ nonisolated enum Fixtures {
     )
 
     static let engine = EngineFingerprint(packageVersion: "test", calibrationHash: FeaturePrint(elements: [1, 0, 0]).digest, platform: "iOS", osVersion: "26.1.0")
+    static let engineStamp = EngineStamp(engine)
+
+    /// What the live identifier would record for `result(cards:)`.
+    static func analysis(for result: RecognitionResult) -> ScanAnalysis {
+        ScanAnalysis(result, at: epoch)
+    }
 
     static func result(cards: [Card], codeReading: CodeReading? = nil) -> RecognitionResult {
         let matches = cards.enumerated().map { offset, card in
@@ -69,26 +75,98 @@ nonisolated enum Fixtures {
         return RecognitionResult(matches: matches, location: .detected(quad, confidence: 0.95), codeReading: codeReading, rectifiedCard: image(), descriptor: descriptor, engine: engine)
     }
 
-    static func batch(id: UUID = UUID()) -> ScanBatch {
+    static func batch(id: UUID = UUID(), purpose: BatchPurpose = .calibration, defaultFinish: Finish? = nil) -> ScanBatch {
         ScanBatch(
             id: ScanBatch.ID(rawValue: id),
             startedAt: epoch,
             label: "Test batch",
             device: ScanBatch.Device(model: "iPhone17,1", systemVersion: "Version 26.1", appVersion: "0.1.0"),
-            index: IndexSummary(builtAt: epoch, entryCount: 2, formatVersion: 1)
+            index: IndexSummary(builtAt: epoch, entryCount: 2, formatVersion: 1),
+            purpose: purpose,
+            defaultFinish: defaultFinish,
+            trainingQuality: .standard
+        )
+    }
+
+    /// The batch factory models receive from the composition root.
+    static let makeBatch: @Sendable (ScanBatch.Setup) -> ScanBatch = { setup in
+        ScanBatch(
+            id: ScanBatch.ID(rawValue: UUID()),
+            startedAt: epoch,
+            label: setup.label,
+            device: ScanBatch.Device(model: "iPhone17,1", systemVersion: "26.1", appVersion: "0.1.0"),
+            index: IndexSummary(builtAt: epoch, entryCount: 2, formatVersion: 1),
+            purpose: setup.purpose,
+            product: setup.product,
+            defaultFinish: setup.defaultFinish,
+            trainingQuality: .standard
+        )
+    }
+
+    /// A decision as the store would append it: seq 1, decided at the epoch.
+    static func decision(
+        _ verdict: Verdict,
+        cardID: Card.ID?,
+        source: DecisionSource = .human,
+        seq: Int = 1,
+        at decidedAt: Date = epoch,
+        finish: Override<Finish> = .inherit,
+        ledgerPrintingCode: Override<PrintingKey> = .inherit
+    ) -> Decision {
+        Decision(id: Decision.ID(rawValue: UUID()), seq: seq, verdict: verdict, cardID: cardID, source: source, decidedAt: decidedAt, finish: finish, ledgerPrintingCode: ledgerPrintingCode)
+    }
+
+    /// A record whose `verdict`, when not pending, is one `human` decision at
+    /// the epoch snapshotting the card the verdict names.
+    static func record(
+        id: UUID = UUID(),
+        batch: ScanBatch.ID,
+        verdict: Verdict = .pending,
+        source: DecisionSource = .human,
+        candidates: [Card] = [vi, jinx],
+        capturedAt: Date = epoch,
+        codeRead: Bool = true,
+        score: Double = 1,
+        descriptorScore: Double = 0.9,
+        codeAgreement: CodeAgreement? = .exact,
+        analysis: ScanAnalysis? = nil,
+        engine: EngineStamp? = nil,
+        captureQuality: CaptureQuality = .legacy
+    ) -> ScanRecord {
+        let cardID: Card.ID? = switch verdict {
+        case .correct: candidates.first?.id
+        case .corrected(let corrected): corrected
+        case .pending, .rejected, .voided: nil
+        }
+        return record(
+            id: id,
+            batch: batch,
+            decisions: verdict == .pending ? [] : [decision(verdict, cardID: cardID, source: source)],
+            candidates: candidates,
+            capturedAt: capturedAt,
+            codeRead: codeRead,
+            score: score,
+            descriptorScore: descriptorScore,
+            codeAgreement: codeAgreement,
+            analysis: analysis,
+            engine: engine,
+            captureQuality: captureQuality
         )
     }
 
     static func record(
         id: UUID = UUID(),
         batch: ScanBatch.ID,
-        verdict: Verdict = .pending,
+        decisions: [Decision],
         candidates: [Card] = [vi, jinx],
         capturedAt: Date = epoch,
         codeRead: Bool = true,
         score: Double = 1,
         descriptorScore: Double = 0.9,
-        codeAgreement: CodeAgreement? = .exact
+        codeAgreement: CodeAgreement? = .exact,
+        analysis: ScanAnalysis? = nil,
+        engine: EngineStamp? = nil,
+        captureQuality: CaptureQuality = .legacy
     ) -> ScanRecord {
         ScanRecord(
             id: ScanRecord.ID(rawValue: id),
@@ -102,9 +180,25 @@ nonisolated enum Fixtures {
             candidates: candidates.enumerated().map { offset, card in
                 Candidate(card: card, score: offset == 0 ? score : score - 0.3, descriptorScore: descriptorScore, orientation: .upright, codeAgreement: offset == 0 ? codeAgreement : nil)
             },
-            verdict: verdict,
-            verdictAt: verdict == .pending ? nil : epoch
+            decisions: decisions,
+            analysis: analysis,
+            engine: engine,
+            captureQuality: captureQuality
         )
+    }
+
+    /// A class in the test bundle, for `Bundle(for:)` lookups of fixture files.
+    final class BundleMarker {}
+
+    static func fixtureData(_ name: String, extension fileExtension: String) throws -> Data {
+        guard let url = Bundle(for: BundleMarker.self).url(forResource: name, withExtension: fileExtension) else {
+            throw FixtureError.missing("\(name).\(fileExtension)")
+        }
+        return try Data(contentsOf: url)
+    }
+
+    enum FixtureError: Error {
+        case missing(String)
     }
 
     static let radRune = card(id: "rad-r01", code: "RAD-R01", name: "Calm Rune")

@@ -151,7 +151,7 @@ struct ScanThumbnail: View {
         switch record.verdict {
         case .pending: record.confidence.isConfident ? Theme.blue : Theme.amber
         case .correct, .corrected: Theme.blue
-        case .rejected: Theme.muted
+        case .rejected, .voided: Theme.muted
         }
     }
 
@@ -179,7 +179,7 @@ struct ScanThumbnail: View {
                 .frame(width: 16, height: 16)
                 .background(Theme.muted, in: Circle())
                 .offset(x: 4, y: -4)
-        case .pending:
+        case .pending, .voided:
             EmptyView()
         }
     }
@@ -195,6 +195,7 @@ struct ScanThumbnail: View {
         case .correct: return String(localized: "\(name), confirmed")
         case .corrected: return String(localized: "\(name), corrected")
         case .rejected(let reason): return String(localized: "\(name), rejected: \(reason.label)")
+        case .voided: return String(localized: "\(name), voided")
         }
     }
 }

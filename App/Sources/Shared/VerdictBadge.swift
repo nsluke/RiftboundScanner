@@ -19,6 +19,7 @@ struct VerdictBadge: View {
         case .correct: String(localized: "Correct")
         case .corrected(let id): String(localized: "Corrected: \(directory[id]?.code.canonical ?? id.rawValue)")
         case .rejected(let reason): reason.label
+        case .voided: String(localized: "Voided")
         }
     }
 
@@ -28,6 +29,7 @@ struct VerdictBadge: View {
         case .correct: .green
         case .corrected: .orange
         case .rejected: .red
+        case .voided: .secondary
         }
     }
 }

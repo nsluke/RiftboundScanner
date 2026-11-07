@@ -36,7 +36,7 @@ struct RootView: View {
                 NavigationStack {
                     ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
                         .toolbarVisibility(.hidden, for: .navigationBar)
-                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, now: dependencies.now)
+                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory)
                 }
             }
             Tab("Collection", systemImage: "square.grid.2x2") {
@@ -46,7 +46,7 @@ struct RootView: View {
             }
             Tab("History", systemImage: "list.bullet.rectangle") {
                 NavigationStack {
-                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index, now: dependencies.now)
+                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index)
                 }
             }
             Tab("Settings", systemImage: "gearshape") {

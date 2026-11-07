@@ -100,13 +100,20 @@ struct BatchBadges: View {
     let summary: BatchSyncSummary?
 
     var body: some View {
-        HStack(spacing: 6) {
-            badge(purposeLabel, color: batch.purpose == .collection ? .blue : .secondary)
-            if let summary {
-                badge(syncLabel(summary), color: syncColor(summary))
-            }
+        // Side by side while they fit; stacked at accessibility text sizes.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { badges }
+            VStack(alignment: .leading, spacing: 4) { badges }
         }
         .accessibilityLabel(accessibilityText)
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        badge(purposeLabel, color: batch.purpose == .collection ? .blue : .secondary)
+        if let summary {
+            badge(syncLabel(summary), color: syncColor(summary))
+        }
     }
 
     private var purposeLabel: String {

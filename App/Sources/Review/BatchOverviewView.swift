@@ -355,17 +355,17 @@ struct SyncSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .foregroundStyle(tint)
-                Text(headline)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                if showsRetry {
-                    Button("Retry now", action: retry)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.blue)
-                        .accessibilityHint("Looks for the server again and sends what is waiting")
+            // One row while it fits; the button drops below the headline at
+            // accessibility text sizes instead of leaving the screen.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    headlineLabel
+                    Spacer()
+                    retryButton
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    headlineLabel
+                    retryButton
                 }
             }
             .accessibilityElement(children: .combine)
@@ -400,6 +400,27 @@ struct SyncSection: View {
         }
         .padding(12)
         .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var headlineLabel: some View {
+        Label {
+            Text(headline)
+                .font(.subheadline.weight(.medium))
+        } icon: {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+        }
+        .labelStyle(.titleAndIcon)
+    }
+
+    @ViewBuilder
+    private var retryButton: some View {
+        if showsRetry {
+            Button("Retry now", action: retry)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.blue)
+                .accessibilityHint("Looks for the server again and sends what is waiting")
+        }
     }
 
     private var headline: String {

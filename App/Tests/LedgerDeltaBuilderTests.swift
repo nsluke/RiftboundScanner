@@ -38,7 +38,8 @@ struct LedgerDeltaBuilderTests {
 
     @Test func aFoilOnlyPrintingCoercesTheFinish() throws {
         let decided = items([Fixtures.decision(.corrected(Fixtures.viAlt.id), cardID: Fixtures.viAlt.id, finish: .set(.normal))])
-        let delta = try #require(delta(try #require(decided.first)))
+        let first = try #require(decided.first)
+        let delta = try #require(delta(first))
         #expect(decided.count == 1)
         #expect(delta.cardKey == "OGN-001a")
         #expect(delta.finish == .foil, "OGN-001a exists only in foil; the override cannot make it normal")
@@ -51,8 +52,9 @@ struct LedgerDeltaBuilderTests {
 
     @Test func aNormalOnlyPrintingIsForcedNormal() throws {
         let decided = items([Fixtures.decision(.corrected(Fixtures.radRune.id), cardID: Fixtures.radRune.id, finish: .set(.foil))])
-        #expect(delta(try #require(decided.first))?.finish == .normal)
-        #expect(delta(try #require(decided.first))?.cardKey == "RAD-R01")
+        let first = try #require(decided.first)
+        #expect(delta(first)?.finish == .normal, "RAD-R01 exists only in normal; the override cannot make it foil")
+        #expect(delta(first)?.cardKey == "RAD-R01")
     }
 
     @Test func aBothFinishPrintingUsesTheBatchDefaultUnlessOverridden() throws {
@@ -72,7 +74,8 @@ struct LedgerDeltaBuilderTests {
     @Test func anUnknownPrintingSendsTheOverrideAndLetsTheServerDerive() throws {
         let unknown = Card.ID(rawValue: "gone-999")
         let decided = items([Fixtures.decision(.corrected(unknown), cardID: unknown)])
-        let delta = try #require(delta(try #require(decided.first)))
+        let first = try #require(decided.first)
+        let delta = try #require(delta(first))
         #expect(delta.cardKey == "gone-999", "an id the key parser cannot read goes through as written; the server answers unknown_card")
         #expect(delta.finish == nil)
         #expect(delta.defaultFinish == .foil)
@@ -104,7 +107,7 @@ struct LedgerDeltaBuilderTests {
     }
 
     @Test func aCorrectionBeforeTheFirstPlusOneWasAppliedEmitsOnlyThePlusOne() throws {
-        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, seq: 1, source: .autoAccepted)
+        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1)
         let corrected = Fixtures.decision(.corrected(Fixtures.jinx.id), cardID: Fixtures.jinx.id, seq: 2)
         for state in [ScanSyncState(), { var s = ScanSyncState(); s[.plusOne(ScanRecord.ID(rawValue: scanID), seq: 1)] = .queued; return s }()] {
             let decided = items([first, corrected], state: state)
@@ -114,7 +117,7 @@ struct LedgerDeltaBuilderTests {
     }
 
     @Test func aRejectionAfterLedgeringEmitsOnlyTheUndo() throws {
-        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, seq: 1, source: .autoAccepted)
+        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1)
         let rejected = Fixtures.decision(.rejected(.notACard), cardID: nil, seq: 2)
         let decided = items([first, rejected], state: applied(1))
         #expect(decided.count == 1)
@@ -158,9 +161,21 @@ struct LedgerDeltaBuilderTests {
         #expect(items([first, corrected], state: state).map(\.clientRef) == ["scan:\(scanID.uuidString):2"], "nothing landed, so there is nothing to undo")
     }
 
+    @Test func aSentButUnansweredPlusOneIsResentAndUndoneWhenTheEffectChanges() throws {
+        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1)
+        let rejected = Fixtures.decision(.rejected(.notACard), cardID: nil, seq: 2)
+        var state = ScanSyncState()
+        state[.plusOne(ScanRecord.ID(rawValue: scanID), seq: 1)] = .sent
+        let decided = items([first, rejected], state: state)
+        #expect(decided.map(\.clientRef) == ["scan:\(scanID.uuidString):1", "scan:\(scanID.uuidString):2:undo"], "the server may hold the +1: replay it (duplicate or applied), then reverse it by reference")
+        #expect(undo(decided[1])?.undoOf == "scan:\(scanID.uuidString):1")
+
+        #expect(items([first], state: state).map(\.clientRef) == ["scan:\(scanID.uuidString):1"], "an unanswered +1 that still stands goes again")
+    }
+
     @Test func theSameInputsAlwaysGiveTheSameItems() {
         let log = [
-            Fixtures.decision(.correct, cardID: Fixtures.vi.id, seq: 1, source: .autoAccepted),
+            Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1),
             Fixtures.decision(.corrected(Fixtures.jinx.id), cardID: Fixtures.jinx.id, seq: 2, finish: .set(.normal)),
             Fixtures.decision(.correct, cardID: Fixtures.jinx.id, source: .spotCheck, seq: 3),
         ]

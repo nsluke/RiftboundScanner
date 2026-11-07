@@ -166,6 +166,9 @@ nonisolated struct ServerScript: Sendable {
     var defaultItemStatus: LedgerItemStatus = .applied
     /// When set, every sync fails with this before any item is answered.
     var syncFailure: ServerError?
+    /// References whose presence makes the server refuse the whole request
+    /// with 422, the way its `http` substring rule does.
+    var poisonRefs: Set<String> = []
     var batch: Result<UpsertOutcome, ServerError> = .success(.created)
     var scan: Result<ScanUploadReceipt, ServerError> = .success(ScanUploadReceipt(outcome: .created))
     var asset: Result<UpsertOutcome, ServerError> = .success(.created)
@@ -204,6 +207,8 @@ actor StubCollectionClient: CollectionServing {
     private(set) var script: ServerScript
     private(set) var recording = ServerRecording()
     private var nextLedgerID = 1
+    private var holdsScans = false
+    private var heldScanWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(script: ServerScript = ServerScript()) {
         self.script = script
@@ -211,6 +216,24 @@ actor StubCollectionClient: CollectionServing {
 
     func update(_ change: @Sendable (inout ServerScript) -> Void) {
         change(&script)
+    }
+
+    /// Scan uploads in flight, held until `releaseScans()`.
+    var heldScans: Int { heldScanWaiters.count }
+
+    /// While on, `putScan` suspends after recording the upload until released,
+    /// so a test can act on the store mid-drain.
+    func holdScans(_ holds: Bool) {
+        holdsScans = holds
+        if !holds { releaseScans() }
+    }
+
+    func releaseScans() {
+        let waiters = heldScanWaiters
+        heldScanWaiters = []
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     func health() async throws(ServerError) -> HealthReport {
@@ -225,6 +248,9 @@ actor StubCollectionClient: CollectionServing {
     func syncLedger(_ request: LedgerSyncRequest) async throws(ServerError) -> LedgerSyncResponse {
         recording.syncRequests.append(request)
         if let failure = script.syncFailure { throw failure }
+        if request.items.contains(where: { script.poisonRefs.contains($0.clientRef) }) {
+            throw .unprocessable(detail: "body contains http")
+        }
         let results = request.items.map { item in
             let status = script.itemStatuses[item.clientRef] ?? script.defaultItemStatus
             var ledgerID: Int?
@@ -245,6 +271,9 @@ actor StubCollectionClient: CollectionServing {
 
     func putScan(_ scan: ScanUpload) async throws(ServerError) -> ScanUploadReceipt {
         recording.scans.append(scan)
+        if holdsScans {
+            await withCheckedContinuation { heldScanWaiters.append($0) }
+        }
         return try script.scan.get()
     }
 
@@ -356,8 +385,10 @@ actor ScriptedProbe: EndpointProbing {
     }
 }
 
+/// A path the test moves by hand; every `set` reaches every open `pathUpdates()` stream.
 actor ScriptedPaths: NetworkPathObserving {
     var path: NetworkPathSummary
+    private var subscribers: [UUID: AsyncStream<NetworkPathSummary>.Continuation] = [:]
 
     init(_ path: NetworkPathSummary) {
         self.path = path
@@ -365,7 +396,26 @@ actor ScriptedPaths: NetworkPathObserving {
 
     func currentPath() -> NetworkPathSummary { path }
 
+    var subscriberCount: Int { subscribers.count }
+
+    func pathUpdates() -> AsyncStream<NetworkPathSummary> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<NetworkPathSummary>.makeStream(bufferingPolicy: .unbounded)
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeSubscriber(id) }
+        }
+        return stream
+    }
+
     func set(_ path: NetworkPathSummary) {
         self.path = path
+        for continuation in subscribers.values {
+            continuation.yield(path)
+        }
+    }
+
+    private func removeSubscriber(_ id: UUID) {
+        subscribers[id] = nil
     }
 }

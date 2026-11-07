@@ -192,6 +192,12 @@ actor SyncingScanStore: ScanStoring {
         for kind in UploadTiers.eligibleAssets(for: record) where scan[kind] == .notEligible {
             scan[kind] = .queued
         }
+        if record.verdict == .voided {
+            // Whatever was still owed for this scan is no longer worth the bytes.
+            for kind in AssetKind.allCases where scan[kind].wantsUpload {
+                scan[kind] = .notEligible
+            }
+        }
         return scan
     }
 

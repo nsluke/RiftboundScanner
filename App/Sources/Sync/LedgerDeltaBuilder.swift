@@ -12,8 +12,11 @@ import RiftboundRecognizer
 /// - an unchanged effect emits nothing (an audit that agrees costs no item);
 /// - a changed effect emits `+1 scan:<id>:<seq>` for the new effect and, when
 ///   the previous effect's +1 was **applied**, an undo `scan:<id>:<seq>:undo`
-///   naming that applied reference. A previous +1 the server never applied
-///   is simply dropped from the outbox: nothing to reverse, nothing to send;
+///   naming that applied reference. A previous +1 the server never saw is
+///   simply dropped from the outbox: nothing to reverse, nothing to send. A
+///   previous +1 that was **sent** without an answer may have landed, so it
+///   is replayed (the server answers `duplicate` or `applied`) and then
+///   reversed by reference, which nets to zero either way;
 /// - items the server has already acknowledged are never emitted again.
 nonisolated enum LedgerDeltaBuilder {
     /// What a decision asks the ledger to hold for this scan.
@@ -40,7 +43,7 @@ nonisolated enum LedgerDeltaBuilder {
             if let previous = standing {
                 let previousRef = ClientRef.plusOne(record.id, seq: previous.seq)
                 switch previousState[previousRef] {
-                case .applied:
+                case .applied, .sent:
                     output.append(.undo(LedgerSyncItem.Undo(
                         clientRef: ClientRef.undo(record.id, seq: decision.seq).description,
                         undoOf: previousRef.description,
@@ -60,7 +63,9 @@ nonisolated enum LedgerDeltaBuilder {
                     cardKey: effect.cardKey,
                     quantityDelta: 1,
                     finish: effect.finish,
-                    defaultFinish: batch.defaultFinish,
+                    // The same default `effect(of:)` resolved prompt finishes with,
+                    // so phone and server derive alike for a batch without one.
+                    defaultFinish: batch.defaultFinish ?? .normal,
                     occurredAt: decision.decidedAt,
                     scanID: record.id.rawValue
                 )))
@@ -70,7 +75,7 @@ nonisolated enum LedgerDeltaBuilder {
 
         return output.filter { item in
             switch previousState.items[item.clientRef] {
-            case nil, .queued: true
+            case nil, .queued, .sent: true
             case .applied, .terminal: false
             }
         }

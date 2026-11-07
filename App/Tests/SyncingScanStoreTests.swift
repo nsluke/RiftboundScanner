@@ -140,6 +140,9 @@ struct SyncingScanStoreTests {
         let state = try syncJSON(for: batch.id, store: store)
         #expect(state.isVoided)
         #expect(state[judged.id].record == .queued, "the server must learn the scan was voided")
+        #expect(state[pending.id].record == .queued)
+        #expect(state[judged.id].photoSmall == .notEligible, "a voided scan's assets are not worth the bytes")
+        #expect(state[judged.id].canvas == .notEligible)
         await collector.value
         #expect(events.contains(.voided(batch.id)))
 
@@ -178,6 +181,7 @@ struct SyncingScanStoreTests {
         try await store.updateSyncState(for: batch.id) { state in
             state[record.id][ref] = .applied(ledgerID: 7, cardID: "OGN-002", finish: .foil)
             state[record.id][.undo(record.id, seq: 2)] = .terminal(.unknownCard(catalogVersion: "cat-1"))
+            state[record.id][.plusOne(record.id, seq: 3)] = .sent
             state[record.id].record = .uploaded(Fixtures.epoch)
             state[record.id].uploadedSeq = 1
             state[record.id].photoSmall = .failed("too large")
@@ -189,6 +193,8 @@ struct SyncingScanStoreTests {
         let state = await relaunched.syncState(for: batch.id)
         #expect(state[record.id][ref] == .applied(ledgerID: 7, cardID: "OGN-002", finish: .foil))
         #expect(state[record.id][.undo(record.id, seq: 2)] == .terminal(.unknownCard(catalogVersion: "cat-1")))
+        #expect(state[record.id][.plusOne(record.id, seq: 3)] == .sent)
+        #expect(state[record.id].allItemsAcknowledged == false, "a sent item has no answer yet")
         #expect(state[record.id].record == .uploaded(Fixtures.epoch))
         #expect(state[record.id].uploadedSeq == 1)
         #expect(state[record.id].photoSmall == .failed("too large"))

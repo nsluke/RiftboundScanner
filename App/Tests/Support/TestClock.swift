@@ -17,6 +17,7 @@ nonisolated final class TestClock: Clock, Sendable {
     }
 
     private struct Sleeper {
+        let id: UUID
         let deadline: Instant
         let continuation: CheckedContinuation<Void, any Error>
     }
@@ -31,14 +32,37 @@ nonisolated final class TestClock: Clock, Sendable {
     init() {}
 
     var now: Instant { state.withLock { $0.now } }
+    /// How many sleeps are waiting for `advance(by:)`: lets a test wait until a
+    /// task has reached its sleep before moving time, so the deadline it
+    /// registers is the one the test expects.
+    var sleeperCount: Int { state.withLock { $0.sleepers.count } }
     var minimumResolution: Duration { .zero }
 
+    /// Cancelling the sleeping task removes its sleeper and throws
+    /// `CancellationError`, as the system clocks do, so a cancelled flush
+    /// never lingers in `sleeperCount`.
     func sleep(until deadline: Instant, tolerance: Duration?) async throws {
         try Task.checkCancellation()
         let due = state.withLock { $0.now >= deadline }
         if due { return }
-        try await withCheckedThrowingContinuation { continuation in
-            state.withLock { $0.sleepers.append(Sleeper(deadline: deadline, continuation: continuation)) }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let cancelled = state.withLock { state -> Bool in
+                    guard !Task.isCancelled else { return true }
+                    state.sleepers.append(Sleeper(id: id, deadline: deadline, continuation: continuation))
+                    return false
+                }
+                if cancelled {
+                    continuation.resume(throwing: CancellationError())
+                }
+            }
+        } onCancel: {
+            let sleeper = state.withLock { state -> Sleeper? in
+                guard let position = state.sleepers.firstIndex(where: { $0.id == id }) else { return nil }
+                return state.sleepers.remove(at: position)
+            }
+            sleeper?.continuation.resume(throwing: CancellationError())
         }
     }
 

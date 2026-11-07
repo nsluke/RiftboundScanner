@@ -144,6 +144,12 @@ nonisolated enum TerminalStatus: Hashable, Sendable, Codable {
 nonisolated enum LedgerItemState: Hashable, Sendable, Codable {
     /// In the outbox, or about to be re-derived into it.
     case queued
+    /// Handed to the server without an answer (the request timed out after
+    /// the commit, say). The server may hold the row, so a later change of
+    /// effect reverses it by reference after replaying it; the replay comes
+    /// back `duplicate` or `applied`, never a second row (A4 amendment to
+    /// ADR-002 §4.2).
+    case sent
     /// The server inserted a row; an undo of this item names it by reference.
     case applied(ledgerID: Int, cardID: String, finish: Finish?)
     /// Acknowledged without a row.
@@ -152,7 +158,7 @@ nonisolated enum LedgerItemState: Hashable, Sendable, Codable {
     /// Whether the server has given its final word.
     var isAcknowledged: Bool {
         switch self {
-        case .queued: false
+        case .queued, .sent: false
         case .applied, .terminal: true
         }
     }
@@ -170,6 +176,7 @@ nonisolated enum LedgerItemState: Hashable, Sendable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(String.self, forKey: .kind) {
         case "queued": self = .queued
+        case "sent": self = .sent
         case "applied":
             self = .applied(
                 ledgerID: try container.decode(Int.self, forKey: .ledgerID),
@@ -186,6 +193,8 @@ nonisolated enum LedgerItemState: Hashable, Sendable, Codable {
         switch self {
         case .queued:
             try container.encode("queued", forKey: .kind)
+        case .sent:
+            try container.encode("sent", forKey: .kind)
         case .applied(let ledgerID, let cardID, let finish):
             try container.encode("applied", forKey: .kind)
             try container.encode(ledgerID, forKey: .ledgerID)
@@ -404,13 +413,15 @@ nonisolated struct BatchSyncState: Hashable, Sendable, Codable {
 /// record for every decided scan, `photo_small` for every decided scan, the
 /// rectified canvas when a person decided, the full photo when the
 /// recogniser was wrong or the card was rejected. A5 adds audit samples.
+/// A voided scan sends its record, so the server learns the void, and no
+/// asset: the user just threw the batch away.
 nonisolated enum UploadTiers {
     static func wantsRecord(_ record: ScanRecord) -> Bool {
         !record.decisions.isEmpty
     }
 
     static func eligibleAssets(for record: ScanRecord) -> Set<AssetKind> {
-        guard let last = record.lastDecision else { return [] }
+        guard let last = record.lastDecision, last.verdict != .voided else { return [] }
         var kinds: Set<AssetKind> = [.photoSmall]
         if last.source.isHuman {
             kinds.insert(.canvas)

@@ -320,6 +320,97 @@ struct SyncEngineTests {
         #expect(try await world.store.batches().isEmpty)
     }
 
+    @Test func aVoidWrittenDuringADrainIsNotClobbered() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct)
+        await world.client.holdScans(true)
+        let flushing = Task { await world.engine.flush() }
+        #expect(await eventually { await world.client.heldScans == 1 }, "the record upload is in flight")
+
+        try await world.store.voidBatch(world.batch.id)
+        try await world.store.closeBatch(world.batch.id)
+        await world.client.holdScans(false)
+        await flushing.value
+
+        let state = await world.store.syncState(for: world.batch.id)
+        #expect(state.isVoided, "the void written mid-drain survives the drain's own write")
+        #expect(state.isClosed)
+        #expect(state[record.id].record.isUploaded)
+        #expect(state[record.id].uploadedSeq == 1, "the server saw one decision; the voided one is still owed")
+        #expect(try await world.store.batches().count == 1, "the undo has not been derived yet, so the folder stays")
+        #expect(await world.client.recording.assets.isEmpty, "a voided scan's assets are not worth sending")
+
+        await world.engine.flush()
+        #expect(await world.sentRefs().last == [ClientRef.undo(record.id, seq: 2).description])
+        #expect(await world.client.recording.scans.count == 2, "the voided record goes up")
+        #expect(try await world.store.batches().isEmpty, "every item acknowledged: the folder goes")
+    }
+
+    @Test func aPlusOneSentWithoutAnAnswerIsReplayedAndUndoneAfterARejection() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct, source: .autoAccepted)
+        await world.client.update { $0.syncFailure = .timedOut }
+        await world.engine.flush()
+        let plus = ClientRef.plusOne(record.id, seq: 1)
+        #expect(await world.state(of: record)[plus] == .sent, "handed to the server, no answer")
+        #expect(world.engine.summary(for: world.batch.id)?.queuedItems == 1)
+
+        // The server did commit it; only the answer was lost.
+        await world.client.update {
+            $0.syncFailure = nil
+            $0.itemStatuses[plus.description] = .duplicate
+        }
+        try await world.decide(record, .rejected(.notACard))
+        await world.engine.flush()
+        let undo = ClientRef.undo(record.id, seq: 2)
+        #expect(await world.sentRefs().last == [plus.description, undo.description], "replay first, then reverse by reference")
+        #expect(await world.state(of: record)[plus] == .terminal(.duplicate))
+        #expect(await world.state(of: record)[undo]?.isApplied == true, "the stale row is gone from the holding")
+        #expect(world.engine.summary(for: world.batch.id)?.attention.isEmpty == true)
+        #expect(world.engine.status == .idle)
+    }
+
+    @Test func aRefusedPageIsBisectedToThePoisonItemAndTheDrainMovesOn() async throws {
+        let world = try await World()
+        var records: [ScanRecord] = []
+        for _ in 0..<3 {
+            let record = try await world.scan()
+            try await world.decide(record, .correct, source: .autoAccepted)
+            records.append(record)
+        }
+        let poison = ClientRef.plusOne(records[1].id, seq: 1)
+        await world.client.update { $0.poisonRefs = [poison.description] }
+        await world.engine.flush()
+
+        #expect(await world.state(of: records[1])[poison] == .terminal(.invalid))
+        #expect(await world.state(of: records[0])[.plusOne(records[0].id, seq: 1)]?.isApplied == true)
+        #expect(await world.state(of: records[2])[.plusOne(records[2].id, seq: 1)]?.isApplied == true, "the item behind the poison still lands")
+        #expect(await world.outbox.isEmpty)
+        #expect(world.engine.status == .idle)
+        #expect(await world.client.recording.syncRequests.count == 5, "[abc] -> [a] [bc] -> [b] [c]")
+        #expect(await world.client.recording.scans.count == 3, "records still go up")
+        let summary = try #require(world.engine.summary(for: world.batch.id))
+        #expect(summary.attention.map(\.reference) == [poison.description])
+        #expect(summary.appliedItems == 2)
+
+        await world.engine.flush()
+        #expect(await world.client.recording.syncRequests.count == 5, "an invalid item is never sent again")
+    }
+
+    @Test func aRefusedLedgerRouteLeavesItemsSentAndStillDrainsRecords() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct)
+        await world.client.update { $0.syncFailure = .notFound }
+        await world.engine.flush()
+        #expect(await world.state(of: record)[.plusOne(record.id, seq: 1)] == .sent)
+        #expect(await world.outbox.count == 1, "still owed")
+        #expect(world.engine.status == .failed(ServerError.notFound.message))
+        #expect(await world.client.recording.scans.count == 1, "the ledger's trouble does not hold the records")
+    }
+
     // MARK: - Transport
 
     @Test func transportFailuresBackOffFromFiveSecondsToFiveMinutes() async throws {
@@ -471,8 +562,18 @@ struct SyncEngineTests {
         let running = Task { await world.engine.start() }
         #expect(await eventually { world.engine.flushCount == 1 }, "launch flushes once")
 
+        // The batch saved before the engine started is a buffered event, so a
+        // delayed flush is already pending beside the periodic one; let it fire.
+        #expect(await eventually { world.clock.sleeperCount == 2 }, "the periodic flush and the buffered save's flush are asleep")
+        world.clock.advance(by: .seconds(2))
+        #expect(await eventually { world.engine.flushCount == 2 && world.clock.sleeperCount == 1 }, "only the periodic flush is asleep")
+        #expect(await world.client.recording.syncRequests.isEmpty, "nothing to send yet")
+
         let record = try await world.scan()
         try await world.decide(record, .correct)
+        // Move time only once the delayed flush has registered its 2 s sleep,
+        // or the deadline it registers would be measured from the moved clock.
+        #expect(await eventually { world.clock.sleeperCount == 2 }, "the decision scheduled a flush")
         #expect(await world.client.recording.syncRequests.isEmpty)
         world.clock.advance(by: .seconds(1))
         try await Task.sleep(for: .milliseconds(20))
@@ -489,12 +590,38 @@ struct SyncEngineTests {
         await world.endpoints.set(.unavailable(.cellularOnly))
         let running = Task { await world.engine.start() }
         #expect(await eventually { world.engine.flushCount == 1 })
+        #expect(await eventually { await world.paths.subscriberCount == 1 }, "the engine is listening for path changes")
         try await world.decide(try await world.scan(), .correct)
+        #expect(world.engine.status == .offline(.cellularOnly))
+
+        await world.paths.set(.tunnel)
+        #expect(await eventually { await world.endpoints.invalidations == 1 && world.engine.flushCount == 2 }, "a utun path counts as home")
+        #expect(await world.client.recording.syncRequests.isEmpty, "discovery still says no endpoint")
+        #expect(world.engine.status == .offline(.cellularOnly))
 
         await world.endpoints.set(.available(.lan, health: HealthReport(userVersion: 5, catalogVersion: "cat-1")))
+        await world.paths.set(.cellularOnly)
+        #expect(await eventually { await world.paths.currentPath() == .cellularOnly })
         await world.paths.set(.wifi)
         #expect(await eventually { await world.client.recording.syncRequests.count == 1 })
-        #expect(await world.endpoints.invalidations == 1, "a new path forgets discovery's backoff")
+        #expect(await eventually { await world.endpoints.invalidations == 2 }, "a new path forgets discovery's backoff")
+        #expect(await eventually { world.engine.status == .idle })
+        running.cancel()
+    }
+
+    @Test func deletingABatchClearsItsQueuedItemsAtOnce() async throws {
+        let world = try await World()
+        let running = Task { await world.engine.start() }
+        #expect(await eventually { world.engine.flushCount == 1 })
+        await world.endpoints.set(.unavailable(.noPath))
+        try await world.decide(try await world.scan(), .correct)
+        await world.engine.flush()
+        #expect(world.engine.queuedItems == 1)
+        #expect(world.engine.summary(for: world.batch.id)?.queuedItems == 1)
+
+        try await world.store.deleteBatch(world.batch.id)
+        #expect(await eventually { world.engine.queuedItems == 0 && world.engine.summary(for: world.batch.id) == nil })
+        #expect(await world.outbox.isEmpty)
         running.cancel()
     }
 }

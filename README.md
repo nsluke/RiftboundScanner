@@ -329,9 +329,16 @@ from the two and can be deleted at any time.
   `terminal(duplicate | duplicateMismatch | unknownCard(catalogVersion) |
   wouldGoNegative | nothingToUndo | invalid | unrecognized)`; an
   `unknownCard` item is re-queued unchanged when `/health.catalog_version`
-  changes, nothing else ever is. Record uploads: `uploaded(at)` with the
+  changes, nothing else ever is. An item is marked `sent` before its page
+  goes out; one whose answer was lost is replayed (the server answers
+  `duplicate` or `applied`) and, if its effect changed meanwhile, reversed by
+  reference, so a timeout after the server's commit never leaves a stale
+  row. A page refused as a whole with 422 is bisected to the one bad item,
+  which ends `invalid`. Record uploads: `uploaded(at)` with the
   decision count the server accepted, `conflict(serverSeq)` on 409 (terminal),
-  `failed(reason)` for refusals that are retried on the next flush.
+  `failed(reason)` for refusals that are retried on the next flush. Every
+  drain writes only the fields it owns through the store's closure, so a
+  void or close written mid-flush is never overwritten.
 - UI: the batch overview shows a sync line with needs-attention rows
   (refused undos, unknown printings, record conflicts), **Close batch**,
   **Void batch** and **Sync now**; History shows purpose and sync badges and

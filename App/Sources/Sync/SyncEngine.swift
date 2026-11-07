@@ -52,7 +52,8 @@ nonisolated struct SyncAttention: Hashable, Sendable, Identifiable {
 /// `scans.json` with `sync.json` and rebuilds the outbox, so the outbox is a
 /// cache and a decision made while offline is never lost. Transport failures
 /// back off from 5 s to 5 min; per-item statuses are recorded as terminal
-/// states and shown rather than retried.
+/// states and shown rather than retried. A whole page refused with 422 is
+/// bisected to the one bad item, so nothing behind it waits.
 ///
 /// Main-actor state for the views; the store, outbox and client are actors
 /// the engine awaits. Built by `RootView` through `AppDependencies.makeSyncEngine`.
@@ -213,7 +214,10 @@ final class SyncEngine {
                 scheduleFlush(after: policy.decisionDelay)
             case .voided:
                 await flush()
-            case .deleted:
+            case .deleted(let id):
+                // Reconcile would drop these at the next flush; the summaries
+                // should not count them until then.
+                try? await outbox.removeAll { $0.batchID == id }
                 await refreshSummaries()
             }
         }
@@ -303,15 +307,19 @@ final class SyncEngine {
             }
             let batches = try await store.batches()
             try await drainBatchMeta(batches)
-            try await drainLedger()
+            let ledgerRefusal = try await drainLedger()
             try await drainRecords(batches)
             for kind in [AssetKind.photoSmall, .canvas, .photo] {
                 try await drainAssets(kind, in: batches)
             }
             try await completeVoidedBatches(batches)
             backoff = nil
-            lastSyncedAt = now()
-            status = .idle
+            if let ledgerRefusal {
+                status = .failed(ledgerRefusal.message)
+            } else {
+                lastSyncedAt = now()
+                status = .idle
+            }
         } catch let error as ServerError {
             if error.isRetryable {
                 scheduleRetry(after: error)
@@ -406,94 +414,148 @@ final class SyncEngine {
         }
     }
 
-    private func drainLedger() async throws {
+    /// Sends the outbox a page at a time. Returns the refusal that stopped
+    /// the ledger early without being this page's fault or the connection's
+    /// (a 404 route, an unreadable answer): the items stay `sent`, records
+    /// and assets still drain, and the flush ends `failed` with its message.
+    private func drainLedger() async throws -> ServerError? {
         while true {
             let page = await outbox.nextPage(limit: policy.pageSize)
-            guard !page.isEmpty else { return }
-            let response = try await client.syncLedger(LedgerSyncRequest(device: device, items: page.map(\.item)))
-            var acknowledged: Set<String> = []
-            var changes: [ScanBatch.ID: [(scan: ScanRecord.ID, ref: String, state: LedgerItemState)]] = [:]
-            var appliedAny = false
-            for result in response.results {
-                guard let entry = page.first(where: { $0.item.clientRef == result.clientRef }) else { continue }
-                let state: LedgerItemState
-                if result.status == .applied {
-                    state = .applied(ledgerID: result.ledgerID ?? 0, cardID: result.cardID ?? "", finish: result.finish)
-                    appliedAny = true
-                } else if let terminal = TerminalStatus(result.status, catalogVersion: catalogVersion) {
-                    state = .terminal(terminal)
-                } else {
-                    continue
-                }
-                changes[entry.batchID, default: []].append((entry.scanID, result.clientRef, state))
-                acknowledged.insert(result.clientRef)
-            }
-            for (batchID, batchChanges) in changes {
-                try await store.updateSyncState(for: batchID) { state in
-                    for change in batchChanges {
-                        state[change.scan].items[change.ref] = change.state
-                    }
-                }
-            }
-            try await outbox.remove(refs: acknowledged)
-            queuedItems = await outbox.count
-            if appliedAny {
-                ledgerGeneration += 1
+            guard !page.isEmpty else { return nil }
+            try await markSent(page)
+            let acknowledged: Set<String>
+            do {
+                acknowledged = try await send(page)
+            } catch let error as ServerError where !error.isRetryable && !Self.stopsEveryRequest(error) {
+                return error
             }
             // A page the server answered nothing about would loop forever.
-            guard !acknowledged.isEmpty else { return }
+            guard !acknowledged.isEmpty else { return nil }
         }
     }
 
+    /// Records that the page is in the server's hands before the request
+    /// goes out, so a lost answer is never mistaken for an item never sent.
+    private func markSent(_ page: [OutboxEntry]) async throws {
+        for (batchID, entries) in Dictionary(grouping: page, by: \.batchID) {
+            try await store.updateSyncState(for: batchID) { state in
+                for entry in entries {
+                    switch state[entry.scanID].items[entry.id] {
+                    case nil, .queued, .sent: state[entry.scanID].items[entry.id] = .sent
+                    case .applied, .terminal: break
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sends one page and records every answer; returns the references the
+    /// server acknowledged. A 422 refuses the whole body for one bad item
+    /// (the server's `http` substring rule, say), so the page is bisected
+    /// until the item stands alone and ends `invalid`, and nothing behind it
+    /// waits.
+    private func send(_ page: [OutboxEntry]) async throws -> Set<String> {
+        let response: LedgerSyncResponse
+        do {
+            response = try await client.syncLedger(LedgerSyncRequest(device: device, items: page.map(\.item)))
+        } catch ServerError.unprocessable {
+            guard page.count > 1 else {
+                try await acknowledge(page.map { ($0, LedgerItemState.terminal(.invalid)) })
+                return Set(page.map(\.id))
+            }
+            let half = page.count / 2
+            let left = try await send(Array(page[..<half]))
+            let right = try await send(Array(page[half...]))
+            return left.union(right)
+        }
+        var outcomes: [(entry: OutboxEntry, state: LedgerItemState)] = []
+        var appliedAny = false
+        for result in response.results {
+            guard let entry = page.first(where: { $0.id == result.clientRef }) else { continue }
+            if result.status == .applied {
+                outcomes.append((entry, .applied(ledgerID: result.ledgerID ?? 0, cardID: result.cardID ?? "", finish: result.finish)))
+                appliedAny = true
+            } else if let terminal = TerminalStatus(result.status, catalogVersion: catalogVersion) {
+                outcomes.append((entry, .terminal(terminal)))
+            }
+        }
+        try await acknowledge(outcomes)
+        if appliedAny {
+            ledgerGeneration += 1
+        }
+        return Set(outcomes.map(\.entry.id))
+    }
+
+    /// Writes each item's final state through the store, touching nothing
+    /// else in `sync.json`, and drops the items from the outbox.
+    private func acknowledge(_ outcomes: [(entry: OutboxEntry, state: LedgerItemState)]) async throws {
+        for (batchID, changes) in Dictionary(grouping: outcomes, by: \.entry.batchID) {
+            let changes = changes.map { ($0.entry.scanID, $0.entry.id, $0.state) }
+            try await store.updateSyncState(for: batchID) { state in
+                for (scanID, ref, itemState) in changes {
+                    state[scanID].items[ref] = itemState
+                }
+            }
+        }
+        try await outbox.remove(refs: Set(outcomes.map(\.entry.id)))
+        queuedItems = await outbox.count
+    }
+
+    /// Every write below changes only the fields this drain owns, through the
+    /// store's closure: a void, a close or a newer decision written while a
+    /// request was in flight is never overwritten with a stale snapshot.
     private func drainRecords(_ batches: [ScanBatch]) async throws {
         for batch in batches {
-            var state = await store.syncState(for: batch.id)
             // Without the batch on the server every record would be deferred.
-            guard state.batchMeta.isUploaded else { continue }
-            let records = try await store.records(in: batch.id)
-            for record in records where state[record.id].record.wantsUpload {
-                var scan = state[record.id]
+            guard await store.syncState(for: batch.id).batchMeta.isUploaded else { continue }
+            for record in try await store.records(in: batch.id) {
+                guard await store.syncState(for: batch.id)[record.id].record.wantsUpload else { continue }
+                let outcome: UploadState
+                var acceptedSeq: Int?
                 do {
                     let receipt = try await client.putScan(try uploads.upload(for: record, in: batch))
                     if receipt.isDeferred {
-                        state.batchMeta = .queued
+                        try await store.updateSyncState(for: batch.id) { $0.batchMeta = .queued }
                         break
                     }
-                    scan.record = .uploaded(now())
-                    scan.uploadedSeq = record.decisions.count
+                    outcome = .uploaded(now())
+                    acceptedSeq = record.decisions.count
                 } catch ServerError.conflict(_, let serverSeq) {
-                    scan.record = .conflict(serverSeq: serverSeq)
+                    outcome = .conflict(serverSeq: serverSeq)
                 } catch {
-                    scan.record = try Self.uploadFailure(error)
+                    outcome = try Self.uploadFailure(error)
                 }
-                state[record.id] = scan
+                // A decision made meanwhile leaves `uploadedSeq` behind the log,
+                // which is exactly what re-queues the record at the next reconcile.
+                let seq = acceptedSeq
+                try await store.updateSyncState(for: batch.id) { state in
+                    state[record.id].record = outcome
+                    if let seq {
+                        state[record.id].uploadedSeq = seq
+                    }
+                }
             }
-            let final = state
-            try await store.updateSyncState(for: batch.id) { $0 = final }
         }
     }
 
     private func drainAssets(_ kind: AssetKind, in batches: [ScanBatch]) async throws {
         for batch in batches {
-            var state = await store.syncState(for: batch.id)
-            let records = try await store.records(in: batch.id)
-            for record in records where state[record.id][kind].wantsUpload && state[record.id].record.isUploaded {
-                var scan = state[record.id]
+            for record in try await store.records(in: batch.id) {
+                let scan = await store.syncState(for: batch.id)[record.id]
+                guard scan[kind].wantsUpload, scan.record.isUploaded else { continue }
+                let outcome: UploadState
                 do {
-                    guard let data = try await assets.asset(kind, for: record) else {
-                        scan[kind] = .failed(String(localized: "The file could not be prepared within the server's size limit."))
-                        state[record.id] = scan
-                        continue
+                    if let data = try await assets.asset(kind, for: record) {
+                        _ = try await client.putAsset(data, kind: kind, scanID: record.id.rawValue)
+                        outcome = .uploaded(now())
+                    } else {
+                        outcome = .failed(String(localized: "The file could not be prepared within the server's size limit."))
                     }
-                    _ = try await client.putAsset(data, kind: kind, scanID: record.id.rawValue)
-                    scan[kind] = .uploaded(now())
                 } catch {
-                    scan[kind] = try Self.uploadFailure(error)
+                    outcome = try Self.uploadFailure(error)
                 }
-                state[record.id] = scan
+                try await store.updateSyncState(for: batch.id) { $0[record.id][kind] = outcome }
             }
-            let final = state
-            try await store.updateSyncState(for: batch.id) { $0 = final }
         }
     }
 
@@ -504,6 +566,9 @@ final class SyncEngine {
         for batch in batches {
             let state = await store.syncState(for: batch.id)
             guard state.isVoided, state.allItemsAcknowledged, await outbox.count(in: batch.id) == 0, state.rejectedUndos == 0 else { continue }
+            // A void written during this flush owes undos reconcile has not derived yet.
+            let records = try await store.records(in: batch.id)
+            guard records.allSatisfy({ LedgerDeltaBuilder.items(record: $0, previousState: state[$0.id], batch: batch, vault: vault).isEmpty }) else { continue }
             try await store.deleteBatch(batch.id)
         }
     }
@@ -514,10 +579,18 @@ final class SyncEngine {
     private static func uploadFailure(_ error: any Error) throws -> UploadState {
         guard let serverError = error as? ServerError else { return .failed(String(describing: error)) }
         switch serverError {
-        case _ where serverError.isRetryable: throw serverError
-        case .unauthorized, .forbidden, .serverOutdated: throw serverError
+        case _ where serverError.isRetryable || stopsEveryRequest(serverError): throw serverError
         case .conflict(_, let serverSeq): return .conflict(serverSeq: serverSeq)
         default: return .failed(serverError.message)
+        }
+    }
+
+    /// A refusal no other request would survive either: a rejected token or
+    /// a server behind the app. Nothing is gained by trying the next item.
+    private static func stopsEveryRequest(_ error: ServerError) -> Bool {
+        switch error {
+        case .unauthorized, .forbidden, .serverOutdated: true
+        default: false
         }
     }
 
@@ -541,7 +614,7 @@ final class SyncEngine {
                     case .applied: summary.appliedItems += 1
                     case .terminal(let status) where status.needsAttention:
                         summary.attention.append(SyncAttention(scanID: scanID, reference: ref, kind: .ledgerItem(status, isUndo: ClientRef(ref)?.isUndo == true)))
-                    case .queued, .terminal: break
+                    case .queued, .sent, .terminal: break
                     }
                 }
                 for upload in [scan.record, scan.photoSmall, scan.canvas, scan.photo] {

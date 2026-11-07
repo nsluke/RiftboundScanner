@@ -8,6 +8,7 @@ enum EvaluateCommand {
         let limit = try options.int("limit", default: Int.max)
         let verbose = options.bool("verbose")
         let index = try CardIndex.read(from: options.url("index", default: Defaults.indexPath))
+        let hints = try IdentifyCommand.hints(from: options)
         let recognizer = try await CardRecognizer.live(index: index)
 
         var cases: [EvaluationCase]
@@ -29,14 +30,14 @@ enum EvaluateCommand {
         for (number, evaluationCase) in cases.prefix(limit).enumerated() {
             let photo = try ImageFile.load(folder.appendingPathComponent(evaluationCase.file))
             let start = clock.now
-            let result = try await recognizer.identify(photo)
+            let result = try await recognizer.identify(photo, hints: hints)
             let duration = clock.now - start
             let ranked = result.matches.map(\.id)
             tally.record(evaluationCase, ranked: ranked, duration: duration)
             let rank = ranked.firstIndex(of: evaluationCase.expected)
             if verbose || rank != 0 {
                 let got = result.matches.prefix(3).map { "\($0.card.code)(\(String(format: "%.2f", $0.score)))" }.joined(separator: " ")
-                let code = result.codeReading.map { "code \($0.code)" } ?? "no code"
+                let code = result.codeReading.map { "code \($0.code)\($0.origin == .alternative ? " (alternative)" : "")" } ?? "no code"
                 Console.line("[\(number + 1)/\(min(limit, cases.count))] \(rank == 0 ? "ok  " : "MISS") \(evaluationCase.file) expected \(evaluationCase.expected) rank \(rank.map { String($0 + 1) } ?? "-") \(code) → \(got)")
             }
         }

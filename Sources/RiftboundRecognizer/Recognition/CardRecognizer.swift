@@ -8,19 +8,46 @@ public struct Match: Hashable, Sendable, Identifiable {
     public let descriptorScore: Double
     public let components: ScoreComponents
     public let orientation: CardOrientation
-    /// `nil` when no code could be read.
-    public let codeAgreement: CodeAgreement?
+    /// What the code reading said about this candidate; `nil` when no code
+    /// could be read, or when the reading was a guess (``CodeOrigin/alternative``)
+    /// that does not name this candidate (see ``CodeReading/evidence(for:)``).
+    public let codeEvidence: CodeEvidence?
 
     public var id: Card.ID { card.id }
 
-    /// Apps and their tests build matches directly, e.g. to stub a recogniser.
-    public init(card: Card, score: Double, descriptorScore: Double, components: ScoreComponents, orientation: CardOrientation, codeAgreement: CodeAgreement?) {
+    /// `nil` when the reading says nothing about this candidate.
+    public var codeAgreement: CodeAgreement? { codeEvidence?.agreement }
+
+    /// Whether the agreeing code was the literal reading or a parser
+    /// alternative; `nil` when the reading says nothing about this candidate.
+    /// A candidate that matches only an alternative must never count as
+    /// confidently identified.
+    public var codeOrigin: CodeOrigin? { codeEvidence?.origin }
+
+    public init(card: Card, score: Double, descriptorScore: Double, components: ScoreComponents, orientation: CardOrientation, codeEvidence: CodeEvidence?) {
         self.card = card
         self.score = score
         self.descriptorScore = descriptorScore
         self.components = components
         self.orientation = orientation
-        self.codeAgreement = codeAgreement
+        self.codeEvidence = codeEvidence
+    }
+
+    /// Apps and their tests build matches directly, e.g. to stub a recogniser.
+    /// `codeOrigin` is ignored when `codeAgreement` is `nil`.
+    public init(
+        card: Card,
+        score: Double,
+        descriptorScore: Double,
+        components: ScoreComponents,
+        orientation: CardOrientation,
+        codeAgreement: CodeAgreement?,
+        codeOrigin: CodeOrigin = .literal
+    ) {
+        self.init(
+            card: card, score: score, descriptorScore: descriptorScore, components: components, orientation: orientation,
+            codeEvidence: codeAgreement.map { CodeEvidence(agreement: $0, origin: codeOrigin) }
+        )
     }
 }
 
@@ -137,8 +164,12 @@ public struct CardRecognizer: Sendable {
     /// hypothesis whose best match scores highest is returned, with every
     /// hypothesis summarised in ``RecognitionResult/hypotheses``. The whole-image
     /// hypothesis is held to ``ScoringPolicy/wholeImageMinimumScore``.
+    ///
+    /// `hints` carry what the caller already knows (the set a sealed box holds):
+    /// candidates in the expected set earn ``ScoringPolicy/expectedSetBonus``
+    /// and the OCR parser refuses to repair a reading into another set.
     @concurrent
-    public func identify(_ photo: CGImage) async throws -> RecognitionResult {
+    public func identify(_ photo: CGImage, hints: RecognitionHints = .none) async throws -> RecognitionResult {
         let candidates = try await locator.locateCards(in: photo)
         var locations: [CardLocation] = []
         for candidate in candidates {
@@ -183,13 +214,13 @@ public struct CardRecognizer: Sendable {
         }
         var results: [Int: RecognitionResult] = [:]
         for hypothesis in shortlist {
-            var reading = try await codeReader.readCode(from: hypothesis.canvas).first
+            var reading = try await codeReader.readCode(from: hypothesis.canvas, hints: hints).first
             if reading == nil, case .assumedWholeImage = hypothesis.location {
                 // The edge bands of the whole image miss a code that sits inside
                 // a crop; read the photo itself before giving up on it.
-                reading = try await codeReader.readCode(fromFullImage: photo).first
+                reading = try await codeReader.readCode(fromFullImage: photo, hints: hints).first
             }
-            let matches = rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries)
+            let matches = rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries, hints: hints)
             results[hypothesis.order] = RecognitionResult(
                 matches: matches,
                 location: hypothesis.location,
@@ -235,12 +266,12 @@ public struct CardRecognizer: Sendable {
 
     /// Identifies a card that is already on the canonical canvas.
     @concurrent
-    public func identify(rectifiedCard canvas: CGImage, location: CardLocation = .assumedWholeImage) async throws -> RecognitionResult {
+    public func identify(rectifiedCard canvas: CGImage, location: CardLocation = .assumedWholeImage, hints: RecognitionHints = .none) async throws -> RecognitionResult {
         async let described = describe(canvas)
-        async let readings = codeReader.readCode(from: canvas)
+        async let readings = codeReader.readCode(from: canvas, hints: hints)
         let reading = try await readings.first
         let (queries, candidates) = try await described
-        let matches = rerank(candidates, with: reading, queries: queries)
+        let matches = rerank(candidates, with: reading, queries: queries, hints: hints)
         return RecognitionResult(
             matches: matches,
             location: location,
@@ -284,18 +315,22 @@ public struct CardRecognizer: Sendable {
         return (queries, DescriptorMatcher(policy: policy).rank(queries, in: index, limit: policy.rerankedCandidateCount))
     }
 
-    /// Applies the OCR evidence to each candidate and sorts by the fused score.
+    /// Applies the OCR evidence and the set hint to each candidate and sorts by
+    /// the fused score.
     ///
     /// A confidently read code names a card outright, so every index entry whose
-    /// code it matches joins the candidates even when the descriptors ranked it
+    /// code it matches, literally or through one of the reading's digit
+    /// alternatives, joins the candidates even when the descriptors ranked it
     /// outside the shortlist: a poorly located card (the whole feeder tray, say)
-    /// can still carry a legible code while its art matches nothing.
-    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?, queries: [OrientedDescriptor]) -> [Match] {
+    /// can still carry a legible code while its art matches nothing. A card
+    /// matched only through an alternative earns the smaller alternative bonus,
+    /// so the descriptors decide between the literal reading and the guess.
+    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?, queries: [OrientedDescriptor], hints: RecognitionHints) -> [Match] {
         var candidates = candidates
         if let reading, reading.confidence >= policy.codeInjectionMinimumConfidence {
             let present = Set(candidates.map(\.entry.id))
             for entry in index.entries where !present.contains(entry.id) {
-                switch CodeAgreement(reading: reading.code, candidate: entry.card.code) {
+                switch reading.evidence(for: entry.card.code)?.agreement {
                 case .exact, .variantDiffers:
                     if let candidate = DescriptorMatcher(policy: policy).candidate(for: entry, queries: queries) {
                         candidates.append(candidate)
@@ -306,10 +341,10 @@ public struct CardRecognizer: Sendable {
             }
         }
         return candidates.map { candidate -> Match in
-            let agreement = reading.map { CodeAgreement(reading: $0.code, candidate: candidate.entry.card.code) }
-            var adjustment = 0.0
-            if let reading, let agreement {
-                adjustment = policy.codeAdjustment(for: agreement, confidence: reading.confidence)
+            let evidence = reading?.evidence(for: candidate.entry.card.code)
+            var adjustment = policy.setAdjustment(for: candidate.entry.card.code.set, hints: hints)
+            if let reading, let evidence {
+                adjustment += policy.codeAdjustment(for: evidence, confidence: reading.confidence)
             }
             return Match(
                 card: candidate.entry.card,
@@ -317,7 +352,7 @@ public struct CardRecognizer: Sendable {
                 descriptorScore: candidate.score,
                 components: candidate.components,
                 orientation: candidate.orientation,
-                codeAgreement: agreement
+                codeEvidence: evidence
             )
         }.sorted { $0.score > $1.score }
     }

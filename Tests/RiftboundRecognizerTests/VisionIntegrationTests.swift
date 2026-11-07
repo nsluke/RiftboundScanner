@@ -8,7 +8,10 @@ struct VisionIntegrationTests {
     let rig = TestRig()
 
     private var reader: PrintedCodeReader {
-        PrintedCodeReader(textRecognizer: VisionTextRecognizer(), renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser())
+        PrintedCodeReader(
+            textRecognizer: VisionTextRecognizer(), renderer: rig.renderer, canvas: rig.canvas,
+            parser: PrintedCodeParser(vocabulary: .init(codes: ["OGN-123/298", "UNL-T01"].map(TestRig.code)))
+        )
     }
 
     @Test func readsTheCodeAndOrientationOfAPortraitCard() async throws {

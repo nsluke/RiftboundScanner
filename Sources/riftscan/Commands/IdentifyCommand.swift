@@ -8,12 +8,13 @@ enum IdentifyCommand {
         let photoPath = try options.positional(0, named: "photo")
         let top = try options.int("top", default: 3)
         let index = try CardIndex.read(from: options.url("index", default: Defaults.indexPath))
+        let hints = try hints(from: options)
         let recognizer = try await CardRecognizer.live(index: index)
         let photo = try ImageFile.load(URL(fileURLWithPath: photoPath))
 
         let clock = ContinuousClock()
         let start = clock.now
-        let result = try await recognizer.identify(photo)
+        let result = try await recognizer.identify(photo, hints: hints)
         let elapsed = clock.now - start
 
         if let path = options.string("save-rectified") {
@@ -21,13 +22,22 @@ enum IdentifyCommand {
         }
         let matches = Array(result.matches.prefix(top))
         if options.bool("json") {
-            try printJSON(photo: photoPath, result: result, matches: matches, elapsed: elapsed)
+            try printJSON(photo: photoPath, result: result, matches: matches, elapsed: elapsed, hints: hints)
         } else {
             printReport(photo: photoPath, size: photo, result: result, matches: matches, elapsed: elapsed)
             if options.bool("verbose") {
                 printHypotheses(result)
             }
         }
+    }
+
+    /// `--expect-set UNL`: the set the card is expected to belong to (a sealed box).
+    static func hints(from options: CommandLineOptions) throws(UsageError) -> RecognitionHints {
+        guard let raw = options.string("expect-set") else { return .none }
+        guard let set = SetCode(rawValue: raw.uppercased()) else {
+            throw UsageError("--expect-set wants a set code such as OGN or UNL, not '\(raw)'")
+        }
+        return RecognitionHints(expectedSet: set)
     }
 
     private static func printHypotheses(_ result: RecognitionResult) {
@@ -55,7 +65,11 @@ enum IdentifyCommand {
         }
         if let reading = result.codeReading {
             let source = reading.source == .edgeBand ? "edge band" : "full image"
-            Console.line("Code:  \(reading.code) read from \"\(reading.text)\" (confidence \(String(format: "%.2f", reading.confidence)), \(reading.orientation.rawValue), \(reading.layout.rawValue) layout, \(source))")
+            Console.line("Code:  \(reading.code) read from \"\(reading.text)\" (confidence \(String(format: "%.2f", reading.confidence)), \(reading.orientation.rawValue), \(reading.layout.rawValue) layout, \(source), \(reading.origin.rawValue))")
+            let alternatives = reading.alternatives.dropFirst()
+            if !alternatives.isEmpty {
+                Console.line("       could also be \(alternatives.map(\.canonical).joined(separator: ", "))")
+            }
         } else {
             Console.line("Code:  none read")
         }
@@ -75,9 +89,12 @@ enum IdentifyCommand {
                 String(format: "%.2f", components.wholeDifferenceHash),
                 String(format: "%.2f", components.wholePerceptualHash),
                 String(format: "%.2f", components.artDifferenceHash),
-                match.codeAgreement?.rawValue ?? "-",
+                match.codeAgreement.map { $0.rawValue + (match.codeOrigin == .alternative ? "*" : "") } ?? "-",
             ]
             Console.line(columns.joined(separator: "  ").replacingOccurrences(of: "   ", with: "  "))
+        }
+        if matches.contains(where: { $0.codeOrigin == .alternative }) {
+            Console.line("    * matched a digit alternative of the reading, not the reading itself")
         }
         if let best = matches.first {
             Console.line()
@@ -95,6 +112,8 @@ enum IdentifyCommand {
             let descriptorScore: Double
             let orientation: String
             let codeAgreement: String?
+            /// `literal` or `alternative` when a code agreed; absent otherwise.
+            let codeOrigin: String?
             let featurePrint: Double
             let wholeDifferenceHash: Double
             let wholePerceptualHash: Double
@@ -120,12 +139,17 @@ enum IdentifyCommand {
         let codeRead: String?
         let codeConfidence: Double?
         let codeSource: String?
+        /// Whether `codeRead` is the literal reading or a digit alternative.
+        let codeOrigin: String?
+        /// Every index-known code the text could name, best first (`codeRead` first).
+        let codeAlternatives: [String]?
+        let expectedSet: String?
         let descriptor: DescriptorReport
         let engine: EngineFingerprint
         let matches: [MatchReport]
     }
 
-    private static func printJSON(photo: String, result: RecognitionResult, matches: [Match], elapsed: Duration) throws {
+    private static func printJSON(photo: String, result: RecognitionResult, matches: [Match], elapsed: Duration, hints: RecognitionHints) throws {
         let report = Report(
             photo: photo,
             seconds: Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18,
@@ -137,6 +161,9 @@ enum IdentifyCommand {
             codeRead: result.codeReading?.code.canonical,
             codeConfidence: result.codeReading?.confidence,
             codeSource: result.codeReading?.source.rawValue,
+            codeOrigin: result.codeReading?.origin.rawValue,
+            codeAlternatives: result.codeReading?.alternatives.map(\.canonical),
+            expectedSet: hints.expectedSet?.rawValue,
             descriptor: Report.DescriptorReport(
                 orientation: result.descriptor.orientation.rawValue,
                 featurePrintDigest: result.descriptor.descriptor.featurePrint.digest.hex,
@@ -153,6 +180,7 @@ enum IdentifyCommand {
                     descriptorScore: match.descriptorScore,
                     orientation: match.orientation.rawValue,
                     codeAgreement: match.codeAgreement?.rawValue,
+                    codeOrigin: match.codeOrigin?.rawValue,
                     featurePrint: match.components.featurePrint,
                     wholeDifferenceHash: match.components.wholeDifferenceHash,
                     wholePerceptualHash: match.components.wholePerceptualHash,

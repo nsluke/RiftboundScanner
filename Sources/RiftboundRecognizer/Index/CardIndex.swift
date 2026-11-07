@@ -40,11 +40,11 @@ public struct CardIndex: Sendable, Codable {
     /// embedding space share.
     public var calibrationHash: FeaturePrint.Digest? { calibrationPrint?.digest }
 
+    /// Every printing's code, as the OCR parser's vocabulary: a reading counts
+    /// only when it names one of these (denominator aside) with a denominator
+    /// its set prints.
     public var vocabulary: PrintedCodeParser.Vocabulary {
-        PrintedCodeParser.Vocabulary(
-            sets: Set(entries.map(\.card.code.set)),
-            numberPrefixes: Set(entries.map(\.card.code.number.prefix))
-        )
+        PrintedCodeParser.Vocabulary(codes: entries.map(\.card.code))
     }
 
     public static func read(from url: URL) throws -> CardIndex {

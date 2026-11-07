@@ -26,20 +26,39 @@ struct ScoringTests {
 
     @Test func codeAdjustmentsAreOrderedAndScaledByConfidence() {
         let policy = ScoringPolicy.default
-        let exact = policy.codeAdjustment(for: .exact, confidence: 1)
-        let variant = policy.codeAdjustment(for: .variantDiffers, confidence: 1)
-        let set = policy.codeAdjustment(for: .setDiffers, confidence: 1)
-        let number = policy.codeAdjustment(for: .numberDiffers, confidence: 1)
-        #expect(exact > variant && variant > 0 && 0 > set && set > number)
-        #expect(policy.codeAdjustment(for: .exact, confidence: 0.5) == exact / 2)
-        #expect(policy.codeAdjustment(for: .exact, confidence: 7) == exact, "confidence is clamped")
-        #expect(policy.codeAdjustment(for: .unrelated, confidence: 1) == number)
+        func adjustment(_ agreement: CodeAgreement, _ origin: CodeOrigin = .literal, confidence: Double = 1) -> Double {
+            policy.codeAdjustment(for: CodeEvidence(agreement: agreement, origin: origin), confidence: confidence)
+        }
+        let exact = adjustment(.exact)
+        let viaAlternative = adjustment(.exact, .alternative)
+        let variant = adjustment(.variantDiffers)
+        let set = adjustment(.setDiffers)
+        let number = adjustment(.numberDiffers)
+        #expect(exact > viaAlternative && viaAlternative > variant && variant > 0 && 0 > set && set > number)
+        #expect(exact == 0.5 && viaAlternative == 0.3, "the ADR's bonuses: literal 0.5, alternative 0.3")
+        #expect(adjustment(.exact, confidence: 0.5) == exact / 2)
+        #expect(adjustment(.exact, .alternative, confidence: 0.5) == viaAlternative / 2)
+        #expect(adjustment(.exact, confidence: 7) == exact, "confidence is clamped")
+        #expect(adjustment(.unrelated) == number)
+        #expect(adjustment(.variantDiffers, .alternative) == variant, "only an exact match distinguishes the origin")
+    }
+
+    @Test func expectedSetBonusIsAFlatPrior() throws {
+        let policy = ScoringPolicy.default
+        let unl = try #require(SetCode(rawValue: "UNL"))
+        let ven = try #require(SetCode(rawValue: "VEN"))
+        #expect(policy.setAdjustment(for: unl, hints: RecognitionHints(expectedSet: unl)) == 0.05)
+        #expect(policy.setAdjustment(for: ven, hints: RecognitionHints(expectedSet: unl)) == 0)
+        #expect(policy.setAdjustment(for: unl, hints: .none) == 0)
+        #expect(policy.expectedSetBonus < policy.codeSetMismatchPenalty, "a hint never outweighs a read code")
     }
 
     @Test func scoringPolicyRoundTripsThroughJSON() throws {
         var policy = ScoringPolicy()
         policy.featurePrintWeight = 0.6
         policy.codeExactBonus = 0.45
+        policy.codeAlternativeBonus = 0.25
+        policy.expectedSetBonus = 0.1
         policy.rerankedCandidateCount = 7
         policy.ocrHypothesisCount = 1
         policy.wholeImageMinimumScore = 0.75
@@ -49,7 +68,9 @@ struct ScoringTests {
         #expect(decoded != .default)
         let json = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         #expect(json["codeExactBonus"] as? Double == 0.45)
-        #expect(json.count == 14, "every weight and threshold is a named key")
+        #expect(json["codeAlternativeBonus"] as? Double == 0.25)
+        #expect(json["expectedSetBonus"] as? Double == 0.1)
+        #expect(json.count == 16, "every weight and threshold is a named key")
     }
 
     @Test func scoringPolicyFillsMissingKeysWithDefaults() throws {
@@ -57,6 +78,7 @@ struct ScoringTests {
         var expected = ScoringPolicy.default
         expected.codeExactBonus = 0.7
         #expect(partial == expected)
+        #expect(partial.codeAlternativeBonus == 0.3 && partial.expectedSetBonus == 0.05, "a policy file written before these bonuses existed still loads")
         #expect(try JSONDecoder().decode(ScoringPolicy.self, from: Data("{}".utf8)) == .default)
     }
 

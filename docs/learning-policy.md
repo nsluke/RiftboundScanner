@@ -148,6 +148,7 @@ decodes exactly this text.
     "wholePerceptualHashWeight": 0.15,
     "artDifferenceHashWeight": 0.15,
     "codeExactBonus": 0.5,
+    "codeAlternativeBonus": 0.3,
     "codeVariantMismatchBonus": 0.2,
     "codeSetMismatchPenalty": 0.15,
     "codeMismatchPenalty": 0.4,
@@ -156,7 +157,8 @@ decodes exactly this text.
     "maximumLocationHypotheses": 6,
     "ocrHypothesisCount": 2,
     "wholeImageMinimumScore": 0.8,
-    "exemplarScale": 0.95
+    "exemplarScale": 0.95,
+    "expectedSetBonus": 0.05
   },
   "confidence": {
     "minimumFusedScore": 1.0,

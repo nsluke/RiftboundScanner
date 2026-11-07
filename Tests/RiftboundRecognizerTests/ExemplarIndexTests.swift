@@ -325,7 +325,7 @@ struct LearningPolicyTests {
         #expect(Set(json.keys) == ["version", "scoring", "confidence", "admission", "calibrationMinimum"])
         #expect((json["confidence"] as? [String: Any])?.count == 7)
         #expect((json["admission"] as? [String: Any])?.count == 7)
-        #expect((json["scoring"] as? [String: Any])?.count == 14)
+        #expect((json["scoring"] as? [String: Any])?.count == 16)
 
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("riftbound-policy-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

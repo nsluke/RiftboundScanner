@@ -57,14 +57,33 @@ Two targets live in this package:
    (bottom, top, left, right, each rotated upright). Whichever band yields a code
    like `OGN • 007a/298`, `OGN • 299*/298` or `RAD • R01 • EN` confirms the
    orientation and the layout. A lenient parser repairs the usual misreads
-   (`0GN`, `OO1`, missing separators) against the set codes and number prefixes
-   found in the index.
+   (`0GN`, `OO1`, missing separators) against the index: a reading counts only
+   when some printing carries that set, number and variant *and* its denominator
+   does not contradict the set (`VEN • 040/221` is a misread, since `/221` is
+   Spiritforged's; `068/266`, a denominator no set prints, is just a misread
+   denominator and the key stands), so a shape-valid number no card has
+   (`VEN-R040`) reads as no code. The parser also lists the index-known codes
+   one digit confusion away from the reading (`1` ↔ `2`, `7` ↔ `1`, the misread
+   measured on real scans: `024` for `014`), ranked, as **alternatives**; the
+   reading records whether its code is the **literal** text or such an
+   alternative (taken when the literal text names no printing). A guess is only
+   ever positive evidence: it credits the card it names and penalises nothing.
 7. **Re-rank.** The top 12 descriptor candidates are adjusted by how the read code
-   relates to theirs, scaled by OCR confidence: exact match +0.5, same number but a
-   different suffix (`299` vs `299*`) +0.2, same number in another set −0.15, any
-   other disagreement −0.4. A confident code reading therefore outranks a slightly
+   relates to theirs, scaled by OCR confidence: literal exact match +0.5, exact
+   match through a digit alternative +0.3, same number but a different suffix
+   (`299` vs `299*`) +0.2, same number in another set −0.15, any other
+   disagreement −0.4. A confident code reading therefore outranks a slightly
    better descriptor match, which is what separates printings that share an
-   illustration: standard vs signature, or the same rune reprinted in another set.
+   illustration: standard vs signature, or the same rune reprinted in another
+   set. The smaller alternative bonus lets the descriptors overrule a one-digit
+   misread (the card that looks like `014` beats the `024` the OCR saw) without
+   letting a guess manufacture confidence: a match through an alternative is
+   flagged on the result and must never count as a confident identification.
+   An optional `RecognitionHints(expectedSet:)` (a sealed box holds one set)
+   adds a flat +0.05 to candidates in that set, enough to break a descriptor tie
+   between same-art printings in different sets, and stops the parser from
+   *repairing* a reading into another set; a cleanly read code of another set
+   still counts.
 
 8. **Learn.** Confirmed scans become *exemplars*: real-photo feature prints keyed
    by `ArtGroup` (the printing with its total and `a`/`*` suffix stripped, so every
@@ -76,12 +95,14 @@ Two targets live in this package:
    exemplars can change which card wins but never where it was found, and an
    empty overlay changes nothing at all. See `docs/learning-policy.md`.
 
-The result carries the ranked matches, where the card was found (and its corner
-quad when a card was detected), the code that was read and where it came from
-(an edge band of the canvas, or the whole photo as a fallback), the rectified
-canvas, the query descriptor in the orientation of the winning match (the one to
-compare with a reference or keep as an exemplar), the engine fingerprint that
-produced it, and a summary of every hypothesis for diagnostics.
+The result carries the ranked matches (each with its code agreement and whether
+that agreement came from the literal reading or an alternative), where the card
+was found (and its corner quad when a card was detected), the code that was read,
+where it came from (an edge band of the canvas, or the whole photo as a fallback),
+its literal/alternative origin and ranked alternatives, the rectified canvas, the
+query descriptor in the orientation of the winning match (the one to compare
+with a reference or keep as an exemplar), the engine fingerprint that produced
+it, and a summary of every hypothesis for diagnostics.
 
 ## Getting started
 
@@ -120,21 +141,27 @@ swift run -c release riftscan identify path/to/photo.jpg --top 3
 ```
 Photo: synthetic/moderate/000-unl-157-219.jpg (1536×2048), identified in 0.41 s
 Card:  rectangle detected (confidence 1.00)
-Code:  UNL-157/219 read from "UNL • 157/219" (confidence 1.00, upright, portrait layout)
+Code:  UNL-157/219 read from "UNL • 157/219" (confidence 1.00, upright, portrait layout, edge band, literal)
+       could also be UNL-127/219
 
  #  Code          Name                          Score  Desc   FP    dH    pH    Art   OCR
  1  UNL-157/219   Scrutinizing Sergeant         1.447  0.947  0.98  0.95  0.91  0.94  exact
+ 2  UNL-127/219   …                             0.912  0.612  …                       exact*
  …
+    * matched a digit alternative of the reading, not the reading itself
 ```
 
-`--json` prints the same as JSON (plus `quad`, `codeSource`, the `descriptor`
-orientation and digest, the `engine` fingerprint, and per match the
-`referenceScore` and `exemplarSimilarity` beside the fused `descriptorScore`),
-`--verbose` lists every hypothesis that was tried, and `--save-rectified out.png`
-writes the winning canvas so you can see what the hasher and the OCR saw.
-`--overlay overlay.json` (or a phone-side `.bin`) fuses learned exemplars into
-the scores after checking its calibration print against this machine's, and
-`--policy policy.json` applies a `LearningPolicy` file (`docs/learning-policy.md`).
+`--expect-set UNL` passes the set hint described above. `--json` prints the same
+as JSON (plus `quad`, `codeSource`, `codeOrigin` (`literal`/`alternative`),
+`codeAlternatives` (best first, the read code first), `expectedSet`, the
+`descriptor` orientation and digest, the `engine` fingerprint, and per match
+`codeOrigin` and the `referenceScore` and `exemplarSimilarity` beside the fused
+`descriptorScore`), `--verbose` lists every hypothesis that was tried, and
+`--save-rectified out.png` writes the winning canvas so you can see what the
+hasher and the OCR saw. `--overlay overlay.json` (or a phone-side `.bin`) fuses
+learned exemplars into the scores after checking its calibration print against
+this machine's, and `--policy policy.json` applies a `LearningPolicy` file
+(`docs/learning-policy.md`).
 
 Check what this machine's Vision model makes of the calibration canvas, and
 whether it matches the index:
@@ -199,6 +226,18 @@ What the misses are:
 For scale, the same pipeline scored 79 % / 61 % / 35 % top-1 before the saliency
 fallback and the whole-image rule were added; those two changes are what made
 the difference on cluttered backgrounds.
+
+Re-measured on 2026-11-07 on the same seed-42 set, before and after the OCR
+hygiene change (index-aware vocabulary, digit alternatives, literal/alternative
+split; ADR-002 P2), on the same Mac the same afternoon: before, mild 98 / 100,
+moderate 97 / 99, harsh 68 / 77, overall 87.7 / 92.0 (top-1 / top-3); after,
+mild 98 / 100, moderate 98 / 99, harsh 67 / 77, overall 87.7 / 92.0. One moderate
+case was recovered (the OCR read `RAD-162` for `RAD-161`; the `2` → `1`
+alternative now reaches the card) and one harsh case was lost (a garbled
+`RAD-256`, which no printing carries, now yields the guess `RAD-156` and its
+smaller bonus outweighed a weak descriptor match for the true `RAD-158`); the
+harsh tier's codes are illegible by construction, so a guess there is as likely
+to hurt as to help, and the `expectedSet` hint does not apply to a mixed set.
 
 Real photos: none yet. Put photos of your own cards in `samples/`, named by catalog
 id or printed code (see `samples/README.md`), and `riftscan evaluate samples`
@@ -405,7 +444,19 @@ through the official API under those terms.
   Float32 bytes) of the device's calibration print, platform and OS version. It is
   stamped on every `RecognitionResult`; `CardRecognizer.live` computes it, which
   is why that factory is `async throws`. `ScoringPolicy` and `ScoreComponents` are
-  `Codable` so policies can ship as data and analyses can be recorded.
+  `Codable` so policies can ship as data and analyses can be recorded; a policy
+  file missing a key (one written before `codeAlternativeBonus` or
+  `expectedSetBonus` existed, say) decodes with the default for it.
+- **OCR vocabulary.** `PrintedCodeParser.Vocabulary(codes:)` is built from the
+  index's codes: the keys (code without denominator), the denominators each set
+  prints, and the set codes and number prefixes used for shape repairs. A parser
+  therefore knows exactly the printings the recogniser can name; there is no
+  built-in list of sets. `CodeReading.origin` is `.literal` for a code read as
+  printed (shape repairs such as `0GN` → `OGN` included) and `.alternative` when
+  the literal named no printing and a digit alternative did; `alternatives` lists
+  every code the text could name, best first. `Match.codeEvidence` pairs the
+  agreement with the origin it came through, so a candidate that matched only an
+  alternative is distinguishable from one the text literally named.
 - **Tests.** Every stage has a Swift Testing suite. Card images for tests are drawn
   procedurally with CoreGraphics and CoreText (no Riot assets), feature prints come
   from a deterministic thumbnail-based fake, and the Vision-backed tests exercise

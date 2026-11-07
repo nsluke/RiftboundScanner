@@ -30,7 +30,16 @@ struct RootView: View {
             confidenceRule: dependencies.confidenceRule
         ))
         _history = State(wrappedValue: HistoryModel(store: dependencies.store))
-        _collection = State(wrappedValue: CollectionModel(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, priceSource: dependencies.priceSource))
+        _collection = State(wrappedValue: CollectionModel(
+            catalog: dependencies.catalog,
+            holdings: dependencies.holdings,
+            prices: dependencies.prices,
+            pending: dependencies.pending,
+            endpoints: dependencies.endpoints,
+            directory: dependencies.directory,
+            seed: dependencies.vault,
+            now: dependencies.now
+        ))
         deckDependencies = DeckDependencies(client: dependencies.client, endpoints: dependencies.endpoints, cache: dependencies.deckCache, now: dependencies.now)
         _decks = State(wrappedValue: DecksModel(client: dependencies.client, cache: dependencies.deckCache, now: dependencies.now))
         _settings = State(wrappedValue: SettingsModel(

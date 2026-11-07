@@ -11,8 +11,15 @@ nonisolated struct AppDependencies: Sendable {
     let identifier: any CardIdentifying
     let store: any ScanStoring
     let directory: CardDirectory
+    /// The bundled `CardVault.json`: the catalog seed and the ledger builder's
+    /// finish rules. The Collection shows the server's catalog once fetched.
     let vault: CardVault
-    let priceSource: any PriceQuoting
+    /// The Collection tab's three server-backed sources and its view of the
+    /// outbox (ADR-002 §6), each caching under `paths.catalog`.
+    let catalog: any CatalogSourcing
+    let holdings: any HoldingsSourcing
+    let prices: any PriceQuoting
+    let pending: any PendingLedgerProviding
     let index: IndexSummary
     let makeBatch: @Sendable (ScanBatch.Setup) -> ScanBatch
     let now: @Sendable () -> Date
@@ -62,7 +69,6 @@ nonisolated struct AppDependencies: Sendable {
             vault = .empty
         }
         let documents = URL.documentsDirectory
-        let caches = URL.cachesDirectory
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let device = ScanBatch.Device.current(appVersion: appVersion)
         let now: @Sendable () -> Date = { Date() }
@@ -106,7 +112,10 @@ nonisolated struct AppDependencies: Sendable {
             store: store,
             directory: CardDirectory(index: cardIndex),
             vault: vault,
-            priceSource: TCGCSVPriceSource(cacheURL: caches.appending(path: "tcgcsv-prices.json"), now: now),
+            catalog: ServerCatalogSource(client: client, seed: vault, url: paths.catalog.appending(path: "catalog.json"), now: now),
+            holdings: ServerHoldingsSource(client: client, url: paths.catalog.appending(path: "holdings.json"), now: now),
+            prices: ServerPriceSource(client: client, url: paths.catalog.appending(path: "prices.json"), now: now),
+            pending: OutboxPendingLedger(outbox: outbox, store: store),
             index: summary,
             makeBatch: { setup in
                 ScanBatch(

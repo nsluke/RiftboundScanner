@@ -268,7 +268,8 @@ candidates and the code the OCR read, and a scan log. Every scan is saved with
 its photo, the rectified canvas, the top five candidates with scores, and your
 verdict (correct, corrected to another printing, or rejected), grouped into
 batches so lighting setups can be compared. The History tab shows per-batch
-accuracy and can export a batch as a zip.
+accuracy and can export a batch as a zip; the Collection tab shows the
+server's holdings (see below).
 
 Verdicts are an append-only log (`docs/adr/002-collection-system.md`, decision
 6). Each `ScanRecord` carries `decisions`: one `Decision` per verdict with a
@@ -485,6 +486,65 @@ server locally (`RC_DB_PATH=/tmp/x.sqlite RC_PRICE_SYNC=0 RC_PORT=8096 python -m
 in the server repo), build a deck at `http://127.0.0.1:8096/decks`, enter
 `127.0.0.1:8096` as the fallback address in a simulator build and open the
 Decks tab.
+
+### The Collection tab
+
+The Collection tab (`App/Sources/Collection/`) shows what the server's ledger
+says the user owns, never a count of local scans (ADR-002, principle 1 and
+decision 10). `CollectionModel` is built from four sources the composition
+root wires in `AppDependencies.live()`, each caching one JSON file under
+`Library/Application Support/Riftbound/Catalog/` (rebuilt from the server, safe
+to delete):
+
+- `ServerHoldingsSource` (`HoldingsSourcing`): `GET /api/holdings` with the
+  ledger-head ETag as `If-None-Match`, kept as `holdings.json`. An unchanged
+  validator (a 304, which `HTTPCollectionClient` answers from its own cache
+  under that validator) keeps the stored counts and only moves `fetchedAt`.
+  Counts are per vault code and per finish (`OwnedCount.normal/foil`).
+- `ServerCatalogSource` (`CatalogSourcing`): `GET /api/catalog` conditional on
+  `catalog_version`, kept as `catalog.json`; the bundled `CardVault.json` is
+  the cold-start seed and stays on screen until the first fetch. Server rows
+  carry no art or Cardmarket link (decision 15), so each takes them from the
+  bundled row with the same code; a printing the bundle lacks shows a
+  placeholder. The catalog is re-asked for when its copy is older than
+  `CollectionModel.Policy.catalogMaxAge` (24 h), on pull-to-refresh, or when
+  the sync engine sees a different `/health.catalog_version`.
+- `ServerPriceSource` (`PriceQuoting`): `GET /api/prices/latest` conditional on
+  the day tag, kept as `prices.json`, keyed by vault code; refreshed when older
+  than `Policy.priceMaxAge` (12 h). A 404 ("no prices stored yet") or a failure
+  leaves the last sheet, or the vault's snapshot prices, on screen. The app's
+  tcgcsv client is gone: the server refreshes prices from tcgcsv, the phone
+  never talks to it.
+- `OutboxPendingLedger` (`PendingLedgerProviding`): every ledger item the sync
+  engine's outbox still owes, as `PendingDelta`s; an undo resolves to the
+  applied row it reverses through the batch's `sync.json` (or to the `+1`
+  being replayed beside it), and an undo of an unknown row counts for nothing.
+  Scan references and `manual:` references are treated alike.
+
+What the screen shows: the server's count ("×3") plus a "+N pending" chip for
+what this phone still owes; the header carries the net pending total; a
+pending-only printing appears under **My cards**. The card sheet lists Normal
+and Foil rows with each finish's owned count and value. When the server cannot
+be reached and a snapshot exists, the snapshot stands in with the pending
+chips and a notice ("Showing your collection as of …"); with no snapshot the
+bundled catalog shows with zero counts, **My cards** shows "Not connected to
+your server" with a **Connect** action (which forgets the cached endpoint so
+discovery probes again, then asks for holdings), and **All cards** still
+browses. When the server's catalog has printings the bundle lacks, a notice
+says how many cannot be scanned until the app is rebuilt with a new index
+(decision 10's new-set order). The view re-reads holdings when
+`SyncEngine.ledgerGeneration` moves, pending items when `queuedItems` does,
+and the catalog when `catalogVersion` does.
+
+The tests (`App/Tests/CollectionTests.swift`) run the real sources with
+in-memory files over `StubCollectionClient` and a `SyncingScanStore` whose
+confirmed scans must never be counted; `grep -rn tcgcsv.com App/Sources`
+finds nothing. To see it live, run the server locally as in the Decks section
+and open the Collection tab; `GET /api/holdings` and `GET /api/catalog` answer
+304 to the validators the app stores (checked with curl against the server's
+main at `user_version` 5: `ETag: "ledger-<head>.<stamp>"` moves with every
+applied item, the catalog's ETag equals `/health.catalog_version` and the
+body's `catalog_version`).
 
 ### Reviewing the results
 

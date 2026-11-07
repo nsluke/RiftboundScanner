@@ -4,7 +4,9 @@ import RiftboundRecognizer
 /// Everything the scanner's index does not know about a printing: rules text,
 /// domains, stats, tags, TCGplayer product ids and a snapshot of market
 /// prices. Extracted from Luke's Card Vault page and bundled as
-/// `CardVault.json`; the live price feed updates the prices.
+/// `CardVault.json`, the cold-start seed; the server's `GET /api/catalog`
+/// replaces it and `GET /api/prices/latest` updates the prices (ADR-002,
+/// decision 10).
 nonisolated struct VaultCard: Hashable, Sendable, Codable, Identifiable {
     /// The vault's printing code, e.g. `OGN-066a`, `RAD-SP1`, `OGN-066-P` (a promo).
     let code: String
@@ -30,7 +32,9 @@ nonisolated struct VaultCard: Hashable, Sendable, Codable, Identifiable {
     let promo: Bool
     let banned: Bool
     let cardmarketURL: URL?
-    let image: URL
+    /// Reference art, from the bundled file only: the server never serves
+    /// art (decision 15), so a printing it knows and the bundle does not has none.
+    let image: URL?
 
     var id: String { code }
 
@@ -44,6 +48,65 @@ nonisolated struct VaultCard: Hashable, Sendable, Codable, Identifiable {
 
     var tcgplayerURL: URL? {
         tcgplayerID.flatMap { URL(string: "https://www.tcgplayer.com/product/\($0)") }
+    }
+
+    init(
+        code: String, name: String, set: String, setName: String, rarity: String, type: String?, supertype: String?,
+        domains: [String], energy: Int?, might: Int?, power: Int?, text: String?, flavor: String?, tags: [String], tcgplayerID: Int?,
+        marketNormal: Double?, marketFoil: Double?, hasNormal: Bool, hasFoil: Bool, promo: Bool, banned: Bool,
+        cardmarketURL: URL?, image: URL?
+    ) {
+        self.code = code
+        self.name = name
+        self.set = set
+        self.setName = setName
+        self.rarity = rarity
+        self.type = type
+        self.supertype = supertype
+        self.domains = domains
+        self.energy = energy
+        self.might = might
+        self.power = power
+        self.text = text
+        self.flavor = flavor
+        self.tags = tags
+        self.tcgplayerID = tcgplayerID
+        self.marketNormal = marketNormal
+        self.marketFoil = marketFoil
+        self.hasNormal = hasNormal
+        self.hasFoil = hasFoil
+        self.promo = promo
+        self.banned = banned
+        self.cardmarketURL = cardmarketURL
+        self.image = image
+    }
+
+    /// A server catalog row, with the art and Cardmarket link of the bundled
+    /// row for the same code (the server carries neither).
+    init(_ card: CatalogCard, art bundled: VaultCard?) {
+        code = card.code
+        name = card.name
+        set = card.set
+        setName = card.setName
+        rarity = card.rarity
+        type = card.type
+        supertype = card.supertype
+        domains = card.domains
+        energy = card.energy
+        might = card.might
+        power = card.power
+        text = card.text
+        flavor = card.flavor
+        tags = card.tags
+        tcgplayerID = card.tcgplayerID
+        marketNormal = card.marketNormal
+        marketFoil = card.marketFoil
+        hasNormal = card.hasNormal
+        hasFoil = card.hasFoil
+        promo = card.promo
+        banned = card.banned
+        cardmarketURL = bundled?.cardmarketURL
+        image = bundled?.image
     }
 }
 
@@ -74,6 +137,9 @@ nonisolated struct CardVault: Sendable {
 
     subscript(card: Card) -> VaultCard? { byKey[PrintingKey(card.code)] }
 
+    /// The row with exactly this vault code (`card_id` on the server).
+    func card(code: String) -> VaultCard? { byCode[code] }
+
     /// The vault's spelling of an index printing (`SFD-227-STAR` for
     /// `sfd-227*-221`), `nil` when the vault has no row for it.
     func vaultCode(for id: Card.ID) -> String? {
@@ -100,8 +166,15 @@ nonisolated struct CardVault: Sendable {
     @concurrent
     static func read(from url: URL) async throws -> CardVault {
         let file = try JSONDecoder().decode(File.self, from: try Data(contentsOf: url))
+        return CardVault(asOf: date(fromDay: file.asOf) ?? .distantPast, cards: file.cards)
+    }
+
+    /// A `YYYY-MM-DD` day (the vault's `asOf`, the server's `as_of` and price
+    /// `day`) as midnight UTC; `nil` for anything else.
+    static func date(fromDay day: String?) -> Date? {
+        guard let day else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
-        return CardVault(asOf: formatter.date(from: file.asOf) ?? .distantPast, cards: file.cards)
+        return formatter.date(from: day)
     }
 }

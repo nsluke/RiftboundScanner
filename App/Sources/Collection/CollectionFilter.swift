@@ -2,16 +2,38 @@ import Foundation
 import RiftboundRecognizer
 
 /// One printing as the collection screen shows it: the vault's facts, the
-/// index's card when there is one, how many the user owns and what it is worth.
+/// index's card when there is one, how many the user owns by finish (the
+/// server's count), what this phone still owes the ledger for it, and what
+/// it is worth.
 nonisolated struct CollectionEntry: Hashable, Sendable, Identifiable {
     let vault: VaultCard
     let card: Card?
-    let quantity: Int
-    /// Live market prices when the feed has them, else the vault's snapshot.
+    /// The server's ledger count, by finish.
+    let owned: OwnedCount
+    /// Net unacknowledged change this phone owes the ledger ("+N pending").
+    let pending: Int
+    /// The server's latest prices when it has them, else the vault's snapshot.
     let normalPrice: Double?
     let foilPrice: Double?
 
+    init(vault: VaultCard, card: Card?, owned: OwnedCount, pending: Int = 0, normalPrice: Double?, foilPrice: Double?) {
+        self.vault = vault
+        self.card = card
+        self.owned = owned
+        self.pending = pending
+        self.normalPrice = normalPrice
+        self.foilPrice = foilPrice
+    }
+
+    /// A count with no finish split (filters, previews).
+    init(vault: VaultCard, card: Card?, quantity: Int, normalPrice: Double?, foilPrice: Double?) {
+        self.init(vault: vault, card: card, owned: OwnedCount(normal: quantity, foil: 0), normalPrice: normalPrice, foilPrice: foilPrice)
+    }
+
     var id: String { vault.id }
+
+    /// How many the server says the user owns, both finishes.
+    var quantity: Int { owned.total }
 
     /// The price to show and sort by: normal where the printing has a normal
     /// finish and a price, else foil (showcase and promo printings are foil only).
@@ -23,8 +45,8 @@ nonisolated struct CollectionEntry: Hashable, Sendable, Identifiable {
     var value: Double { (bestPrice ?? 0) * Double(quantity) }
 
     /// Art for the cell: the index's Riot URL when the scanner knows the
-    /// printing, else the vault's.
-    var artURL: URL { card?.imageURL ?? vault.image }
+    /// printing, else the vault's; `nil` for a printing only the server knows.
+    var artURL: URL? { card?.imageURL ?? vault.image }
 }
 
 /// What the collection screen is narrowed to. A pure value so it can be
@@ -86,7 +108,8 @@ nonisolated struct CollectionFilter: Hashable, Sendable {
         let needle = query.trimmingCharacters(in: .whitespaces)
         return entries.filter { entry in
             let vault = entry.vault
-            if ownedOnly, entry.quantity == 0 { return false }
+            // A printing only pending counts as "mine": the chip is the point.
+            if ownedOnly, entry.quantity == 0, entry.pending <= 0 { return false }
             if !includesPromos, vault.promo { return false }
             if hidesBanned, vault.banned { return false }
             if pricedOnly, entry.bestPrice == nil { return false }

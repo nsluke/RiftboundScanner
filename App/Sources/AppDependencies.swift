@@ -96,6 +96,9 @@ nonisolated struct AppDependencies: Sendable {
             now: now
         )
         let outbox = Outbox(fileURL: paths.sync.appending(path: "outbox.json"))
+        // The sizes assets are shrunk to; a policy value here, not a literal
+        // in the uploader (ADR-002, principle 4).
+        let assetEncoding = AssetEncodingPolicy()
         return AppDependencies(
             camera: CaptureEngine(),
             makeFeeder: { CSC100Feeder() },
@@ -138,7 +141,7 @@ nonisolated struct AppDependencies: Sendable {
                     vault: vault,
                     device: device.model,
                     uploads: RecordUploadComposer(),
-                    assets: StoredAssetProvider(store: store),
+                    assets: StoredAssetProvider(store: store, policy: assetEncoding),
                     now: now
                 )
             }

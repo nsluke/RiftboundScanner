@@ -10,7 +10,7 @@ import Foundation
 /// The wrapped store is `any ScanStoring` rather than `FileScanStore` so the
 /// tests can wrap `InMemoryScanStore` and the engine tests need no disk for
 /// the scans themselves; only `sync.json` and the outbox touch the file system.
-actor SyncingScanStore: ScanStoring {
+actor SyncingScanStore: ScanStoring, ScanRecordStamping {
     /// What changed, for the engine's triggers.
     nonisolated enum Event: Hashable, Sendable {
         case decided(ScanBatch.ID)
@@ -50,6 +50,12 @@ actor SyncingScanStore: ScanStoring {
 
     func records(in batch: ScanBatch.ID) async throws -> [ScanRecord] {
         try await inner.records(in: batch)
+    }
+
+    /// The wrapped store's stamp, or `nil` for a store that has none (every
+    /// flush then decodes the records, as the in-memory test store does).
+    func recordsStamp(for batch: ScanBatch.ID) async -> String? {
+        await (inner as? any ScanRecordStamping)?.recordsStamp(for: batch)
     }
 
     /// Saves the batch. Its purpose is fixed once any scan in it has a
@@ -106,6 +112,7 @@ actor SyncingScanStore: ScanStoring {
     /// Appends a `voided` decision to every scan not already voided and marks
     /// the batch; the engine removes the folder once every ledger item is
     /// acknowledged (ADR-002, §5.5).
+    @discardableResult
     func voidBatch(_ id: ScanBatch.ID) async throws -> Int {
         var voided = 0
         for record in try await inner.records(in: id) where record.verdict != .voided {

@@ -49,6 +49,14 @@ nonisolated struct ClientRef: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
+nonisolated extension LedgerSyncItem {
+    /// A `+1`, as opposed to an undo of one.
+    var isPlusOne: Bool {
+        if case .delta = self { return true }
+        return false
+    }
+}
+
 /// Why a ledger item is finished without having been applied. Every case is
 /// acknowledged: the phone never sends the item again, except an
 /// `unknownCard` once the server's catalog changes.
@@ -152,7 +160,10 @@ nonisolated enum LedgerItemState: Hashable, Sendable, Codable {
     case sent
     /// The server inserted a row; an undo of this item names it by reference.
     case applied(ledgerID: Int, cardID: String, finish: Finish?)
-    /// Acknowledged without a row.
+    /// Acknowledged without a new row. A +1 the server answers `duplicate`
+    /// *with* the row it already holds is recorded as `applied` instead, so
+    /// the row can be undone by reference later; `terminal(.duplicate)` is
+    /// kept for undos and for a server that returns no `ledger_id`.
     case terminal(TerminalStatus)
 
     /// Whether the server has given its final word.
@@ -382,6 +393,14 @@ nonisolated struct BatchSyncState: Hashable, Sendable, Codable {
 
     /// Every ledger item of every scan has the server's final word.
     var allItemsAcknowledged: Bool { scans.values.allSatisfy(\.allItemsAcknowledged) }
+
+    /// Nothing this file knows of is owed: every item answered, every wanted
+    /// upload done. With an unchanged `scans.json` the batch needs no reconcile.
+    var isSettled: Bool {
+        !batchMeta.wantsUpload && scans.values.allSatisfy { scan in
+            scan.allItemsAcknowledged && !scan.record.wantsUpload && !AssetKind.allCases.contains { scan[$0].wantsUpload }
+        }
+    }
 
     private enum CodingKeys: String, CodingKey {
         case formatVersion, batchID, batchMeta, scans, closedAt, voidedAt

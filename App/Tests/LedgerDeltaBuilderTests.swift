@@ -161,6 +161,19 @@ struct LedgerDeltaBuilderTests {
         #expect(items([first, corrected], state: state).map(\.clientRef) == ["scan:\(scanID.uuidString):2"], "nothing landed, so there is nothing to undo")
     }
 
+    @Test func aDuplicateAcknowledgedPlusOneIsUndoneWhenTheEffectChanges() throws {
+        let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1)
+        let rejected = Fixtures.decision(.rejected(.notACard), cardID: nil, seq: 2)
+        var state = ScanSyncState()
+        state[.plusOne(ScanRecord.ID(rawValue: scanID), seq: 1)] = .terminal(.duplicate)
+        let decided = items([first, rejected], state: state)
+        #expect(decided.map(\.clientRef) == ["scan:\(scanID.uuidString):2:undo"], "duplicate means the server holds the row: it is live and must be reversed")
+        #expect(undo(try #require(decided.first))?.undoOf == "scan:\(scanID.uuidString):1")
+
+        let corrected = Fixtures.decision(.corrected(Fixtures.jinx.id), cardID: Fixtures.jinx.id, seq: 2)
+        #expect(items([first, corrected], state: state).map(\.clientRef) == ["scan:\(scanID.uuidString):2:undo", "scan:\(scanID.uuidString):2"])
+    }
+
     @Test func aSentButUnansweredPlusOneIsResentAndUndoneWhenTheEffectChanges() throws {
         let first = Fixtures.decision(.correct, cardID: Fixtures.vi.id, source: .autoAccepted, seq: 1)
         let rejected = Fixtures.decision(.rejected(.notACard), cardID: nil, seq: 2)

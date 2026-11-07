@@ -356,7 +356,9 @@ struct SyncSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // One row while it fits; the button drops below the headline at
-            // accessibility text sizes instead of leaving the screen.
+            // accessibility text sizes instead of leaving the screen. The
+            // headline is one VoiceOver element and the button its own, so
+            // "Retry now" stays activatable.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
                     headlineLabel
@@ -368,7 +370,6 @@ struct SyncSection: View {
                     retryButton
                 }
             }
-            .accessibilityElement(children: .combine)
             if let detail {
                 Text(detail)
                     .font(.footnote)
@@ -411,6 +412,7 @@ struct SyncSection: View {
                 .foregroundStyle(tint)
         }
         .labelStyle(.titleAndIcon)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -425,7 +427,7 @@ struct SyncSection: View {
 
     private var headline: String {
         switch summary.voiding {
-        case .inProgress(let remaining): return String(localized: "Voiding · \(remaining) undos waiting")
+        case .inProgress(let remaining): return String(localized: "Voiding · \(remaining) left to send")
         case .complete(let rejected): return String(localized: "Voided · \(rejected) undos refused")
         case nil: break
         }

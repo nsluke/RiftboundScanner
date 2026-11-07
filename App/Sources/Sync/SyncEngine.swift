@@ -52,13 +52,26 @@ nonisolated struct SyncAttention: Hashable, Sendable, Identifiable {
 /// `scans.json` with `sync.json` and rebuilds the outbox, so the outbox is a
 /// cache and a decision made while offline is never lost. Transport failures
 /// back off from 5 s to 5 min; per-item statuses are recorded as terminal
-/// states and shown rather than retried. A whole page refused with 422 is
-/// bisected to the one bad item, so nothing behind it waits.
+/// states and shown rather than retried. A refusal of the ledger route as a
+/// whole (404, 422: the client's encoding and the server's schema disagree)
+/// leaves the items owed and ends the flush `failed` with the server's detail.
+///
+/// Each flush decodes a batch's records at most once, and not at all for a
+/// batch that owes nothing and whose `scans.json` stamp has not moved since
+/// its last reconcile; the history grows, the flush does not.
 ///
 /// Main-actor state for the views; the store, outbox and client are actors
 /// the engine awaits. Built by `RootView` through `AppDependencies.makeSyncEngine`.
 @Observable
 final class SyncEngine {
+    /// What one flush read from the store: every live batch and, for each
+    /// batch reconcile had to look at, its records decoded once and shared
+    /// by every drain.
+    struct Snapshot {
+        var batches: [ScanBatch] = []
+        var records: [ScanBatch.ID: [ScanRecord]] = [:]
+    }
+
     nonisolated struct Policy: Hashable, Sendable {
         /// How long after a decision the flush waits, so a run of decisions goes in one request.
         var decisionDelay: Duration = .seconds(2)
@@ -130,6 +143,8 @@ final class SyncEngine {
 
     private var isFlushing = false
     private var flushRequested = false
+    /// The `scans.json` stamp each batch had when it was last reconciled.
+    private var reconciledStamps: [ScanBatch.ID: String] = [:]
     private var backoff: Duration?
     private var retryTask: Task<Void, Never>?
     private var delayedFlush: Task<Void, Never>?
@@ -285,8 +300,9 @@ final class SyncEngine {
         retryTask = nil
         status = .syncing
         defer { flushCount += 1 }
+        var snapshot: Snapshot
         do {
-            try await reconcile()
+            snapshot = try await reconcile()
         } catch {
             status = .failed(String(localized: "The scan store could not be read. \(String(describing: error))"))
             await refreshSummaries()
@@ -303,16 +319,15 @@ final class SyncEngine {
         }
         do {
             if try await adoptCatalogVersion(health.catalogVersion) {
-                try await reconcile()
+                snapshot = try await reconcile()
             }
-            let batches = try await store.batches()
-            try await drainBatchMeta(batches)
+            try await drainBatchMeta(snapshot)
             let ledgerRefusal = try await drainLedger()
-            try await drainRecords(batches)
+            try await drainRecords(snapshot)
             for kind in [AssetKind.photoSmall, .canvas, .photo] {
-                try await drainAssets(kind, in: batches)
+                try await drainAssets(kind, in: snapshot)
             }
-            try await completeVoidedBatches(batches)
+            try await completeVoidedBatches(snapshot)
             backoff = nil
             if let ledgerRefusal {
                 status = .failed(ledgerRefusal.message)
@@ -337,32 +352,64 @@ final class SyncEngine {
     /// Derives the outbox from `scans.json` and `sync.json`: every decision
     /// whose items the server has not acknowledged, every record whose log
     /// grew since its upload, every asset a scan now qualifies for. Entries
-    /// for scans or batches that no longer exist are dropped.
-    func reconcile() async throws {
-        let batches = try await store.batches()
-        let liveBatches = Set(batches.map(\.id))
-        for batch in batches {
+    /// for scans or batches that no longer exist are dropped. A batch whose
+    /// `sync.json` owes nothing and whose records stamp is unchanged since
+    /// its last reconcile is skipped without decoding its records. Returns
+    /// what was read, for the drains.
+    @discardableResult
+    func reconcile() async throws -> Snapshot {
+        var snapshot = Snapshot(batches: try await store.batches())
+        let liveBatches = Set(snapshot.batches.map(\.id))
+        reconciledStamps = reconciledStamps.filter { liveBatches.contains($0.key) }
+        for batch in snapshot.batches {
+            let state = await store.syncState(for: batch.id)
+            let stamp = await store.recordsStamp(for: batch.id)
+            if let stamp, reconciledStamps[batch.id] == stamp, state.isSettled, await outbox.count(in: batch.id) == 0 {
+                continue
+            }
             let records = try await store.records(in: batch.id)
+            snapshot.records[batch.id] = records
             let liveScans = Set(records.map(\.id))
             for record in records {
-                let previous = await store.syncState(for: batch.id)[record.id]
+                let previous = state[record.id]
                 var scan = SyncingScanStore.refreshed(previous, for: record)
                 let items = LedgerDeltaBuilder.items(record: record, previousState: scan, batch: batch, vault: vault)
                 try await outbox.replace(itemsFor: record.id, in: batch.id, with: items)
                 let owed = Set(items.map(\.clientRef))
-                scan.items = scan.items.filter { $0.value != .queued || owed.contains($0.key) }
-                for ref in owed where scan.items[ref] == nil {
-                    scan.items[ref] = .queued
-                }
-                if scan != previous {
-                    let refreshed = scan
-                    try await store.updateSyncState(for: batch.id) { $0[record.id] = refreshed }
+                scan.items = Self.reconciledItems(scan.items, owed: owed)
+                guard scan != previous else { continue }
+                // Applied to the state as it is now, not as it was read above:
+                // a decision landing during the outbox write re-queued the
+                // record in `sync.json`, and that must survive this write.
+                try await store.updateSyncState(for: batch.id) { state in
+                    var current = SyncingScanStore.refreshed(state[record.id], for: record)
+                    current.items = Self.reconciledItems(current.items, owed: owed)
+                    state[record.id] = current
                 }
             }
             try await outbox.removeAll { $0.batchID == batch.id && !liveScans.contains($0.scanID) }
+            reconciledStamps[batch.id] = stamp
         }
         try await outbox.removeAll { !liveBatches.contains($0.batchID) }
         queuedItems = await outbox.count
+        return snapshot
+    }
+
+    /// The batch's records as the flush read them, or read now for a batch
+    /// reconcile skipped (it owed nothing, so this is rare).
+    private func records(of batch: ScanBatch, in snapshot: Snapshot) async throws -> [ScanRecord] {
+        if let records = snapshot.records[batch.id] { return records }
+        return try await store.records(in: batch.id)
+    }
+
+    /// The items with every queued entry the builder no longer owes dropped
+    /// and every owed reference present, queued.
+    nonisolated private static func reconciledItems(_ items: [String: LedgerItemState], owed: Set<String>) -> [String: LedgerItemState] {
+        var items = items.filter { $0.value != .queued || owed.contains($0.key) }
+        for ref in owed where items[ref] == nil {
+            items[ref] = .queued
+        }
+        return items
     }
 
     /// Records the server's catalog version. When it changed, every
@@ -397,11 +444,11 @@ final class SyncEngine {
 
     // MARK: - Drains
 
-    private func drainBatchMeta(_ batches: [ScanBatch]) async throws {
-        for batch in batches {
+    private func drainBatchMeta(_ snapshot: Snapshot) async throws {
+        for batch in snapshot.batches {
             let state = await store.syncState(for: batch.id)
             guard state.batchMeta.wantsUpload else { continue }
-            let records = try await store.records(in: batch.id)
+            let records = try await records(of: batch, in: snapshot)
             let calibrationHash = records.lazy.compactMap { $0.engine?.calibrationHash }.first
             let outcome: UploadState
             do {
@@ -415,9 +462,11 @@ final class SyncEngine {
     }
 
     /// Sends the outbox a page at a time. Returns the refusal that stopped
-    /// the ledger early without being this page's fault or the connection's
-    /// (a 404 route, an unreadable answer): the items stay `sent`, records
-    /// and assets still drain, and the flush ends `failed` with its message.
+    /// the ledger early without being the connection's fault (a 404 route,
+    /// a 422 the server gives only for a request shape it does not accept,
+    /// an unreadable answer): the items stay `sent`, records and assets still
+    /// drain, and the flush ends `failed` with the server's detail. Nothing
+    /// is marked `invalid` for it, because no single item caused it.
     private func drainLedger() async throws -> ServerError? {
         while true {
             let page = await outbox.nextPage(limit: policy.pageSize)
@@ -450,33 +499,27 @@ final class SyncEngine {
     }
 
     /// Sends one page and records every answer; returns the references the
-    /// server acknowledged. A 422 refuses the whole body for one bad item
-    /// (the server's `http` substring rule, say), so the page is bisected
-    /// until the item stands alone and ends `invalid`, and nothing behind it
-    /// waits.
+    /// server acknowledged. A +1 answered `duplicate` with the row the
+    /// server already holds (a replay after a lost answer, or after
+    /// `sync.json` was lost) is recorded `applied`: the row is live and a
+    /// later correction, rejection or void must undo it by reference. No
+    /// holding changed now, so `ledgerGeneration` stays.
     private func send(_ page: [OutboxEntry]) async throws -> Set<String> {
-        let response: LedgerSyncResponse
-        do {
-            response = try await client.syncLedger(LedgerSyncRequest(device: device, items: page.map(\.item)))
-        } catch ServerError.unprocessable {
-            guard page.count > 1 else {
-                try await acknowledge(page.map { ($0, LedgerItemState.terminal(.invalid)) })
-                return Set(page.map(\.id))
-            }
-            let half = page.count / 2
-            let left = try await send(Array(page[..<half]))
-            let right = try await send(Array(page[half...]))
-            return left.union(right)
-        }
+        let response = try await client.syncLedger(LedgerSyncRequest(device: device, items: page.map(\.item)))
         var outcomes: [(entry: OutboxEntry, state: LedgerItemState)] = []
         var appliedAny = false
         for result in response.results {
             guard let entry = page.first(where: { $0.id == result.clientRef }) else { continue }
-            if result.status == .applied {
+            switch result.status {
+            case .applied:
                 outcomes.append((entry, .applied(ledgerID: result.ledgerID ?? 0, cardID: result.cardID ?? "", finish: result.finish)))
                 appliedAny = true
-            } else if let terminal = TerminalStatus(result.status, catalogVersion: catalogVersion) {
-                outcomes.append((entry, .terminal(terminal)))
+            case .duplicate where entry.item.isPlusOne && result.ledgerID != nil:
+                outcomes.append((entry, .applied(ledgerID: result.ledgerID ?? 0, cardID: result.cardID ?? "", finish: result.finish)))
+            default:
+                if let terminal = TerminalStatus(result.status, catalogVersion: catalogVersion) {
+                    outcomes.append((entry, .terminal(terminal)))
+                }
             }
         }
         try await acknowledge(outcomes)
@@ -504,11 +547,12 @@ final class SyncEngine {
     /// Every write below changes only the fields this drain owns, through the
     /// store's closure: a void, a close or a newer decision written while a
     /// request was in flight is never overwritten with a stale snapshot.
-    private func drainRecords(_ batches: [ScanBatch]) async throws {
-        for batch in batches {
+    private func drainRecords(_ snapshot: Snapshot) async throws {
+        for batch in snapshot.batches {
+            guard let records = snapshot.records[batch.id] else { continue }
             // Without the batch on the server every record would be deferred.
             guard await store.syncState(for: batch.id).batchMeta.isUploaded else { continue }
-            for record in try await store.records(in: batch.id) {
+            for record in records {
                 guard await store.syncState(for: batch.id)[record.id].record.wantsUpload else { continue }
                 let outcome: UploadState
                 var acceptedSeq: Int?
@@ -538,9 +582,9 @@ final class SyncEngine {
         }
     }
 
-    private func drainAssets(_ kind: AssetKind, in batches: [ScanBatch]) async throws {
-        for batch in batches {
-            for record in try await store.records(in: batch.id) {
+    private func drainAssets(_ kind: AssetKind, in snapshot: Snapshot) async throws {
+        for batch in snapshot.batches {
+            for record in snapshot.records[batch.id] ?? [] {
                 let scan = await store.syncState(for: batch.id)[record.id]
                 guard scan[kind].wantsUpload, scan.record.isUploaded else { continue }
                 let outcome: UploadState
@@ -559,18 +603,37 @@ final class SyncEngine {
         }
     }
 
-    /// A voided batch's folder goes once every ledger item is acknowledged.
-    /// Refused undos keep the folder so their count stays visible with
-    /// "Resolve on the web"; the user removes it from History.
-    private func completeVoidedBatches(_ batches: [ScanBatch]) async throws {
-        for batch in batches {
+    /// A voided batch's folder goes once every ledger item is acknowledged
+    /// and the server holds every voided record (the folder is the only copy
+    /// of those decisions until then). Refused undos keep the folder so their
+    /// count stays visible with "Resolve on the web"; the user removes it
+    /// from History.
+    private func completeVoidedBatches(_ snapshot: Snapshot) async throws {
+        for batch in snapshot.batches {
             let state = await store.syncState(for: batch.id)
             guard state.isVoided, state.allItemsAcknowledged, await outbox.count(in: batch.id) == 0, state.rejectedUndos == 0 else { continue }
-            // A void written during this flush owes undos reconcile has not derived yet.
+            // Read afresh, not from the snapshot: a void written during this
+            // flush is in `scans.json` now, and deleting is the one step that
+            // cannot be undone by the next reconcile.
             let records = try await store.records(in: batch.id)
-            guard records.allSatisfy({ LedgerDeltaBuilder.items(record: $0, previousState: state[$0.id], batch: batch, vault: vault).isEmpty }) else { continue }
+            guard voidRemaining(state, records: records, batch: batch) == 0 else { continue }
             try await store.deleteBatch(batch.id)
         }
+    }
+
+    /// What a voided batch still has to send before its folder can go: items
+    /// without an answer, undos reconcile has not derived yet (a void written
+    /// during a flush), and the records that tell the server about the void.
+    private func voidRemaining(_ state: BatchSyncState, records: [ScanRecord], batch: ScanBatch) -> Int {
+        var remaining = state.scans.values.reduce(0) { $0 + $1.items.values.count { !$0.isAcknowledged } }
+        for record in records {
+            let scan = state[record.id]
+            remaining += LedgerDeltaBuilder.items(record: record, previousState: scan, batch: batch, vault: vault).count { scan.items[$0.clientRef] == nil }
+            if !record.decisions.isEmpty, scan.record.wantsUpload {
+                remaining += 1
+            }
+        }
+        return remaining
     }
 
     /// Turns an upload error into a state, or rethrows what should stop the
@@ -626,8 +689,16 @@ final class SyncEngine {
                 }
             }
             if state.isVoided {
-                let remaining = state.scans.values.reduce(0) { $0 + $1.items.values.count { !$0.isAcknowledged } }
-                summary.voiding = remaining > 0 ? .inProgress(remaining: remaining) : .complete(rejectedUndos: state.rejectedUndos)
+                if state.allItemsAcknowledged, state.rejectedUndos > 0 {
+                    summary.voiding = .complete(rejectedUndos: state.rejectedUndos)
+                } else {
+                    // The same count that lets `completeVoidedBatches` delete
+                    // the folder, so a void that is not yet derived or whose
+                    // records are not yet up never reads as complete.
+                    let records = (try? await store.records(in: batch.id)) ?? []
+                    let remaining = voidRemaining(state, records: records, batch: batch)
+                    summary.voiding = remaining > 0 ? .inProgress(remaining: remaining) : .complete(rejectedUndos: 0)
+                }
             }
             updated[batch.id] = summary
         }

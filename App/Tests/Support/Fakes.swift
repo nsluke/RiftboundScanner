@@ -166,9 +166,6 @@ nonisolated struct ServerScript: Sendable {
     var defaultItemStatus: LedgerItemStatus = .applied
     /// When set, every sync fails with this before any item is answered.
     var syncFailure: ServerError?
-    /// References whose presence makes the server refuse the whole request
-    /// with 422, the way its `http` substring rule does.
-    var poisonRefs: Set<String> = []
     var batch: Result<UpsertOutcome, ServerError> = .success(.created)
     var scan: Result<ScanUploadReceipt, ServerError> = .success(ScanUploadReceipt(outcome: .created))
     var asset: Result<UpsertOutcome, ServerError> = .success(.created)
@@ -214,6 +211,9 @@ actor StubCollectionClient: CollectionServing {
     private(set) var script: ServerScript
     private(set) var recording = ServerRecording()
     private var nextLedgerID = 1
+    /// The rows the stub holds by client reference, so a `duplicate` answer
+    /// carries the row's id and card the way the server's does.
+    private var rows: [String: (ledgerID: Int, cardID: String?)] = [:]
     private var holdsScans = false
     private var heldScanWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -255,18 +255,32 @@ actor StubCollectionClient: CollectionServing {
     func syncLedger(_ request: LedgerSyncRequest) async throws(ServerError) -> LedgerSyncResponse {
         recording.syncRequests.append(request)
         if let failure = script.syncFailure { throw failure }
-        if request.items.contains(where: { script.poisonRefs.contains($0.clientRef) }) {
-            throw .unprocessable(detail: "body contains http")
-        }
-        let results = request.items.map { item in
+        var results: [LedgerItemResult] = []
+        for item in request.items {
             let status = script.itemStatuses[item.clientRef] ?? script.defaultItemStatus
-            var ledgerID: Int?
-            if status == .applied {
-                ledgerID = nextLedgerID
-                nextLedgerID += 1
-            }
             let cardID: String? = if case .delta(let delta) = item { delta.cardKey } else { nil }
-            return LedgerItemResult(clientRef: item.clientRef, status: status, cardID: status == .applied ? cardID : nil, finish: nil, ledgerID: ledgerID)
+            switch status {
+            case .applied:
+                let row = (ledgerID: nextLedgerID, cardID: cardID)
+                nextLedgerID += 1
+                rows[item.clientRef] = row
+                results.append(LedgerItemResult(clientRef: item.clientRef, status: status, cardID: row.cardID, finish: nil, ledgerID: row.ledgerID))
+            case .duplicate:
+                // The row an earlier request committed. One the stub never saw
+                // applied (a scripted duplicate) gets a fresh id, as the server
+                // has one from the request whose answer was lost.
+                let row: (ledgerID: Int, cardID: String?)
+                if let known = rows[item.clientRef] {
+                    row = known
+                } else {
+                    row = (ledgerID: nextLedgerID, cardID: cardID)
+                    nextLedgerID += 1
+                    rows[item.clientRef] = row
+                }
+                results.append(LedgerItemResult(clientRef: item.clientRef, status: status, cardID: row.cardID, finish: nil, ledgerID: row.ledgerID))
+            default:
+                results.append(LedgerItemResult(clientRef: item.clientRef, status: status, cardID: nil, finish: nil, ledgerID: nil))
+            }
         }
         return LedgerSyncResponse(results: results)
     }

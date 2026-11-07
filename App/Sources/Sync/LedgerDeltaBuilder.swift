@@ -16,7 +16,9 @@ import RiftboundRecognizer
 ///   simply dropped from the outbox: nothing to reverse, nothing to send. A
 ///   previous +1 that was **sent** without an answer may have landed, so it
 ///   is replayed (the server answers `duplicate` or `applied`) and then
-///   reversed by reference, which nets to zero either way;
+///   reversed by reference, which nets to zero either way. A previous +1
+///   the server answered `duplicate` is a row it already held (ADR-002
+///   §5.1), as live as an applied one, so it is reversed by reference too;
 /// - items the server has already acknowledged are never emitted again.
 nonisolated enum LedgerDeltaBuilder {
     /// What a decision asks the ledger to hold for this scan.
@@ -43,7 +45,7 @@ nonisolated enum LedgerDeltaBuilder {
             if let previous = standing {
                 let previousRef = ClientRef.plusOne(record.id, seq: previous.seq)
                 switch previousState[previousRef] {
-                case .applied, .sent:
+                case .applied, .sent, .terminal(.duplicate):
                     output.append(.undo(LedgerSyncItem.Undo(
                         clientRef: ClientRef.undo(record.id, seq: decision.seq).description,
                         undoOf: previousRef.description,

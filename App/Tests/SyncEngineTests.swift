@@ -9,6 +9,62 @@ nonisolated struct StubAssetProvider: ScanAssetProviding {
     func asset(_ kind: AssetKind, for record: ScanRecord) async throws -> Data? { bytes }
 }
 
+/// An in-memory store that stamps its records the way `FileScanStore` stamps
+/// `scans.json` (every write moves the stamp) and counts every decode, so a
+/// test can see when the engine reads a batch's records and when it skips them.
+actor StampedScanStore: ScanStoring, ScanRecordStamping {
+    private let inner: InMemoryScanStore
+    private var versions: [ScanBatch.ID: Int] = [:]
+    private(set) var recordReads: [ScanBatch.ID: Int] = [:]
+
+    init(inner: InMemoryScanStore) {
+        self.inner = inner
+    }
+
+    func recordsStamp(for batch: ScanBatch.ID) -> String? { "v\(versions[batch, default: 0])" }
+
+    private func touch(_ batch: ScanBatch.ID) { versions[batch, default: 0] += 1 }
+
+    func batches() async -> [ScanBatch] { await inner.batches() }
+
+    func records(in batch: ScanBatch.ID) async throws -> [ScanRecord] {
+        recordReads[batch, default: 0] += 1
+        return await inner.records(in: batch)
+    }
+
+    func save(_ batch: ScanBatch) async { await inner.save(batch) }
+
+    func append(_ record: ScanRecord, photo: Data, rectified: Data?) async throws {
+        try await inner.append(record, photo: photo, rectified: rectified)
+        touch(record.batchID)
+    }
+
+    func update(_ record: ScanRecord) async throws {
+        try await inner.update(record)
+        touch(record.batchID)
+    }
+
+    func update(_ records: [ScanRecord]) async throws {
+        try await inner.update(records)
+        for record in records { touch(record.batchID) }
+    }
+
+    func decide(_ id: ScanRecord.ID, in batch: ScanBatch.ID, _ input: DecisionInput) async throws -> ScanRecord {
+        let decided = try await inner.decide(id, in: batch, input)
+        touch(batch)
+        return decided
+    }
+
+    func deleteBatch(_ id: ScanBatch.ID) async {
+        await inner.deleteBatch(id)
+        versions[id] = nil
+    }
+
+    nonisolated func batchDirectory(for id: ScanBatch.ID) -> URL { inner.batchDirectory(for: id) }
+    nonisolated func photoURL(for record: ScanRecord) -> URL { inner.photoURL(for: record) }
+    nonisolated func rectifiedURL(for record: ScanRecord) -> URL? { inner.rectifiedURL(for: record) }
+}
+
 /// The engine against an in-memory scan store, a scripted server and a
 /// hand-advanced clock; only `sync.json` and `outbox.json` touch the disk.
 @MainActor
@@ -28,14 +84,20 @@ struct SyncEngineTests {
         let batch: ScanBatch
         let engine: SyncEngine
 
+        /// What `SyncingScanStore` wraps: the in-memory store itself, or a
+        /// test's wrapper around it (`wrapping`).
+        let wrapped: any ScanStoring
+
         init(
             purpose: BatchPurpose = .collection,
             health: HealthReport = HealthReport(userVersion: 5, catalogVersion: "cat-1"),
-            policy: SyncEngine.Policy = SyncEngine.Policy()
+            policy: SyncEngine.Policy = SyncEngine.Policy(),
+            wrapping: ((InMemoryScanStore) -> any ScanStoring)? = nil
         ) async throws {
             directory = URL.temporaryDirectory.appending(path: "SyncEngineTests-\(UUID().uuidString)", directoryHint: .isDirectory)
             inner = InMemoryScanStore()
-            store = SyncingScanStore(inner: inner, directory: directory, now: { Fixtures.epoch })
+            wrapped = wrapping?(inner) ?? inner
+            store = SyncingScanStore(inner: wrapped, directory: directory, now: { Fixtures.epoch })
             outbox = Outbox(fileURL: directory.appending(path: "outbox.json"))
             client = StubCollectionClient()
             endpoints = FixedEndpoints(.available(.lan, health: health))
@@ -71,7 +133,8 @@ struct SyncEngineTests {
         private init(copying other: World) {
             directory = other.directory
             inner = other.inner
-            store = SyncingScanStore(inner: other.inner, directory: other.directory, now: { Fixtures.epoch })
+            wrapped = other.wrapped
+            store = SyncingScanStore(inner: other.wrapped, directory: other.directory, now: { Fixtures.epoch })
             outbox = Outbox(fileURL: other.directory.appending(path: "outbox.json"))
             client = other.client
             endpoints = other.endpoints
@@ -99,6 +162,14 @@ struct SyncEngineTests {
 
         func sentRefs() async -> [[String]] {
             await client.recording.syncRequests.map { $0.items.map(\.clientRef) }
+        }
+
+        /// The `undo_of` of every undo in the last request sent.
+        func lastUndoTargets() async -> [String] {
+            await client.recording.syncRequests.last?.items.compactMap { item in
+                if case .undo(let undo) = item { return undo.undoOf }
+                return nil
+            } ?? []
         }
     }
 
@@ -154,10 +225,50 @@ struct SyncEngineTests {
 
         let sent = await relaunched.sentRefs()
         #expect(sent == [[ref.description], [ref.description]], "the same reference again, never a new one")
-        #expect(await relaunched.state(of: record)[ref] == .terminal(.duplicate))
+        #expect(await relaunched.state(of: record)[ref] == .applied(ledgerID: 1, cardID: "OGN-001", finish: nil), "the server's row, as live as the first time it was reported")
         #expect(relaunched.engine.ledgerGeneration == 0, "a duplicate changed no holding")
         #expect(relaunched.engine.summary(for: world.batch.id)?.attention.isEmpty == true, "a clean replay needs no attention")
+        #expect(relaunched.engine.summary(for: world.batch.id)?.appliedItems == 1)
         #expect(await relaunched.outbox.isEmpty)
+
+        // The row the server holds under the replayed reference is undone by it.
+        await relaunched.client.update { $0.defaultItemStatus = .applied }
+        try await relaunched.store.voidBatch(world.batch.id)
+        await relaunched.engine.flush()
+        #expect(await relaunched.sentRefs().last == [ClientRef.undo(record.id, seq: 2).description])
+        #expect(await relaunched.lastUndoTargets() == [ref.description])
+        #expect(try await relaunched.store.batches().isEmpty, "the undo landed; the folder goes")
+    }
+
+    @Test func aFlushDecodesABatchOnceAndASettledUnchangedBatchNotAtAll() async throws {
+        let world = try await World(wrapping: { StampedScanStore(inner: $0) })
+        let stamped = try #require(world.wrapped as? StampedScanStore)
+        let accepted = try await world.scan()
+        let corrected = try await world.scan()
+        try await world.decide(accepted, .correct, source: .autoAccepted)
+        try await world.decide(corrected, .corrected(Fixtures.jinx.id))
+        await world.engine.flush()
+        let recording = await world.client.recording
+        #expect(recording.syncRequests.count == 1 && recording.scans.count == 2 && recording.assets.count == 4, "everything drained")
+        #expect(await stamped.recordReads[world.batch.id] == 1, "reconcile, the meta, record and three asset drains share one decode")
+        #expect(world.engine.summary(for: world.batch.id)?.isSettled == true)
+
+        await world.engine.flush()
+        await world.engine.flush()
+        #expect(await stamped.recordReads[world.batch.id] == 1, "a settled batch with an unchanged stamp is not decoded again")
+        #expect(world.engine.status == .idle)
+
+        // A decision moves the stamp (and re-queues the record), so the batch is read again, once.
+        try await world.decide(accepted, .correct, source: .spotCheck)
+        await world.engine.flush()
+        #expect(await stamped.recordReads[world.batch.id] == 2)
+        #expect(await world.client.recording.scans.count == 3, "the longer log went up")
+
+        // Written behind the seam, as a file edit would be: the stamp still moves, so it is seen.
+        _ = try await stamped.decide(corrected.id, in: world.batch.id, DecisionInput(.correct, source: .spotCheck))
+        await world.engine.flush()
+        #expect(await stamped.recordReads[world.batch.id] == 3)
+        #expect(await world.client.recording.scans.count == 4)
     }
 
     @Test func aDecisionWrittenBehindTheStoreIsSentAfterReconcile() async throws {
@@ -310,6 +421,42 @@ struct SyncEngineTests {
         #expect(world.engine.summary(for: world.batch.id) == nil)
     }
 
+    @Test func aVoidedBatchIsKeptUntilTheServerHoldsItsRecords() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct)
+        await world.engine.flush()
+        #expect(await world.state(of: record).record.isUploaded)
+
+        await world.client.update { $0.scan = .failure(.payloadTooLarge) }
+        try await world.store.voidBatch(world.batch.id)
+        await world.engine.flush()
+        #expect(await world.sentRefs().last == [ClientRef.undo(record.id, seq: 2).description])
+        #expect(await world.state(of: record)[.undo(record.id, seq: 2)]?.isApplied == true, "the holding is right")
+        #expect(await world.state(of: record).record == .failed(ServerError.payloadTooLarge.message))
+        #expect(try await world.store.batches().count == 1, "the voided decision exists only here until the server has it")
+        #expect(world.engine.summary(for: world.batch.id)?.voiding == .inProgress(remaining: 1))
+        #expect(world.engine.summary(for: world.batch.id)?.failedUploads == 1)
+
+        await world.client.update { $0.scan = .success(ScanUploadReceipt(outcome: .updated)) }
+        await world.engine.flush()
+        #expect(await world.client.recording.scans.count == 3, "the voided record was tried again and accepted")
+        #expect(try await world.store.batches().isEmpty, "now the server knows about the void")
+    }
+
+    @Test func aVoidNotYetDrainedReadsAsInProgress() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct)
+        await world.engine.flush()
+        try await world.store.voidBatch(world.batch.id)
+        await world.engine.refreshSummaries()
+        #expect(world.engine.summary(for: world.batch.id)?.voiding == .inProgress(remaining: 2), "the undo not yet derived and the voided record not yet up")
+
+        await world.engine.flush()
+        #expect(try await world.store.batches().isEmpty)
+    }
+
     @Test func voidingACalibrationBatchRemovesItAtOnce() async throws {
         let world = try await World(purpose: .calibration)
         let record = try await world.scan()
@@ -366,13 +513,52 @@ struct SyncEngineTests {
         await world.engine.flush()
         let undo = ClientRef.undo(record.id, seq: 2)
         #expect(await world.sentRefs().last == [plus.description, undo.description], "replay first, then reverse by reference")
-        #expect(await world.state(of: record)[plus] == .terminal(.duplicate))
+        #expect(await world.state(of: record)[plus] == .applied(ledgerID: 1, cardID: "OGN-001", finish: nil), "the row the first request committed")
         #expect(await world.state(of: record)[undo]?.isApplied == true, "the stale row is gone from the holding")
+        #expect(world.engine.ledgerGeneration == 1, "the undo changed a holding; the duplicate did not")
         #expect(world.engine.summary(for: world.batch.id)?.attention.isEmpty == true)
         #expect(world.engine.status == .idle)
     }
 
-    @Test func aRefusedPageIsBisectedToThePoisonItemAndTheDrainMovesOn() async throws {
+    /// The normal outcome of a lost answer: the 5 s retry replays the +1 on its
+    /// own, the server says `duplicate`, and only later does the user change
+    /// their mind. The undo must still name that row.
+    @Test func aPlusOneAnsweredDuplicateOnRetryIsUndoneByALaterRejection() async throws {
+        let world = try await World()
+        let record = try await world.scan()
+        try await world.decide(record, .correct, source: .autoAccepted)
+        await world.client.update { $0.syncFailure = .timedOut }
+        await world.engine.flush()
+        let plus = ClientRef.plusOne(record.id, seq: 1)
+        #expect(await world.state(of: record)[plus] == .sent)
+
+        await world.client.update {
+            $0.syncFailure = nil
+            $0.itemStatuses[plus.description] = .duplicate
+        }
+        await world.engine.flush()
+        #expect(await world.sentRefs() == [[plus.description], [plus.description]], "the retry replays the same reference")
+        #expect(await world.state(of: record)[plus] == .applied(ledgerID: 1, cardID: "OGN-001", finish: nil))
+        #expect(world.engine.ledgerGeneration == 0, "no holding changed")
+        #expect(world.engine.summary(for: world.batch.id)?.attention.isEmpty == true)
+        #expect(world.engine.summary(for: world.batch.id)?.appliedItems == 1)
+        #expect(world.engine.status == .idle)
+
+        try await world.decide(record, .rejected(.notACard))
+        await world.engine.flush()
+        let undo = ClientRef.undo(record.id, seq: 2)
+        #expect(await world.sentRefs().last == [undo.description], "the row is reversed by reference, nothing replayed")
+        #expect(await world.lastUndoTargets() == [plus.description])
+        #expect(await world.state(of: record)[undo]?.isApplied == true)
+        #expect(world.engine.ledgerGeneration == 1)
+        #expect(await world.outbox.isEmpty)
+    }
+
+    /// The server gives 422 only for a request shape it does not accept
+    /// (too many items, a missing field); a per-item problem is a per-item
+    /// `invalid`. So a 422 is never one item's fault: nothing is marked
+    /// invalid, the items stay owed, and the detail is shown.
+    @Test func aRefusedPageLeavesEveryItemOwedAndSurfacesTheDetail() async throws {
         let world = try await World()
         var records: [ScanRecord] = []
         for _ in 0..<3 {
@@ -380,23 +566,28 @@ struct SyncEngineTests {
             try await world.decide(record, .correct, source: .autoAccepted)
             records.append(record)
         }
-        let poison = ClientRef.plusOne(records[1].id, seq: 1)
-        await world.client.update { $0.poisonRefs = [poison.description] }
+        let refusal = ServerError.unprocessable(detail: "items: at most 100 items per request")
+        await world.client.update { $0.syncFailure = refusal }
         await world.engine.flush()
 
-        #expect(await world.state(of: records[1])[poison] == .terminal(.invalid))
-        #expect(await world.state(of: records[0])[.plusOne(records[0].id, seq: 1)]?.isApplied == true)
-        #expect(await world.state(of: records[2])[.plusOne(records[2].id, seq: 1)]?.isApplied == true, "the item behind the poison still lands")
-        #expect(await world.outbox.isEmpty)
-        #expect(world.engine.status == .idle)
-        #expect(await world.client.recording.syncRequests.count == 5, "[abc] -> [a] [bc] -> [b] [c]")
+        for record in records {
+            #expect(await world.state(of: record)[.plusOne(record.id, seq: 1)] == .sent, "handed over, unanswered, never invalid")
+        }
+        #expect(await world.outbox.count == 3, "still owed")
+        #expect(await world.client.recording.syncRequests.count == 1, "no bisection: the page was not refused for an item")
+        #expect(world.engine.status == .failed(refusal.message))
+        #expect(refusal.message.contains("at most 100 items"), "the server's detail reaches the user")
         #expect(await world.client.recording.scans.count == 3, "records still go up")
         let summary = try #require(world.engine.summary(for: world.batch.id))
-        #expect(summary.attention.map(\.reference) == [poison.description])
-        #expect(summary.appliedItems == 2)
+        #expect(summary.attention.isEmpty, "nothing for the user to act on per item")
+        #expect(summary.queuedItems == 3)
 
+        // A server that accepts the shape again receives the same items.
+        await world.client.update { $0.syncFailure = nil }
         await world.engine.flush()
-        #expect(await world.client.recording.syncRequests.count == 5, "an invalid item is never sent again")
+        #expect(await world.outbox.isEmpty)
+        #expect(await world.sentRefs().last?.count == 3)
+        #expect(world.engine.status == .idle)
     }
 
     @Test func aRefusedLedgerRouteLeavesItemsSentAndStillDrainsRecords() async throws {

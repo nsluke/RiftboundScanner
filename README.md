@@ -417,24 +417,32 @@ from the two and can be deleted at any time.
   goes out; one whose answer was lost is replayed (the server answers
   `duplicate` or `applied`) and, if its effect changed meanwhile, reversed by
   reference, so a timeout after the server's commit never leaves a stale
-  row. A page refused as a whole with 422 is bisected to the one bad item,
-  which ends `invalid`. Record uploads: `uploaded(at)` with the
+  row. A `+1` the server answers `duplicate` is recorded `applied` from the
+  row the answer names, because the server holds that row and a later
+  correction or void must undo it. A refusal of the ledger route as a whole
+  (404, or the 422 the server gives only for a request shape it does not
+  accept) leaves the items owed and ends the flush with the server's detail;
+  nothing is marked `invalid` for it. Record uploads: `uploaded(at)` with the
   decision count the server accepted, `conflict(serverSeq)` on 409 (terminal),
   `failed(reason)` for refusals that are retried on the next flush. Every
   drain writes only the fields it owns through the store's closure, so a
-  void or close written mid-flush is never overwritten.
+  void or close written mid-flush is never overwritten. A flush decodes each
+  batch's `scans.json` once, and skips a batch that owes nothing and whose
+  file stamp has not moved since its last reconcile.
 - UI: the batch overview shows a sync line with needs-attention rows
   (refused undos, unknown printings, record conflicts), **Close batch**,
   **Void batch** and **Sync now**; History shows purpose and sync badges and
   a Void swipe action. A voided batch's folder is removed once every ledger
-  item is acknowledged and no undo was refused; refused undos keep the batch
-  with their count ("Resolve on the web") until the user deletes it.
+  item is acknowledged, every voided record is on the server and no undo was
+  refused; refused undos keep the batch with their count ("Resolve on the
+  web") until the user deletes it.
 
 `App/Sources/Sync/ScanUploads.swift` holds the two seams A5 fills in:
 `ScanUploadComposing` (`RecordUploadComposer` sends the record minus image
 URLs, the oriented descriptor with its calibration hash, the analysis stamp
 and the engine) and `ScanAssetProviding` (`StoredAssetProvider` downsamples
-`photo_small` to 1024 px and re-encodes anything over the server's caps).
+`photo_small` and re-encodes anything over the server's caps at the sizes and
+JPEG qualities in `AssetEncodingPolicy`, a value the composition root injects).
 
 To check the wire contract against a local server, run the server repo's
 `RC_DB_PATH=/tmp/x.sqlite RC_PRICE_SYNC=0 RC_BACKUPS=0 RC_PORT=8197 python -m riftbound_collection serve`

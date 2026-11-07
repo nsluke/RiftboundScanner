@@ -114,40 +114,59 @@ nonisolated protocol ScanAssetProviding: Sendable {
     func asset(_ kind: AssetKind, for record: ScanRecord) async throws -> Data?
 }
 
+/// How an asset is shrunk to fit the server's cap for its kind (ADR-002,
+/// principle 4: every threshold is a policy value, injected at the
+/// composition root rather than written where it is used). `photoSmallLongEdge`
+/// is the ADR's 1024 px; a canvas or photo over its cap is re-encoded at its
+/// fallback long edge, trying each JPEG quality in turn.
+nonisolated struct AssetEncodingPolicy: Hashable, Sendable {
+    var photoSmallLongEdge: Int
+    var canvasFallbackLongEdge: Int
+    var photoFallbackLongEdge: Int
+    var jpegQualities: [Double]
+
+    init(photoSmallLongEdge: Int = 1024, canvasFallbackLongEdge: Int = 1056, photoFallbackLongEdge: Int = 2048, jpegQualities: [Double] = [0.8, 0.6, 0.45]) {
+        self.photoSmallLongEdge = photoSmallLongEdge
+        self.canvasFallbackLongEdge = canvasFallbackLongEdge
+        self.photoFallbackLongEdge = photoFallbackLongEdge
+        self.jpegQualities = jpegQualities
+    }
+}
+
 /// Reads assets from the scan store: `photo_small` is the photo downsampled
-/// to 1024 px on the long edge, the canvas is the rectified file, the photo
+/// to the policy's long edge, the canvas is the rectified file, the photo
 /// is the stored JPEG; anything over the cap is re-encoded smaller once.
 nonisolated struct StoredAssetProvider: ScanAssetProviding {
-    static let photoSmallLongEdge = 1024
-
     private let store: any ScanStoring
+    private let policy: AssetEncodingPolicy
 
-    init(store: any ScanStoring) {
+    init(store: any ScanStoring, policy: AssetEncodingPolicy) {
         self.store = store
+        self.policy = policy
     }
 
     func asset(_ kind: AssetKind, for record: ScanRecord) async throws -> Data? {
         switch kind {
         case .photoSmall:
-            guard let image = await PhotoDecoder.thumbnail(at: store.photoURL(for: record), maxPixelSize: Self.photoSmallLongEdge) else { return nil }
-            return try await Self.encodeWithinCap(image, cap: kind.maximumBytes)
+            guard let image = await PhotoDecoder.thumbnail(at: store.photoURL(for: record), maxPixelSize: policy.photoSmallLongEdge) else { return nil }
+            return try await encodeWithinCap(image, cap: kind.maximumBytes)
         case .canvas:
             guard let url = store.rectifiedURL(for: record) else { return nil }
-            return try await Self.fileWithinCap(url, cap: kind.maximumBytes, fallbackLongEdge: 1056)
+            return try await fileWithinCap(url, cap: kind.maximumBytes, fallbackLongEdge: policy.canvasFallbackLongEdge)
         case .photo:
-            return try await Self.fileWithinCap(store.photoURL(for: record), cap: kind.maximumBytes, fallbackLongEdge: 2048)
+            return try await fileWithinCap(store.photoURL(for: record), cap: kind.maximumBytes, fallbackLongEdge: policy.photoFallbackLongEdge)
         }
     }
 
-    private static func fileWithinCap(_ url: URL, cap: Int, fallbackLongEdge: Int) async throws -> Data? {
+    private func fileWithinCap(_ url: URL, cap: Int, fallbackLongEdge: Int) async throws -> Data? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         if data.count <= cap { return data }
         guard let image = await PhotoDecoder.thumbnail(at: url, maxPixelSize: fallbackLongEdge) else { return nil }
         return try await encodeWithinCap(image, cap: cap)
     }
 
-    private static func encodeWithinCap(_ image: CGImage, cap: Int) async throws -> Data? {
-        for quality in [0.8, 0.6, 0.45] {
+    private func encodeWithinCap(_ image: CGImage, cap: Int) async throws -> Data? {
+        for quality in policy.jpegQualities {
             let data = try await PhotoDecoder.encodeJPEG(image, quality: quality)
             if data.count <= cap { return data }
         }

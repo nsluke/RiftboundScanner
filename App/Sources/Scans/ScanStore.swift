@@ -44,6 +44,16 @@ nonisolated extension ScanStoring {
     }
 }
 
+/// A store that can say cheaply whether a batch's records changed since it
+/// was last asked, so the sync engine can skip decoding a settled batch's
+/// `scans.json` (megabytes of analysis per batch) on every flush.
+nonisolated protocol ScanRecordStamping: Sendable {
+    /// A value that differs whenever `records(in:)` would answer differently
+    /// from the last time this stamp was taken; `nil` when the store cannot
+    /// tell, which makes every reader decode the records.
+    func recordsStamp(for batch: ScanBatch.ID) async -> String?
+}
+
 nonisolated enum ScanStoreError: Error, Hashable {
     case batchMissing(ScanBatch.ID)
     case recordMissing(ScanRecord.ID)
@@ -61,7 +71,7 @@ nonisolated enum ScanStoreError: Error, Hashable {
 ///                           /photos/<scan id>.jpg
 ///                           /rectified/<scan id>.jpg
 /// ```
-actor FileScanStore: ScanStoring {
+actor FileScanStore: ScanStoring, ScanRecordStamping {
     private let root: URL
     private let fileManager = FileManager()
     private let encoder: JSONEncoder
@@ -108,6 +118,16 @@ actor FileScanStore: ScanStoring {
         let file = batchDirectory(for: batch).appending(path: "scans.json")
         guard fileManager.fileExists(atPath: file.path(percentEncoded: false)) else { return [] }
         return try decoder.decode([ScanRecord].self, from: try Data(contentsOf: file))
+    }
+
+    /// The modification time and size of `scans.json`: every write replaces
+    /// the file atomically, so both move together with its content.
+    func recordsStamp(for batch: ScanBatch.ID) -> String? {
+        let file = batchDirectory(for: batch).appending(path: "scans.json")
+        guard let attributes = try? fileManager.attributesOfItem(atPath: file.path(percentEncoded: false)),
+              let modified = attributes[.modificationDate] as? Date,
+              let size = attributes[.size] as? NSNumber else { return nil }
+        return "\(modified.timeIntervalSinceReferenceDate):\(size.intValue)"
     }
 
     func save(_ batch: ScanBatch) throws {

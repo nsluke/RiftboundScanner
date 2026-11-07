@@ -227,7 +227,8 @@ struct SyncingScanStoreTests {
             store: store,
             makeBatch: { _ in batch },
             now: { Fixtures.epoch },
-            makeID: { UUID() },
+            // Never audit samples: every confident scan is accepted (ADR-002, decision 9).
+            makeID: Fixtures.unsampledIDs,
             settleDelay: .zero
         )
         await model.start()

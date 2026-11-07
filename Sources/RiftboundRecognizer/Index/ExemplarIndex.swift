@@ -151,8 +151,23 @@ public struct ExemplarIndex: Hashable, Sendable, Codable {
     }
 }
 
-/// What `GET /api/learning/overlay/changes` returns: the exemplars admitted
-/// and the scans revoked since `baseVersion`, moving the overlay to `version`.
+/// What `GET /api/learning/overlay/changes?since_version=` returns: the
+/// exemplars admitted and the scans revoked since `baseVersion`, moving the
+/// overlay to `version` (ADR-002, section 5.3).
+///
+/// Wire shape, with the same conventions as ``ExemplarIndex`` (base64
+/// little-endian Float32 prints, ISO 8601 dates):
+///
+/// ```json
+/// {"baseVersion": 7, "version": 9, "calibrationPrint": null,
+///  "added": [{"artGroup": "ogn-003", "featurePrint": "<base64>", "scanID": "<uuid>", "batchID": "<uuid>", "admittedAt": "2026-11-07T12:26:40Z"}],
+///  "revoked": ["<scan uuid>"]}
+/// ```
+///
+/// `revoked` lists **scan ids**, not the server's integer exemplar ids: the
+/// wire exemplar carries no server id, the gate admits at most one exemplar
+/// per scan, and `Exemplar.id == scanID`, so the scan id is the key both sides
+/// share. Decode with ``decode(_:)``, which applies the date strategy.
 public struct ExemplarDelta: Hashable, Sendable, Codable {
     /// The overlay version the delta applies to; `nil` for a delta that is
     /// valid against any base (a server rebuilding from scratch sends a full
@@ -162,8 +177,22 @@ public struct ExemplarDelta: Hashable, Sendable, Codable {
     /// Present when the server wants to (re)state the calibration print.
     public let calibrationPrint: FeaturePrint?
     public let added: [ExemplarIndex.Exemplar]
-    /// Scan ids whose exemplars were revoked.
+    /// Scan ids (``ExemplarIndex/Exemplar/scanID``) whose exemplars were revoked.
     public let revoked: Set<UUID>
+
+    /// Decodes the changes endpoint's JSON body.
+    public static func decode(_ data: Data) throws -> ExemplarDelta {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ExemplarDelta.self, from: data)
+    }
+
+    public func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(self)
+    }
 
     public init(baseVersion: Int?, version: Int, calibrationPrint: FeaturePrint? = nil, added: [ExemplarIndex.Exemplar], revoked: Set<UUID>) {
         self.baseVersion = baseVersion

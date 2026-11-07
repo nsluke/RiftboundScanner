@@ -12,21 +12,15 @@ enum IdentifyCommand {
         let overlay = try options.string("overlay").map { try readOverlay(at: URL(fileURLWithPath: $0)) } ?? .empty
         if !overlay.isEmpty {
             let devicePrint = try await VisionFeaturePrintGenerator().calibrationPrint()
-            switch overlay.compatibility(with: devicePrint, minimum: policy.calibrationMinimum) {
+            let compatibility = overlay.compatibility(with: devicePrint, minimum: policy.calibrationMinimum)
+            switch compatibility {
             case .compatible(let similarity):
                 // The JSON report carries the overlay fields itself.
                 if !options.bool("json") {
                     Console.line("Overlay: \(overlay.exemplars.count) exemplars, version \(overlay.version), calibration similarity \(String(format: "%.4f", similarity))")
                 }
-            case .embeddingChanged(let similarity):
-                Console.error("riftscan: the overlay's calibration print differs from this machine's (similarity \(String(format: "%.4f", similarity)) < \(policy.calibrationMinimum)); its exemplars live in another embedding space")
-                exit(1)
-            case .dimensionMismatch(let expected, let found):
-                Console.error("riftscan: the overlay's prints have \(expected) elements, this machine's \(found)")
-                exit(1)
-            case .uncalibrated:
-                Console.error("riftscan: the overlay carries exemplars but no calibration print")
-                exit(1)
+            case .embeddingChanged, .dimensionMismatch, .uncalibrated:
+                throw OverlayIncompatibleError(compatibility: compatibility, minimum: policy.calibrationMinimum)
             }
         }
         let recognizer = try await CardRecognizer.live(index: index, policy: policy.scoring, overlay: overlay)
@@ -51,6 +45,27 @@ enum IdentifyCommand {
         }
     }
 
+    /// The overlay's exemplars cannot be compared with prints this machine
+    /// computes. Thrown to `Riftscan.main`, which reports it and exits 1 like
+    /// every other failure.
+    struct OverlayIncompatibleError: Error, CustomStringConvertible {
+        let compatibility: ExemplarIndex.Compatibility
+        let minimum: Double
+
+        var description: String {
+            switch compatibility {
+            case .compatible(let similarity):
+                "the overlay is compatible (similarity \(String(format: "%.4f", similarity)))"
+            case .embeddingChanged(let similarity):
+                "the overlay's calibration print differs from this machine's (similarity \(String(format: "%.4f", similarity)) < \(minimum)); its exemplars live in another embedding space"
+            case .dimensionMismatch(let overlay, let device):
+                "the overlay's prints have \(overlay) elements, this machine's \(device)"
+            case .uncalibrated:
+                "the overlay carries exemplars but no calibration print"
+            }
+        }
+    }
+
     /// An overlay as the server serves it (JSON) or as the phone stores it (`.bin`).
     static func readOverlay(at url: URL) throws -> ExemplarIndex {
         url.pathExtension == "bin" ? try BinaryExemplarStore.read(from: url) : try ExemplarIndex.read(from: url)
@@ -58,7 +73,7 @@ enum IdentifyCommand {
 
     private static func printHypotheses(_ result: RecognitionResult) {
         Console.line()
-        Console.line("Hypotheses tried:")
+        Console.line("Hypotheses tried (the winner is the eligible hypothesis with the highest sel; score ranks matches within one):")
         for (number, hypothesis) in result.hypotheses.enumerated() {
             let where_: String = switch hypothesis.location {
             case .detected(let quad, let confidence):
@@ -67,7 +82,7 @@ enum IdentifyCommand {
                 "whole image"
             }
             let code = hypothesis.codeRead.map { "code \($0)" } ?? "no code"
-            Console.line("  \(number + 1). \(where_): best \(hypothesis.bestCard?.rawValue ?? "-") score \(String(format: "%.3f", hypothesis.bestScore)) (desc \(String(format: "%.3f", hypothesis.descriptorScore)), ref \(String(format: "%.3f", hypothesis.referenceScore)), \(code))")
+            Console.line("  \(number + 1). \(where_): best \(hypothesis.bestCard?.rawValue ?? "-") score \(String(format: "%.3f", hypothesis.bestScore)) (sel \(String(format: "%.3f", hypothesis.selectionScore)), desc \(String(format: "%.3f", hypothesis.descriptorScore)), ref \(String(format: "%.3f", hypothesis.referenceScore)), \(code))")
         }
     }
 

@@ -93,16 +93,32 @@ struct DescriptorMatcherTests {
     }
 
     @Test func anExemplarBringsItsGroupIntoTheShortlistWithoutDroppingTheReferenceLeader() {
-        // Shortlist of one: by reference only card 1 is kept; the exemplar says
-        // the photo is of the ogn-003 pair, so the shortlist grows to both.
+        // Shortlist of two: by reference alone cards 1 and 2 would be kept; the
+        // exemplar says the photo is of the ogn-003 pair, so one of that pair
+        // takes card 2's place while card 1, the reference leader, stays.
         let overlay = ExemplarIndex(version: 1, calibrationPrint: nil, exemplars: [Self.exemplar("ogn-003", print: [1, 0, 0, 0])])
         var policy = ScoringPolicy.default
         policy.exemplarScale = 1.5
-        let ranked = DescriptorMatcher(policy: policy, exemplars: overlay).rank(Self.query, in: Self.index, limit: 1)
-        #expect(ranked.count == 2)
+        let matcher = DescriptorMatcher(policy: policy, exemplars: overlay)
+        let ranked = matcher.rank(Self.query, in: Self.index, limit: 2)
+        #expect(ranked.count == 2, "the limit still bounds the shortlist")
         #expect(ranked[0].entry.artGroup == ArtGroup(rawValue: "ogn-003") && ranked[0].fusedScore == 1.5)
         #expect(ranked[1].entry.id.rawValue == "ogn-001-298" && ranked[1].referenceScore == 1, "the best reference match is always listed")
-        #expect(ranked.map(\.referenceScore).max() == DescriptorMatcher(policy: .default).rank(Self.query, in: Self.index, limit: 1).first?.referenceScore)
+        #expect(ranked.map(\.referenceScore).max() == DescriptorMatcher(policy: .default).rank(Self.query, in: Self.index, limit: 2).first?.referenceScore)
+
+        // Three fused leaders would be the ogn-003 pair and card 1 anyway.
+        let three = matcher.rank(Self.query, in: Self.index, limit: 3)
+        #expect(three.count == 3 && three.map(\.entry.id.rawValue).contains("ogn-001-298") && !three.map(\.entry.id.rawValue).contains("ogn-002-298"))
+        #expect(three == three.sorted { $0.fusedScore > $1.fusedScore })
+
+        // A shortlist of one has room only for the reference leader: the
+        // hypothesis's standing against the others must not depend on the overlay.
+        let one = matcher.rank(Self.query, in: Self.index, limit: 1)
+        #expect(one.map(\.entry.id.rawValue) == ["ogn-001-298"])
+        #expect(matcher.rank(Self.query, in: Self.index, limit: 0).isEmpty)
+        for limit in [1, 2, 3, 4, 12] {
+            #expect(matcher.rank(Self.query, in: Self.index, limit: limit).count == min(limit, Self.index.entries.count), "limit \(limit)")
+        }
     }
 
     @Test func codeInjectedCandidatesCarryExemplarEvidenceToo() throws {

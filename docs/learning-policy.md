@@ -47,12 +47,28 @@ shape is its own group, so nothing merges by accident.
   (on-device re-identification of a batch must not use what that batch taught).
 - One exemplar per scan: `Exemplar.id == scanID`, and a delta revokes by scan id.
 
-Deltas (`GET /api/learning/overlay/changes`) decode as `ExemplarDelta`
-`{baseVersion?, version, calibrationPrint?, added[], revoked[]}` where `revoked`
-holds scan ids. `index.applying(delta)` throws `deltaBaseMismatch` when
-`baseVersion` is set and differs from the index's version; otherwise revoked and
-re-added scans are removed, `added` is appended, and the version becomes the
-delta's.
+Deltas (`GET /api/learning/overlay/changes?since_version=`) decode with
+`ExemplarDelta.decode(_:)` (ISO 8601 dates, like the overlay):
+
+```json
+{
+  "baseVersion": 7,
+  "version": 9,
+  "calibrationPrint": null,
+  "added": [{ "artGroup": "ogn-009", "featurePrint": "<base64>", "scanID": "<uuid>", "batchID": "<uuid>", "admittedAt": "2026-11-07T12:26:40Z" }],
+  "revoked": ["<scan uuid>", "<scan uuid>"]
+}
+```
+
+`revoked` holds **scan ids** (`Exemplar.scanID`), not the server's integer
+exemplar ids: the wire exemplar carries no server id and the gate admits at
+most one exemplar per scan, so the scan id is the key both sides share (the
+server maps `overlay_changes.exemplar_id` to `exemplars.scan_id` when it serves
+the delta). A delta whose `revoked` holds integers fails to decode, and the
+client falls back to a full download. `index.applying(delta)` throws
+`deltaBaseMismatch` when `baseVersion` is set and differs from the index's
+version; otherwise revoked and re-added scans are removed, `added` is appended,
+and the version becomes the delta's.
 
 ### Binary store
 
@@ -92,10 +108,20 @@ What uses which (`CardRecognizer.identify`):
 
 So an exemplar can change which card wins but never where the card was found,
 and with `ExemplarIndex.empty` every number equals what the pre-overlay code
-produced. The shortlist per hypothesis is the union of the `rerankedCandidateCount`
-best by fused score and the same count best by reference score (one list when
-there are no exemplars), so exemplar evidence can bring a card into contention
-while the top reference match is always present.
+produced (`CardRecognizerExemplarTests` pins the pre-overlay build's scores for
+the test deck). `HypothesisSummary.selectionScore` reports the number each
+hypothesis was judged by; `bestScore` ranks matches within one hypothesis and,
+with exemplars present, can be higher for a losing hypothesis than for the
+winner (`riftscan identify --verbose` prints both).
+
+The shortlist per hypothesis holds at most `rerankedCandidateCount` (12)
+entries: the best by fused score, except that the best reference match is
+always kept, displacing the weakest fused candidate when it would otherwise
+fall out. Exemplar evidence can thus bring a card into contention while the
+hypothesis's reference standing never depends on the overlay, and the list stays
+small enough to persist (`ScanAnalysis.shortlist <= 12`; a confidently read
+code may still inject one more entry per matching printing, which the app
+truncates away).
 
 `DescriptorMatcher(policy:exemplars:excluding:)` does the work;
 `CardRecognizer.init` takes `overlay:` and `excludedBatches:`, `CardRecognizer.live`
@@ -166,4 +192,5 @@ decodes exactly this text.
 
 `LearningPolicy.read(from:)` / `write(to:)` handle the file; `riftscan identify
 --policy policy.json --overlay overlay.json` runs the recogniser with both and
-refuses an overlay whose calibration print is incompatible with the machine.
+refuses an overlay whose calibration print is incompatible with the machine
+(exit 1, like every other riftscan failure).

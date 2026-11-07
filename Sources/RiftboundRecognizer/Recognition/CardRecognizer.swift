@@ -62,13 +62,34 @@ public struct Match: Hashable, Sendable, Identifiable {
 public struct HypothesisSummary: Hashable, Sendable {
     public let location: CardLocation
     public let bestCard: Card.ID?
+    /// The best match's ``Match/score`` (fused descriptor score plus code
+    /// adjustment): how the matches *within* this hypothesis were ranked. Not
+    /// what chose between hypotheses; see ``selectionScore``. With exemplars
+    /// present a losing hypothesis can show a higher `bestScore` than the winner.
+    /// For a hypothesis that was not OCR'd it is the best reference score.
     public let bestScore: Double
     /// The fused descriptor score of the best match.
     public let descriptorScore: Double
     /// The hypothesis's best reference score over every candidate: what ranked
-    /// it against the other hypotheses.
+    /// it for OCR against the other hypotheses and what the whole-image rule
+    /// is held to.
     public let referenceScore: Double
+    /// The score the winning hypothesis was chosen by: the best
+    /// `referenceScore + code adjustment` among its matches, exemplar
+    /// evidence excluded. Equals ``referenceScore`` for a hypothesis that was
+    /// not OCR'd, and ``bestScore`` whenever no exemplars are in force.
+    public let selectionScore: Double
     public let codeRead: PrintedCode?
+
+    public init(location: CardLocation, bestCard: Card.ID?, bestScore: Double, descriptorScore: Double, referenceScore: Double, selectionScore: Double, codeRead: PrintedCode?) {
+        self.location = location
+        self.bestCard = bestCard
+        self.bestScore = bestScore
+        self.descriptorScore = descriptorScore
+        self.referenceScore = referenceScore
+        self.selectionScore = selectionScore
+        self.codeRead = codeRead
+    }
 }
 
 public struct RecognitionResult: Sendable {
@@ -115,13 +136,14 @@ public struct RecognitionResult: Sendable {
         if case .detected(let quad, _) = location { quad } else { nil }
     }
 
-    func summary(referenceScore: Double) -> HypothesisSummary {
+    func summary(referenceScore: Double, selectionScore: Double) -> HypothesisSummary {
         HypothesisSummary(
             location: location,
             bestCard: best?.id,
             bestScore: best?.score ?? 0,
             descriptorScore: best?.descriptorScore ?? 0,
             referenceScore: referenceScore,
+            selectionScore: selectionScore,
             codeRead: codeReading?.code
         )
     }
@@ -221,7 +243,8 @@ public struct CardRecognizer: Sendable {
     /// Everything that chooses between hypotheses (their ordering for OCR, the
     /// whole-image rule and the final winner) uses reference scores only, so
     /// learned exemplars can change which card wins but never where the card
-    /// was found (ADR-002, decision 7).
+    /// was found (ADR-002, decision 7). ``HypothesisSummary/selectionScore``
+    /// reports the number each hypothesis was judged by.
     @concurrent
     public func identify(_ photo: CGImage) async throws -> RecognitionResult {
         let candidates = try await locator.locateCards(in: photo)
@@ -304,12 +327,13 @@ public struct CardRecognizer: Sendable {
             throw RecognitionError.noHypotheses
         }
         let summaries = described.map { hypothesis in
-            recognised[hypothesis.order]?.result.summary(referenceScore: hypothesis.referenceScore) ?? HypothesisSummary(
+            recognised[hypothesis.order].map { $0.result.summary(referenceScore: $0.referenceScore, selectionScore: $0.selectionScore) } ?? HypothesisSummary(
                 location: hypothesis.location,
                 bestCard: hypothesis.candidates.first?.entry.id,
                 bestScore: hypothesis.referenceScore,
                 descriptorScore: hypothesis.candidates.first?.fusedScore ?? 0,
                 referenceScore: hypothesis.referenceScore,
+                selectionScore: hypothesis.referenceScore,
                 codeRead: nil
             )
         }

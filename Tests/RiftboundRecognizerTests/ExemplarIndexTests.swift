@@ -163,8 +163,52 @@ struct ExemplarIndexTests {
         let restated = try Self.sample.applying(ExemplarDelta(baseVersion: nil, version: 8, calibrationPrint: FeaturePrint(elements: [0, 0, 1]), added: [], revoked: []))
         #expect(restated.calibrationPrint == FeaturePrint(elements: [0, 0, 1]) && restated.exemplars == Self.sample.exemplars)
 
-        let deltaJSON = try JSONEncoder().encode(delta)
-        #expect(try JSONDecoder().decode(ExemplarDelta.self, from: deltaJSON) == delta)
+        let decoded = try ExemplarDelta.decode(try delta.encoded())
+        #expect(decoded.baseVersion == 7 && decoded.version == 9 && decoded.revoked == delta.revoked && decoded.calibrationPrint == nil)
+        #expect(decoded.added.map(\.scanID) == delta.added.map(\.scanID) && decoded.added.map(\.featurePrint) == delta.added.map(\.featurePrint))
+        #expect(decoded.added.map { $0.admittedAt.timeIntervalSince1970 } == delta.added.map { $0.admittedAt.timeIntervalSince1970.rounded(.down) }, "ISO 8601 carries whole seconds")
+    }
+
+    /// The body `GET /api/learning/overlay/changes?since_version=7` returns
+    /// (ADR-002, section 5.3): `revoked` holds scan UUIDs, as the server's
+    /// `overlay_changes` rows resolve to them, never its integer exemplar ids.
+    @Test func decodesTheChangesEndpointBody() throws {
+        let body = """
+        {
+          "baseVersion": 7,
+          "version": 9,
+          "calibrationPrint": null,
+          "added": [
+            {
+              "artGroup": "ogn-009",
+              "featurePrint": "\(FeaturePrint(elements: [0.6, 0, 0.8]).float32Data.base64EncodedString())",
+              "scanID": "8d59c1f2-3c4e-4f5a-9b6c-7d8e9f0a1b2c",
+              "batchID": "1CAED0F4-0000-4000-8000-000000000001",
+              "admittedAt": "2026-11-07T12:26:40Z"
+            }
+          ],
+          "revoked": ["00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000002"]
+        }
+        """
+        let delta = try ExemplarDelta.decode(Data(body.utf8))
+        #expect(delta.baseVersion == 7 && delta.version == 9 && delta.calibrationPrint == nil)
+        #expect(delta.added.count == 1)
+        #expect(delta.added[0].artGroup == ArtGroup(rawValue: "ogn-009"))
+        #expect(delta.added[0].featurePrint == FeaturePrint(elements: [0.6, 0, 0.8]))
+        #expect(delta.added[0].scanID == UUID(uuidString: "8D59C1F2-3C4E-4F5A-9B6C-7D8E9F0A1B2C"), "lower-case UUIDs are accepted")
+        #expect(delta.added[0].batchID == UUID(uuidString: "1CAED0F4-0000-4000-8000-000000000001"))
+        #expect(delta.added[0].admittedAt == Date(timeIntervalSince1970: 1_794_054_400))
+        #expect(delta.revoked == [Self.sample.exemplars[1].scanID, Self.sample.exemplars[2].scanID])
+
+        let patched = try Self.sample.applying(delta)
+        #expect(patched.version == 9)
+        #expect(patched.exemplars.map(\.artGroup.rawValue) == ["ogn-003", "ogn-009"])
+
+        let keys = try #require(try JSONSerialization.jsonObject(with: try delta.encoded()) as? [String: Any]).keys
+        #expect(Set(keys) == ["baseVersion", "version", "added", "revoked"], "nil fields are omitted; the server may send them as null")
+        #expect(throws: (any Error).self, "integer exemplar ids are not the contract") {
+            try ExemplarDelta.decode(Data(#"{"version": 9, "added": [], "revoked": [12, 13]}"#.utf8))
+        }
     }
 
     @Test func binaryStoreRoundTripsBitForBit() throws {
@@ -222,50 +266,18 @@ struct ExemplarIndexTests {
 
 @Suite("Learning policy")
 struct LearningPolicyTests {
-    /// The file documented in docs/learning-policy.md.
-    static let documented = """
-    {
-      "version": 3,
-      "calibrationMinimum": 0.97,
-      "scoring": {
-        "featurePrintWeight": 0.5,
-        "wholeDifferenceHashWeight": 0.2,
-        "wholePerceptualHashWeight": 0.15,
-        "artDifferenceHashWeight": 0.15,
-        "codeExactBonus": 0.5,
-        "codeVariantMismatchBonus": 0.2,
-        "codeSetMismatchPenalty": 0.15,
-        "codeMismatchPenalty": 0.4,
-        "rerankedCandidateCount": 12,
-        "codeInjectionMinimumConfidence": 0.3,
-        "maximumLocationHypotheses": 6,
-        "ocrHypothesisCount": 2,
-        "wholeImageMinimumScore": 0.8,
-        "exemplarScale": 0.95
-      },
-      "confidence": {
-        "minimumFusedScore": 1.0,
-        "requireLiteralCode": true,
-        "exemplarDisagreementThreshold": 0.88,
-        "exemplarDisagreementMargin": 0.10,
-        "auditRate": 0.3,
-        "auditRateAfter": 0.1,
-        "auditRateSwitchCount": 300
-      },
-      "admission": {
-        "referenceSimilarityFloor": 0.62,
-        "alternativeMargin": 0.05,
-        "witnessMutualSimilarity": 0.85,
-        "witnessReferenceFloor": 0.60,
-        "impostorSimilarity": 0.90,
-        "duplicateSimilarity": 0.985,
-        "maximumPerGroup": 6
-      }
+    /// The example `policy.json` in docs/learning-policy.md: the fenced JSON
+    /// block that names `calibrationMinimum`, read from the document itself so
+    /// that the test and the documentation cannot drift apart.
+    static func documented() throws -> String {
+        let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let document = try String(contentsOf: packageRoot.appendingPathComponent("docs/learning-policy.md"), encoding: .utf8)
+        let blocks = document.components(separatedBy: "```json\n").dropFirst().compactMap { $0.components(separatedBy: "\n```").first }
+        return try #require(blocks.first { $0.contains("\"calibrationMinimum\"") }, "docs/learning-policy.md documents policy.json in a ```json block")
     }
-    """
 
     @Test func decodesTheDocumentedPolicy() throws {
-        let policy = try JSONDecoder().decode(LearningPolicy.self, from: Data(Self.documented.utf8))
+        let policy = try JSONDecoder().decode(LearningPolicy.self, from: Data(try Self.documented().utf8))
         #expect(policy.version == 3)
         #expect(policy.calibrationMinimum == 0.97)
         #expect(policy.scoring == .default, "the documented scoring values are today's defaults")

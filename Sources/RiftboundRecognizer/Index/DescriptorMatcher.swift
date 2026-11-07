@@ -104,15 +104,19 @@ public struct DescriptorMatcher: Sendable {
         )
     }
 
-    /// The shortlist for one hypothesis: the `limit` best entries by fused
-    /// score together with the `limit` best by reference score (one list when
-    /// there are no exemplars), best fused score first.
+    /// The shortlist for one hypothesis: at most `limit` entries, best fused
+    /// score first. Without exemplars these are simply the `limit` best by
+    /// reference score. With exemplars they are the `limit` best by fused
+    /// score, except that the best reference match is always among them (it
+    /// takes the place of the weakest fused candidate when it would otherwise
+    /// fall out).
     ///
-    /// Keeping both halves is what lets exemplar evidence bring a card into
-    /// contention while guaranteeing that the top reference match is always
-    /// present, so a hypothesis's best reference score (which decides between
-    /// hypotheses) is the same whatever the overlay holds.
+    /// Keeping the reference leader is what guarantees that a hypothesis's best
+    /// reference score, which decides between hypotheses, is the same whatever
+    /// the overlay holds; bounding the result by `limit` is what lets callers
+    /// persist the shortlist at a known size (ADR-002, decision 6: at most 12).
     public func rank(_ queries: [OrientedDescriptor], in index: CardIndex, limit: Int) -> [DescriptorCandidate] {
+        guard limit > 0 else { return [] }
         var candidates: [DescriptorCandidate] = []
         candidates.reserveCapacity(index.entries.count)
         var groupSimilarities: [ArtGroup: Double?] = [:]
@@ -132,17 +136,16 @@ public struct DescriptorMatcher: Sendable {
             }
         }
         candidates.sort { $0.referenceScore > $1.referenceScore }
-        let byReference = candidates.prefix(limit)
         if printsByGroup.isEmpty {
-            return Array(byReference)
+            return Array(candidates.prefix(limit))
         }
-        let byFused = candidates.sorted(by: Self.fusedFirst).prefix(limit)
-        var seen = Set<Card.ID>()
-        var shortlist: [DescriptorCandidate] = []
-        for candidate in byFused + byReference where seen.insert(candidate.entry.id).inserted {
-            shortlist.append(candidate)
+        guard let referenceLeader = candidates.first else { return [] }
+        var shortlist = Array(candidates.sorted(by: Self.fusedFirst).prefix(limit))
+        if !shortlist.contains(where: { $0.entry.id == referenceLeader.entry.id }) {
+            shortlist[shortlist.count - 1] = referenceLeader
+            shortlist.sort(by: Self.fusedFirst)
         }
-        return shortlist.sorted(by: Self.fusedFirst)
+        return shortlist
     }
 
     private static func fusedFirst(_ lhs: DescriptorCandidate, _ rhs: DescriptorCandidate) -> Bool {

@@ -129,7 +129,8 @@ public struct CardRecognizer: Sendable {
                 }
                 group.addTask {
                     let canvas = try rectifier.rectify(photo, quad: quad)
-                    return DescribedHypothesis(order: order, location: location, canvas: canvas, candidates: try await describe(canvas))
+                    let (queries, candidates) = try await describe(canvas)
+                    return DescribedHypothesis(order: order, location: location, canvas: canvas, queries: queries, candidates: candidates)
                 }
             }
             var collected: [DescribedHypothesis] = []
@@ -139,27 +140,43 @@ public struct CardRecognizer: Sendable {
             return collected.sorted { $0.order < $1.order }
         }
 
-        // The whole image only competes when it looks like a cropped card, or when nothing else was found.
-        let eligible = described.filter { hypothesis in
-            if case .assumedWholeImage = hypothesis.location {
-                return described.count == 1 || hypothesis.descriptorScore >= policy.wholeImageMinimumScore
-            }
-            return true
+        // Phase 2: OCR the most promising few and re-rank them. The whole image
+        // is always read as well: when the photo is already a tight crop (a
+        // feeder stand, a scanner bed) its printed code is legible there even
+        // when the rectangle detector has latched onto something else.
+        let located = described.filter { if case .assumedWholeImage = $0.location { false } else { true } }
+        let wholeImage = described.first { if case .assumedWholeImage = $0.location { true } else { false } }
+        var shortlist = Array(located.sorted { $0.descriptorScore > $1.descriptorScore }.prefix(max(1, policy.ocrHypothesisCount)))
+        if let wholeImage {
+            shortlist.append(wholeImage)
         }
-
-        // Phase 2: OCR the most promising few and re-rank them.
-        let shortlist = eligible.sorted { $0.descriptorScore > $1.descriptorScore }.prefix(max(1, policy.ocrHypothesisCount))
         var results: [Int: RecognitionResult] = [:]
         for hypothesis in shortlist {
-            let reading = try await codeReader.readCode(from: hypothesis.canvas).first
+            var reading = try await codeReader.readCode(from: hypothesis.canvas).first
+            if reading == nil, case .assumedWholeImage = hypothesis.location {
+                // The edge bands of the whole image miss a code that sits inside
+                // a crop; read the photo itself before giving up on it.
+                reading = try await codeReader.readCode(fromFullImage: photo).first
+            }
             results[hypothesis.order] = RecognitionResult(
-                matches: rerank(hypothesis.candidates, with: reading),
+                matches: rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries),
                 location: hypothesis.location,
                 codeReading: reading,
                 rectifiedCard: hypothesis.canvas
             )
         }
-        guard let winner = results.values.max(by: { ($0.best?.score ?? -1) < ($1.best?.score ?? -1) }) else {
+
+        // The whole image only competes when it looks like a cropped card (a
+        // high descriptor score, or a code read off it), or when nothing else
+        // was found: a photo's background routinely scores 0.6–0.7 against some
+        // unrelated printing, which must not outrank a located card.
+        let eligible = results.values.filter { result in
+            guard case .assumedWholeImage = result.location else { return true }
+            return located.isEmpty
+                || result.codeReading != nil
+                || (result.best?.descriptorScore ?? 0) >= policy.wholeImageMinimumScore
+        }
+        guard let winner = eligible.max(by: { ($0.best?.score ?? -1) < ($1.best?.score ?? -1) }) else {
             throw RecognitionError.noHypotheses
         }
         let summaries = described.map { hypothesis in
@@ -183,10 +200,11 @@ public struct CardRecognizer: Sendable {
     /// Identifies a card that is already on the canonical canvas.
     @concurrent
     public func identify(rectifiedCard canvas: CGImage, location: CardLocation = .assumedWholeImage) async throws -> RecognitionResult {
-        async let candidates = describe(canvas)
+        async let described = describe(canvas)
         async let readings = codeReader.readCode(from: canvas)
         let reading = try await readings.first
-        let matches = rerank(try await candidates, with: reading)
+        let (queries, candidates) = try await described
+        let matches = rerank(candidates, with: reading, queries: queries)
         return RecognitionResult(matches: matches, location: location, codeReading: reading, rectifiedCard: canvas)
     }
 
@@ -194,13 +212,15 @@ public struct CardRecognizer: Sendable {
         let order: Int
         let location: CardLocation
         let canvas: CGImage
+        let queries: [OrientedDescriptor]
         let candidates: [DescriptorCandidate]
 
         var descriptorScore: Double { candidates.first?.score ?? 0 }
     }
 
-    /// Descriptor candidates for a canvas, tried upright and upside down.
-    private func describe(_ canvas: CGImage) async throws -> [DescriptorCandidate] {
+    /// Descriptor candidates for a canvas, tried upright and upside down, with
+    /// the query descriptors they were ranked against.
+    private func describe(_ canvas: CGImage) async throws -> (queries: [OrientedDescriptor], candidates: [DescriptorCandidate]) {
         let flipped = try rectifier.renderer.rotated(canvas, quarterTurnsCounterclockwise: 2)
         async let uprightDescriptor = descriptorExtractor.descriptor(for: canvas)
         async let flippedDescriptor = descriptorExtractor.descriptor(for: flipped)
@@ -208,12 +228,31 @@ public struct CardRecognizer: Sendable {
             OrientedDescriptor(descriptor: try await uprightDescriptor, orientation: .upright),
             OrientedDescriptor(descriptor: try await flippedDescriptor, orientation: .upsideDown),
         ]
-        return DescriptorMatcher(policy: policy).rank(queries, in: index, limit: policy.rerankedCandidateCount)
+        return (queries, DescriptorMatcher(policy: policy).rank(queries, in: index, limit: policy.rerankedCandidateCount))
     }
 
     /// Applies the OCR evidence to each candidate and sorts by the fused score.
-    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?) -> [Match] {
-        candidates.map { candidate -> Match in
+    ///
+    /// A confidently read code names a card outright, so every index entry whose
+    /// code it matches joins the candidates even when the descriptors ranked it
+    /// outside the shortlist: a poorly located card (the whole feeder tray, say)
+    /// can still carry a legible code while its art matches nothing.
+    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?, queries: [OrientedDescriptor]) -> [Match] {
+        var candidates = candidates
+        if let reading, reading.confidence >= policy.codeInjectionMinimumConfidence {
+            let present = Set(candidates.map(\.entry.id))
+            for entry in index.entries where !present.contains(entry.id) {
+                switch CodeAgreement(reading: reading.code, candidate: entry.card.code) {
+                case .exact, .variantDiffers:
+                    if let candidate = DescriptorMatcher(policy: policy).candidate(for: entry, queries: queries) {
+                        candidates.append(candidate)
+                    }
+                default:
+                    continue
+                }
+            }
+        }
+        return candidates.map { candidate -> Match in
             let agreement = reading.map { CodeAgreement(reading: $0.code, candidate: candidate.entry.card.code) }
             var adjustment = 0.0
             if let reading, let agreement {

@@ -27,19 +27,24 @@ public struct DescriptorMatcher: Sendable {
         self.policy = policy
     }
 
+    /// Scores one entry against the query rotations, keeping the better one.
+    public func candidate(for entry: CardIndex.Entry, queries: [OrientedDescriptor]) -> DescriptorCandidate? {
+        var best: DescriptorCandidate?
+        for query in queries {
+            let components = ScoreComponents(query: query.descriptor, reference: entry.descriptor)
+            let score = policy.descriptorScore(components)
+            if let current = best, current.score >= score { continue }
+            best = DescriptorCandidate(entry: entry, orientation: query.orientation, components: components, score: score)
+        }
+        return best
+    }
+
     /// Ranks every entry by its best score over the supplied query rotations.
     public func rank(_ queries: [OrientedDescriptor], in index: CardIndex, limit: Int) -> [DescriptorCandidate] {
         var candidates: [DescriptorCandidate] = []
         candidates.reserveCapacity(index.entries.count)
         for entry in index.entries {
-            var best: DescriptorCandidate?
-            for query in queries {
-                let components = ScoreComponents(query: query.descriptor, reference: entry.descriptor)
-                let score = policy.descriptorScore(components)
-                if let current = best, current.score >= score { continue }
-                best = DescriptorCandidate(entry: entry, orientation: query.orientation, components: components, score: score)
-            }
-            if let best {
+            if let best = candidate(for: entry, queries: queries) {
                 candidates.append(best)
             }
         }

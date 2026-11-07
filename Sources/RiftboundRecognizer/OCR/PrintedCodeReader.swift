@@ -104,6 +104,31 @@ public struct PrintedCodeReader: Sendable {
         return readings.sorted { $0.confidence > $1.confidence }
     }
 
+    /// Every code found anywhere in an un-rectified image, most confident first,
+    /// tried upright and turned through 180°. For a photo that is already a
+    /// tight crop of a card (a feeder stand), the code is legible in the photo
+    /// itself even when nothing card-shaped could be located in it.
+    public func readCode(fromFullImage image: CGImage, maxPixelSize: Int = 1536) async throws -> [CodeReading] {
+        let base = CIImage(cgImage: image)
+        let longest = CGFloat(max(image.width, image.height))
+        let scale = min(1, CGFloat(maxPixelSize) / longest)
+        let fitted = PixelSize(width: Int((CGFloat(image.width) * scale).rounded()), height: Int((CGFloat(image.height) * scale).rounded()))
+        let layout: Card.Orientation = image.width <= image.height ? .portrait : .landscape
+        // Upright first; the 180° pass only runs when nothing was found, since
+        // a full-frame OCR pass is the costliest step in the pipeline.
+        let upright = try renderer.makeCGImage(fitting: base, to: fitted)
+        let uprightReadings = try await textRecognizer.recognizeText(in: upright).flatMap { line in
+            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upright, layout: layout, text: line.string) }
+        }
+        if !uprightReadings.isEmpty {
+            return uprightReadings.sorted { $0.confidence > $1.confidence }
+        }
+        let upsideDown = try renderer.makeCGImage(fitting: base.rotated(quarterTurnsCounterclockwise: 2), to: fitted)
+        return try await textRecognizer.recognizeText(in: upsideDown).flatMap { line in
+            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upsideDown, layout: layout, text: line.string) }
+        }.sorted { $0.confidence > $1.confidence }
+    }
+
     private func stripImage(_ strip: CodeStrip, from base: CIImage, size: PixelSize) throws -> CGImage {
         let band = base.cropped(to: strip.rect(in: size, bandFraction: canvas.codeBandFraction)).movedToOrigin()
         let upright = band.rotated(quarterTurnsCounterclockwise: strip.quarterTurnsCounterclockwise)

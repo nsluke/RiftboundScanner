@@ -72,6 +72,70 @@ struct CardRecognizerTests {
         #expect(result.best?.codeAgreement == .exact)
     }
 
+    @Test func aReadCodePullsItsCardIntoTheCandidates() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        // Only two descriptor candidates survive, and the photo is of card 1, so card 6
+        // would never be ranked; OCR naming it must still make it the winner.
+        var policy = ScoringPolicy.default
+        policy.rerankedCandidateCount = 2
+        let recognizer = CardRecognizer(
+            index: index,
+            locator: FakeCardLocator(),
+            rectifier: rig.rectifier,
+            descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: rig.canvas),
+            codeReader: PrintedCodeReader(textRecognizer: StubTextRecognizer(["OGN • 006/298"]), renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            policy: policy
+        )
+        let result = try await recognizer.identify(deck[0].image)
+        #expect(result.matches.count == 3, "the two descriptor candidates plus the injected card")
+        let best = try #require(result.best)
+        #expect(best.id == deck[5].card.id)
+        #expect(best.codeAgreement == .exact)
+        #expect(best.descriptorScore < 1, "its descriptor score is genuine, not assumed")
+        #expect(result.matches.contains { $0.id == deck[0].card.id }, "the visually matching card is still listed")
+    }
+
+    @Test func wholeImageWinsWhenItsCodeReadsAndTheDetectorMissed() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        // A tight crop of card 4 with some background, as the feeder stand produces,
+        // where the detector reports a background rectangle instead of the card.
+        let (photo, _) = TestImages.photo(of: deck[3].image, at: CGRect(x: 150, y: 200, width: 756, height: 1056), canvas: PixelSize(width: 1100, height: 1500))
+        let wrong = CardQuad(
+            topLeft: CGPoint(x: 10, y: 10), topRight: CGPoint(x: 140, y: 10),
+            bottomRight: CGPoint(x: 140, y: 190), bottomLeft: CGPoint(x: 10, y: 190)
+        )
+        // OCR that only finds text where there is something other than flat background.
+        let ocr = BackgroundAwareTextRecognizer(code: "OGN • 004/298")
+        let recognizer = CardRecognizer(
+            index: index,
+            locator: FakeCardLocator(quad: wrong, confidence: 0.7),
+            rectifier: rig.rectifier,
+            descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: rig.canvas),
+            codeReader: PrintedCodeReader(textRecognizer: ocr, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary))
+        )
+        let result = try await recognizer.identify(photo)
+        let best = try #require(result.best)
+        #expect(best.id == deck[3].card.id)
+        #expect(best.codeAgreement == .exact)
+        // The whole crop is read for its code even though its descriptor score is
+        // below the whole-image threshold, and it competes on that evidence.
+        let whole = try #require(result.hypotheses.first { $0.location == .assumedWholeImage })
+        #expect(whole.codeRead == deck[3].card.code)
+        #expect(whole.bestCard == deck[3].card.id)
+        #expect(whole.bestScore > 1, "descriptor score plus the exact-code bonus")
+    }
+
+    @Test func aReadCodeDoesNotDuplicateAListedCandidate() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let recognizer = rig.recognizer(index: index, ocr: ["OGN • 003/298"])
+        let result = try await recognizer.identify(deck[2].image)
+        #expect(result.matches.map(\.id).filter { $0 == deck[2].card.id }.count == 1)
+        #expect(result.matches.count == min(deck.count, ScoringPolicy.default.rerankedCandidateCount))
+    }
+
     @Test func agreeingCodeBoostsTheMatch() async throws {
         let deck = rig.standardDeck()
         let index = await rig.buildIndex(deck)
@@ -152,5 +216,23 @@ struct FakeTextRecognizerKeyedByWidth: TextRecognizing {
         let bitmap = try GrayscaleBitmap(rendering: image, width: 16, height: 4)
         let mean = bitmap.pixels.reduce(0) { $0 + Int($1) } / bitmap.pixels.count
         return mean < 90 ? [TextLine(string: codeIfWide, confidence: 1)] : []
+    }
+}
+
+/// Returns the code only for images that are not a flat colour, so a strip of
+/// plain background reads as nothing while the card itself reads as its code.
+struct BackgroundAwareTextRecognizer: TextRecognizing {
+    let code: String
+
+    func recognizeText(in image: CGImage) async throws -> [TextLine] {
+        let reference = TestImages.rgb(of: image, x: 0, y: 0)
+        let probes = stride(from: 0, to: image.width, by: max(1, image.width / 12)).flatMap { x in
+            stride(from: 0, to: image.height, by: max(1, image.height / 12)).map { y in (x, y) }
+        }
+        let uniform = probes.allSatisfy { x, y in
+            let pixel = TestImages.rgb(of: image, x: x, y: y)
+            return abs(Int(pixel.red) - Int(reference.red)) < 8 && abs(Int(pixel.green) - Int(reference.green)) < 8 && abs(Int(pixel.blue) - Int(reference.blue)) < 8
+        }
+        return uniform ? [] : [TextLine(string: code, confidence: 1)]
     }
 }

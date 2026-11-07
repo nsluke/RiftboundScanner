@@ -52,6 +52,9 @@ public struct VisionCardLocator: CardLocating {
     public var minimumConfidence: Float = 0.4
     public var maximumRectangleCandidates = 2
     public var maximumSalientObjects = 1
+    /// A salient object covering more of the photo than this is the scene (a
+    /// feeder tray, a table), not a card, and is not fitted.
+    public var maximumSalientAreaFraction = 0.5
 
     public static let cardAspectRatio = 63.0 / 88.0
 
@@ -70,6 +73,8 @@ public struct VisionCardLocator: CardLocating {
         let objects = observation.salientObjects.sorted { $0.confidence > $1.confidence }.prefix(max(0, maximumSalientObjects))
         return objects.flatMap { object in
             let box = object.boundingBox.toImageCoordinates(size, origin: .lowerLeft)
+            let areaFraction = Double(box.width * box.height) / Double(size.width * size.height)
+            guard areaFraction <= maximumSalientAreaFraction else { return [CardCandidate]() }
             return CardQuad.fitting(boundingBox: box, cardAspectRatio: Self.cardAspectRatio).map { quad in
                 CardCandidate(quad: quad, confidence: Double(object.confidence), source: .salientObject)
             }

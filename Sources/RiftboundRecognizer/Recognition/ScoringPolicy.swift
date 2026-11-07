@@ -73,6 +73,10 @@ public struct ScoringPolicy: Hashable, Sendable {
     /// How many descriptor candidates are re-ranked with OCR evidence.
     public var rerankedCandidateCount = 12
 
+    /// A code read at least this confidently pulls the cards it names into the
+    /// candidates even when their descriptors ranked outside the shortlist.
+    public var codeInjectionMinimumConfidence = 0.3
+
     /// How many card-location hypotheses (detections and their frame-expanded
     /// variants) are rectified and scored on descriptors; the whole image is
     /// always tried as well.

@@ -7,6 +7,11 @@ public enum FeaturePrintError: Error {
 }
 
 /// Wraps Vision's `GenerateImageFeaturePrintRequest`.
+///
+/// The request's `Revision` has a single case, so it cannot tell whether two
+/// systems embed images the same way; ``FeaturePrintGenerating/calibrationPrint()``
+/// (the print of the procedural ``CalibrationCanvas``) and its
+/// ``FeaturePrint/digest`` are what fingerprint the model that is actually running.
 public struct VisionFeaturePrintGenerator: FeaturePrintGenerating {
     public init() {}
 

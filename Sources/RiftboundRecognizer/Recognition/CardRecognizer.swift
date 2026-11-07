@@ -39,19 +39,43 @@ public struct RecognitionResult: Sendable {
     /// The most confident code reading, if any.
     public let codeReading: CodeReading?
     public let rectifiedCard: CGImage
+    /// The query descriptor of the winning hypothesis, in the orientation of
+    /// the winning match: the upside-down query when the card matched upside
+    /// down, the upright one otherwise (and when nothing matched at all). It is
+    /// the descriptor to compare with the matched card's reference, and the one
+    /// a confirmed scan contributes as an exemplar.
+    public let descriptor: OrientedDescriptor
+    /// Which recogniser build and embedding produced this result.
+    public let engine: EngineFingerprint
     /// Every hypothesis that was recognised, in the order tried; the result
     /// itself comes from the best-scoring one.
     public let hypotheses: [HypothesisSummary]
 
-    public init(matches: [Match], location: CardLocation, codeReading: CodeReading?, rectifiedCard: CGImage, hypotheses: [HypothesisSummary] = []) {
+    public init(
+        matches: [Match],
+        location: CardLocation,
+        codeReading: CodeReading?,
+        rectifiedCard: CGImage,
+        descriptor: OrientedDescriptor,
+        engine: EngineFingerprint,
+        hypotheses: [HypothesisSummary] = []
+    ) {
         self.matches = matches
         self.location = location
         self.codeReading = codeReading
         self.rectifiedCard = rectifiedCard
+        self.descriptor = descriptor
+        self.engine = engine
         self.hypotheses = hypotheses
     }
 
     public var best: Match? { matches.first }
+
+    /// The card's corners in the photo when a card was located; `nil` when the
+    /// whole image was assumed to be the card.
+    public var quad: CardQuad? {
+        if case .detected(let quad, _) = location { quad } else { nil }
+    }
 
     var summary: HypothesisSummary {
         HypothesisSummary(
@@ -70,6 +94,8 @@ public struct RecognitionResult: Sendable {
 /// wires the production graph.
 public struct CardRecognizer: Sendable {
     public let index: CardIndex
+    /// Stamped on every result; see ``EngineFingerprint``.
+    public let fingerprint: EngineFingerprint
     private let locator: any CardLocating
     private let rectifier: CardRectifier
     private let descriptorExtractor: CardDescriptorExtractor
@@ -77,16 +103,21 @@ public struct CardRecognizer: Sendable {
     private let frame: CardFrame
     private let policy: ScoringPolicy
 
+    /// `fingerprint` should come from the same feature printer as
+    /// `descriptorExtractor` (``EngineFingerprint/current(calibrating:)``), so
+    /// that results are stamped with the embedding that produced them.
     public init(
         index: CardIndex,
         locator: any CardLocating,
         rectifier: CardRectifier,
         descriptorExtractor: CardDescriptorExtractor,
         codeReader: PrintedCodeReader,
+        fingerprint: EngineFingerprint,
         frame: CardFrame = .riftbound,
         policy: ScoringPolicy = .default
     ) {
         self.index = index
+        self.fingerprint = fingerprint
         self.locator = locator
         self.rectifier = rectifier
         self.descriptorExtractor = descriptorExtractor
@@ -158,11 +189,14 @@ public struct CardRecognizer: Sendable {
                 // a crop; read the photo itself before giving up on it.
                 reading = try await codeReader.readCode(fromFullImage: photo).first
             }
+            let matches = rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries)
             results[hypothesis.order] = RecognitionResult(
-                matches: rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries),
+                matches: matches,
                 location: hypothesis.location,
                 codeReading: reading,
-                rectifiedCard: hypothesis.canvas
+                rectifiedCard: hypothesis.canvas,
+                descriptor: Self.winningDescriptor(for: matches, among: hypothesis.queries),
+                engine: fingerprint
             )
         }
 
@@ -193,6 +227,8 @@ public struct CardRecognizer: Sendable {
             location: winner.location,
             codeReading: winner.codeReading,
             rectifiedCard: winner.rectifiedCard,
+            descriptor: winner.descriptor,
+            engine: winner.engine,
             hypotheses: summaries
         )
     }
@@ -205,7 +241,24 @@ public struct CardRecognizer: Sendable {
         let reading = try await readings.first
         let (queries, candidates) = try await described
         let matches = rerank(candidates, with: reading, queries: queries)
-        return RecognitionResult(matches: matches, location: location, codeReading: reading, rectifiedCard: canvas)
+        return RecognitionResult(
+            matches: matches,
+            location: location,
+            codeReading: reading,
+            rectifiedCard: canvas,
+            descriptor: Self.winningDescriptor(for: matches, among: queries),
+            engine: fingerprint
+        )
+    }
+
+    /// The query in the orientation of the best match, or the upright query
+    /// when there is no match (an empty index) or, defensively, no such query.
+    private static func winningDescriptor(for matches: [Match], among queries: [OrientedDescriptor]) -> OrientedDescriptor {
+        let orientation = matches.first?.orientation ?? .upright
+        guard let chosen = queries.first(where: { $0.orientation == orientation }) ?? queries.first(where: { $0.orientation == .upright }) ?? queries.first else {
+            preconditionFailure("a hypothesis is always described in at least one orientation")
+        }
+        return chosen
     }
 
     private struct DescribedHypothesis: Sendable {
@@ -279,18 +332,23 @@ extension CardRecognizer {
     /// The production object graph: Vision for detection, OCR and feature
     /// prints, Core Image for rectification. Apps may wire their own graph
     /// instead; every collaborator is an initializer parameter.
-    public static func live(index: CardIndex, renderer: ImageRenderer = ImageRenderer(), policy: ScoringPolicy = .default) -> CardRecognizer {
-        CardRecognizer(
+    ///
+    /// Calibrates Vision's feature printer first (one feature print of the
+    /// ``CalibrationCanvas``), which is why this runs asynchronously and can fail.
+    public static func live(index: CardIndex, renderer: ImageRenderer = ImageRenderer(), policy: ScoringPolicy = .default) async throws -> CardRecognizer {
+        let featurePrinter = VisionFeaturePrintGenerator()
+        return CardRecognizer(
             index: index,
             locator: VisionCardLocator(),
             rectifier: CardRectifier(renderer: renderer, canvas: index.canvas),
-            descriptorExtractor: CardDescriptorExtractor(featurePrinter: VisionFeaturePrintGenerator(), canvas: index.canvas),
+            descriptorExtractor: CardDescriptorExtractor(featurePrinter: featurePrinter, canvas: index.canvas),
             codeReader: PrintedCodeReader(
                 textRecognizer: VisionTextRecognizer(),
                 renderer: renderer,
                 canvas: index.canvas,
                 parser: PrintedCodeParser(vocabulary: index.vocabulary)
             ),
+            fingerprint: try await EngineFingerprint.current(calibrating: featurePrinter),
             policy: policy
         )
     }

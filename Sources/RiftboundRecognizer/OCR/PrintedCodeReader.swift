@@ -1,6 +1,16 @@
 import CoreGraphics
 import CoreImage
 
+/// Where in the image a printed code was read.
+public enum CodeSource: String, Hashable, Sendable, Codable {
+    /// One of the four edge bands of the rectified canvas: the code sat where a
+    /// card prints it, so the reading also vouches for the card's placement.
+    case edgeBand
+    /// Anywhere in the un-rectified photo, the fallback for a crop whose code
+    /// the canvas's bands missed; says nothing about the placement.
+    case fullImage
+}
+
 /// A printed code read from the rectified card, with where it was found.
 public struct CodeReading: Hashable, Sendable {
     public let code: PrintedCode
@@ -11,13 +21,15 @@ public struct CodeReading: Hashable, Sendable {
     /// Whether the code was found along a short edge (portrait card) or a long one (landscape card).
     public let layout: Card.Orientation
     public let text: String
+    public let source: CodeSource
 
-    public init(code: PrintedCode, confidence: Double, orientation: CardOrientation, layout: Card.Orientation, text: String) {
+    public init(code: PrintedCode, confidence: Double, orientation: CardOrientation, layout: Card.Orientation, text: String, source: CodeSource) {
         self.code = code
         self.confidence = confidence
         self.orientation = orientation
         self.layout = layout
         self.text = text
+        self.source = source
     }
 }
 
@@ -118,14 +130,14 @@ public struct PrintedCodeReader: Sendable {
         // a full-frame OCR pass is the costliest step in the pipeline.
         let upright = try renderer.makeCGImage(fitting: base, to: fitted)
         let uprightReadings = try await textRecognizer.recognizeText(in: upright).flatMap { line in
-            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upright, layout: layout, text: line.string) }
+            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upright, layout: layout, text: line.string, source: .fullImage) }
         }
         if !uprightReadings.isEmpty {
             return uprightReadings.sorted { $0.confidence > $1.confidence }
         }
         let upsideDown = try renderer.makeCGImage(fitting: base.rotated(quarterTurnsCounterclockwise: 2), to: fitted)
         return try await textRecognizer.recognizeText(in: upsideDown).flatMap { line in
-            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upsideDown, layout: layout, text: line.string) }
+            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upsideDown, layout: layout, text: line.string, source: .fullImage) }
         }.sorted { $0.confidence > $1.confidence }
     }
 
@@ -142,7 +154,7 @@ public struct PrintedCodeReader: Sendable {
     private func read(strip: CodeStrip, image: CGImage) async throws -> [CodeReading] {
         try await textRecognizer.recognizeText(in: image).flatMap { line in
             parser.codes(in: line.string).map { code in
-                CodeReading(code: code, confidence: line.confidence, orientation: strip.orientation, layout: strip.layout, text: line.string)
+                CodeReading(code: code, confidence: line.confidence, orientation: strip.orientation, layout: strip.layout, text: line.string, source: .edgeBand)
             }
         }
     }

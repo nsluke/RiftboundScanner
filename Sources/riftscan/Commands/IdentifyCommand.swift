@@ -8,7 +8,7 @@ enum IdentifyCommand {
         let photoPath = try options.positional(0, named: "photo")
         let top = try options.int("top", default: 3)
         let index = try CardIndex.read(from: options.url("index", default: Defaults.indexPath))
-        let recognizer = CardRecognizer.live(index: index)
+        let recognizer = try await CardRecognizer.live(index: index)
         let photo = try ImageFile.load(URL(fileURLWithPath: photoPath))
 
         let clock = ContinuousClock()
@@ -54,10 +54,13 @@ enum IdentifyCommand {
             Console.line("Card:  no rectangle found; whole image assumed to be the card")
         }
         if let reading = result.codeReading {
-            Console.line("Code:  \(reading.code) read from \"\(reading.text)\" (confidence \(String(format: "%.2f", reading.confidence)), \(reading.orientation.rawValue), \(reading.layout.rawValue) layout)")
+            let source = reading.source == .edgeBand ? "edge band" : "full image"
+            Console.line("Code:  \(reading.code) read from \"\(reading.text)\" (confidence \(String(format: "%.2f", reading.confidence)), \(reading.orientation.rawValue), \(reading.layout.rawValue) layout, \(source))")
         } else {
             Console.line("Code:  none read")
         }
+        Console.line("Query: \(result.descriptor.orientation.rawValue) descriptor, feature print \(result.descriptor.descriptor.featurePrint.digest.hex)")
+        Console.line("Engine: \(result.engine.packageVersion) on \(result.engine.platform) \(result.engine.osVersion), calibration \(result.engine.calibrationHash.hex)")
         Console.line()
         Console.line(" #  \(Console.pad("Code", 14))\(Console.pad("Name", 30))Score  Desc   FP    dH    pH    Art   OCR")
         for (rank, match) in matches.enumerated() {
@@ -98,11 +101,27 @@ enum IdentifyCommand {
             let artDifferenceHash: Double
         }
 
+        struct Point: Encodable {
+            let x: Double
+            let y: Double
+        }
+
+        struct DescriptorReport: Encodable {
+            let orientation: String
+            let featurePrintDigest: String
+            let featurePrintDimension: Int
+        }
+
         let photo: String
         let seconds: Double
         let cardDetected: Bool
+        /// The card's corners (Core Image coordinates, origin bottom-left) when detected.
+        let quad: [Point]?
         let codeRead: String?
         let codeConfidence: Double?
+        let codeSource: String?
+        let descriptor: DescriptorReport
+        let engine: EngineFingerprint
         let matches: [MatchReport]
     }
 
@@ -114,8 +133,16 @@ enum IdentifyCommand {
                 if case .detected = result.location { return true }
                 return false
             }(),
+            quad: result.quad.map { quad in quad.corners.map { Report.Point(x: $0.x, y: $0.y) } },
             codeRead: result.codeReading?.code.canonical,
             codeConfidence: result.codeReading?.confidence,
+            codeSource: result.codeReading?.source.rawValue,
+            descriptor: Report.DescriptorReport(
+                orientation: result.descriptor.orientation.rawValue,
+                featurePrintDigest: result.descriptor.descriptor.featurePrint.digest.hex,
+                featurePrintDimension: result.descriptor.descriptor.featurePrint.elements.count
+            ),
+            engine: result.engine,
             matches: matches.map { match in
                 Report.MatchReport(
                     id: match.card.id.rawValue,

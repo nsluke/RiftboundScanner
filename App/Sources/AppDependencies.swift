@@ -32,6 +32,14 @@ nonisolated struct AppDependencies: Sendable {
             throw .indexUnreadable(String(describing: error))
         }
         let summary = IndexSummary(builtAt: cardIndex.builtAt, entryCount: cardIndex.entries.count, formatVersion: cardIndex.formatVersion)
+        // Calibrates Vision's feature printer (one feature print of the
+        // calibration canvas) so every result carries the engine fingerprint.
+        let recognizer: CardRecognizer
+        do {
+            recognizer = try await CardRecognizer.live(index: cardIndex)
+        } catch {
+            throw .recognizerUncalibrated(String(describing: error))
+        }
         let vault: CardVault
         if let vaultURL = Bundle.main.url(forResource: "CardVault", withExtension: "json") {
             vault = (try? await CardVault.read(from: vaultURL)) ?? .empty
@@ -47,7 +55,7 @@ nonisolated struct AppDependencies: Sendable {
         return AppDependencies(
             camera: CaptureEngine(),
             makeFeeder: { CSC100Feeder() },
-            identifier: LiveCardIdentifier(recognizer: CardRecognizer.live(index: cardIndex)),
+            identifier: LiveCardIdentifier(recognizer: recognizer),
             store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory)),
             directory: CardDirectory(index: cardIndex),
             vault: vault,
@@ -65,6 +73,7 @@ nonisolated struct AppDependencies: Sendable {
 nonisolated enum BootstrapError: Error, Hashable {
     case indexMissing
     case indexUnreadable(String)
+    case recognizerUncalibrated(String)
 
     var message: String {
         switch self {
@@ -72,6 +81,8 @@ nonisolated enum BootstrapError: Error, Hashable {
             String(localized: "The app was built without index.json. Run `swift run -c release riftscan build-index`, then rebuild.")
         case .indexUnreadable(let detail):
             String(localized: "The bundled card index could not be read. \(detail)")
+        case .recognizerUncalibrated(let detail):
+            String(localized: "The recogniser could not calibrate this device's image model. \(detail)")
         }
     }
 }

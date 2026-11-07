@@ -12,6 +12,9 @@ public struct CardIndexBuilder: Sendable {
         public let index: CardIndex
         public let missingImages: [Card.ID]
         public let failures: [Failure]
+        /// Why the index carries no ``CardIndex/calibrationPrint``, when the
+        /// feature printer could not print the ``CalibrationCanvas``.
+        public let calibrationFailure: String?
     }
 
     private let rectifier: CardRectifier
@@ -32,12 +35,21 @@ public struct CardIndexBuilder: Sendable {
     }
 
     /// Indexes every card for which `image` returns a reference image. Entries
-    /// come back sorted by id so the index file is stable.
+    /// come back sorted by id so the index file is stable. The index also
+    /// records the extractor's calibration print, so that the embedding space
+    /// its entries live in is identified by the same generator that made them.
     public func build(
         cards: [Card],
         image: @escaping @Sendable (Card) throws -> CGImage?,
         progress: (@Sendable (_ completed: Int, _ total: Int) -> Void)? = nil
     ) async -> Outcome {
+        var calibrationPrint: FeaturePrint?
+        var calibrationFailure: String?
+        do {
+            calibrationPrint = try await extractor.calibrationPrint()
+        } catch {
+            calibrationFailure = String(describing: error)
+        }
         var entries: [CardIndex.Entry] = []
         var missing: [Card.ID] = []
         var failures: [Failure] = []
@@ -64,9 +76,10 @@ public struct CardIndexBuilder: Sendable {
         }
         entries.sort { $0.card.id.rawValue < $1.card.id.rawValue }
         return Outcome(
-            index: CardIndex(canvas: rectifier.canvas, builtAt: now(), entries: entries),
+            index: CardIndex(canvas: rectifier.canvas, builtAt: now(), entries: entries, calibrationPrint: calibrationPrint),
             missingImages: missing,
-            failures: failures
+            failures: failures,
+            calibrationFailure: calibrationFailure
         )
     }
 

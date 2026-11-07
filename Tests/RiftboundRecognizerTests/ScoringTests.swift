@@ -36,6 +36,38 @@ struct ScoringTests {
         #expect(policy.codeAdjustment(for: .unrelated, confidence: 1) == number)
     }
 
+    @Test func scoringPolicyRoundTripsThroughJSON() throws {
+        var policy = ScoringPolicy()
+        policy.featurePrintWeight = 0.6
+        policy.codeExactBonus = 0.45
+        policy.rerankedCandidateCount = 7
+        policy.ocrHypothesisCount = 1
+        policy.wholeImageMinimumScore = 0.75
+        let encoded = try JSONEncoder().encode(policy)
+        let decoded = try JSONDecoder().decode(ScoringPolicy.self, from: encoded)
+        #expect(decoded == policy)
+        #expect(decoded != .default)
+        let json = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["codeExactBonus"] as? Double == 0.45)
+        #expect(json.count == 13, "every weight and threshold is a named key")
+    }
+
+    @Test func scoringPolicyFillsMissingKeysWithDefaults() throws {
+        let partial = try JSONDecoder().decode(ScoringPolicy.self, from: Data(#"{"codeExactBonus": 0.7}"#.utf8))
+        var expected = ScoringPolicy.default
+        expected.codeExactBonus = 0.7
+        #expect(partial == expected)
+        #expect(try JSONDecoder().decode(ScoringPolicy.self, from: Data("{}".utf8)) == .default)
+    }
+
+    @Test func scoreComponentsRoundTripThroughJSON() throws {
+        let components = ScoreComponents(featurePrint: 0.91, wholeDifferenceHash: 0.8, wholePerceptualHash: 0.75, artDifferenceHash: 0.5)
+        let encoded = try JSONEncoder().encode(components)
+        #expect(try JSONDecoder().decode(ScoreComponents.self, from: encoded) == components)
+        let json = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Double])
+        #expect(json == ["featurePrint": 0.91, "wholeDifferenceHash": 0.8, "wholePerceptualHash": 0.75, "artDifferenceHash": 0.5])
+    }
+
     @Test func matcherRanksByBestOrientation() {
         func descriptor(bits: UInt64, print: [Float]) -> CardDescriptor {
             CardDescriptor(wholeDifferenceHash: ImageHash(bits: bits), wholePerceptualHash: ImageHash(bits: bits), artDifferenceHash: ImageHash(bits: bits), featurePrint: FeaturePrint(elements: print))

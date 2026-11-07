@@ -37,9 +37,15 @@ enum BuildIndexCommand {
                 }
             }
         )
+        if let failure = outcome.calibrationFailure {
+            throw UsageError("could not compute the calibration print, so the index would not record its embedding: \(failure)")
+        }
         try outcome.index.write(to: outputURL)
         let size = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? 0
         Console.line("Indexed \(outcome.index.entries.count) printings in \(Console.seconds(clock.now - start)) → \(outputURL.path) (\(size / 1024) KB)")
+        if let hash = outcome.index.calibrationHash {
+            Console.line("Calibration print recorded: hash \(hash.hex) (\(RecognizerInfo.platform) \(RecognizerInfo.osVersion)); compare with `riftscan check-revision` on the phone")
+        }
         if !outcome.missingImages.isEmpty {
             Console.line("Missing images: \(outcome.missingImages.count) (run Scripts/fetch-images.py)")
         }

@@ -16,7 +16,8 @@ struct RootView: View {
             store: dependencies.store,
             makeBatch: dependencies.makeBatch,
             now: dependencies.now,
-            makeID: dependencies.makeID
+            makeID: dependencies.makeID,
+            confidenceRule: dependencies.confidenceRule
         ))
         _history = State(wrappedValue: HistoryModel(store: dependencies.store))
         _collection = State(wrappedValue: CollectionModel(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, priceSource: dependencies.priceSource))
@@ -26,7 +27,8 @@ struct RootView: View {
             endpoints: dependencies.endpoints,
             paths: dependencies.paths,
             appVersion: dependencies.appVersion,
-            index: dependencies.index
+            index: dependencies.index,
+            confidenceRule: dependencies.confidenceRule
         ))
     }
 
@@ -36,7 +38,7 @@ struct RootView: View {
                 NavigationStack {
                     ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
                         .toolbarVisibility(.hidden, for: .navigationBar)
-                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory)
+                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Collection", systemImage: "square.grid.2x2") {
@@ -46,7 +48,7 @@ struct RootView: View {
             }
             Tab("History", systemImage: "list.bullet.rectangle") {
                 NavigationStack {
-                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index)
+                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Settings", systemImage: "gearshape") {

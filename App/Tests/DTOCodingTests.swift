@@ -127,6 +127,24 @@ struct DTOCodingTests {
         #expect(meta.exemplarCount == 312)
     }
 
+    /// The shape `GET /api/learning/stats` (S7) is expected to serve; every
+    /// key but `random_audits` may be missing.
+    @Test func learningStatsDecodeTheServerShapeWithMissingKeys() throws {
+        let full = try JSONDecoder.server.decode(LearningStats.self, from: Data(#"{"wilson_lower_bound":0.9812,"confidence_level":0.95,"random_audits":150,"random_audits_wrong":0,"unresolved_wrong_audits":0,"spot_checks":9,"audits_by_source":{"audit":150,"spotCheck":9},"human_labels":412,"sittings":3,"exemplars":320,"exemplars_by_set":{"OGN":300,"SFD":20},"overlay_version":5,"policy_version":2}"#.utf8))
+        #expect(full.wilsonLowerBound == 0.9812)
+        #expect(full.randomAudits == 150)
+        #expect(full.auditsBySource?["spotCheck"] == 9)
+        #expect(full.exemplarsBySet?["SFD"] == 20)
+        #expect(full.sittings == 3)
+        #expect(full.isHealthy == true)
+
+        let empty = try JSONDecoder.server.decode(LearningStats.self, from: Data(#"{"random_audits":0,"wilson_lower_bound":null}"#.utf8))
+        #expect(empty.wilsonLowerBound == nil)
+        #expect(empty.isHealthy == nil)
+        let bare = try JSONDecoder.server.decode(LearningStats.self, from: Data("{}".utf8))
+        #expect(bare.randomAudits == 0)
+    }
+
     @Test func evaluationRunsForwardTheirCases() throws {
         let run = EvaluationRunUpload(id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!, ranAt: Fixtures.epoch, device: "iPhone17,1", batchID: nil, excludedBatch: UUID(uuidString: "22222222-2222-2222-2222-222222222222"), exemplarCountUsed: 120, overlayVersion: 5, policyVersion: 2, engine: nil, cases: .array([.object(["scanID": .string("S"), "top1Correct": .bool(true)])]))
         let text = String(decoding: try JSONEncoder.server.encode(run), as: UTF8.self)

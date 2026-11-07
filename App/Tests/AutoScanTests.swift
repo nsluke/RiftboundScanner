@@ -7,7 +7,9 @@ struct AutoScanTests {
     private func makeModel(
         feeder: StubFeeder,
         identifier: any CardIdentifying = StubIdentifier(outcome: .success(Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx]))),
-        store: InMemoryScanStore = InMemoryScanStore()
+        store: InMemoryScanStore = InMemoryScanStore(),
+        makeID: @escaping @Sendable () -> UUID = Fixtures.unsampledIDs,
+        confidenceRule: @escaping @Sendable () -> ConfidenceRule = { .default }
     ) -> ScannerModel {
         ScannerModel(
             camera: StubCamera(),
@@ -16,7 +18,8 @@ struct AutoScanTests {
             store: store,
             makeBatch: Fixtures.makeBatch,
             now: { Fixtures.epoch },
-            makeID: { UUID() },
+            makeID: makeID,
+            confidenceRule: confidenceRule,
             settleDelay: .zero
         )
     }
@@ -72,6 +75,72 @@ struct AutoScanTests {
         // A second accept has nothing left to do.
         await model.acceptConfidentScans()
         #expect(model.acceptedCount == 2)
+    }
+
+    /// Three of five scans fall in the audit sample at 0.3 (first bytes 0, 1
+    /// and 12 are buckets 0, 1 and 2; 0x95 and 0x45 are bucket 9); accepting
+    /// takes the other two and leaves the sample pending for the review queue
+    /// (ADR-002, decision 9).
+    @Test func acceptingLeavesTheAuditSamplePending() async throws {
+        let feeder = StubFeeder(script: [.fed, .fed, .fed, .fed, .fed])
+        let store = InMemoryScanStore()
+        let confidentResult = Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx], codeReading: Fixtures.viCodeReading)
+        let model = makeModel(
+            feeder: feeder,
+            identifier: StubIdentifier(outcome: .success(confidentResult)),
+            store: store,
+            makeID: Fixtures.idSequence(firstBytes: [0, 0x95, 1, 0x45, 12])
+        )
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+        await model.autoScanTask?.value
+        #expect(model.autoScan == .ended(.init(fed: 5, identified: 5), reason: .hopperEmpty))
+        #expect(model.runRecords.allSatisfy { $0.isAutoConfirmable })
+        #expect(model.runRecords.filter { $0.isHeldForAudit(under: model.rule) }.count == 3)
+        #expect(model.runRecords.filter { $0.isAcceptable(under: model.rule) }.count == 2)
+        #expect(model.spotCheckCandidates.isEmpty, "nothing has been accepted yet")
+
+        await model.acceptConfidentScans()
+        #expect(model.acceptedCount == 2)
+        let batch = try #require(model.batch)
+        let stored = await store.records(in: batch.id)
+        let held = stored.filter { $0.verdict == .pending }
+        #expect(held.count == 3)
+        #expect(held.map { Int($0.id.rawValue.uuid.0) }.sorted() == [0, 1, 12])
+        #expect(held.allSatisfy { $0.isHeldForAudit(under: .default) })
+        #expect(stored.filter { $0.decisions.map(\.source) == [.autoAccepted] }.count == 2)
+        #expect(model.spotCheckCandidates.count == 2)
+        #expect(Set(model.spotCheckCandidates) == Set(stored.filter { $0.verdict == .correct }.map(\.id)))
+
+        // Accepting again changes nothing: the sample is never taken by the machine.
+        await model.acceptConfidentScans()
+        #expect(model.acceptedCount == 2)
+    }
+
+    @Test func theAcceptRuleIsReadFromTheInstalledPolicy() async throws {
+        let feeder = StubFeeder(script: [.fed, .fed])
+        let store = InMemoryScanStore()
+        let confidentResult = Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx], codeReading: Fixtures.viCodeReading)
+        let model = makeModel(
+            feeder: feeder,
+            identifier: StubIdentifier(outcome: .success(confidentResult)),
+            store: store,
+            makeID: Fixtures.idSequence(firstBytes: [2, 10]),
+            confidenceRule: { ConfidenceRule(randomAudits: 300) }
+        )
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+        await model.autoScanTask?.value
+        #expect(model.rule.auditRate == 0.1)
+
+        await model.acceptConfidentScans()
+        #expect(model.acceptedCount == 1, "at 0.1 only bucket zero is held")
+        let batch = try #require(model.batch)
+        let stored = await store.records(in: batch.id)
+        #expect(stored.first { Int($0.id.rawValue.uuid.0) == 2 }?.verdict == .correct)
+        #expect(stored.first { Int($0.id.rawValue.uuid.0) == 10 }?.verdict == .pending)
     }
 
     @Test func stoppingEndsTheLoopAfterTheCurrentCard() async throws {

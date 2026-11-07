@@ -134,6 +134,9 @@ final class ScannerModel {
     private let makeBatch: @Sendable (ScanBatch.Setup) -> ScanBatch
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
+    /// The confident tier as currently installed; read at each use so a
+    /// policy downloaded mid-session applies to the next run.
+    private let confidenceRule: @Sendable () -> ConfidenceRule
     /// How long a fed card gets to come to rest before the photo.
     private let settleDelay: Duration
     private let clock = ContinuousClock()
@@ -146,6 +149,7 @@ final class ScannerModel {
         makeBatch: @escaping @Sendable (ScanBatch.Setup) -> ScanBatch,
         now: @escaping @Sendable () -> Date,
         makeID: @escaping @Sendable () -> UUID,
+        confidenceRule: @escaping @Sendable () -> ConfidenceRule = { .default },
         settleDelay: Duration = .milliseconds(350)
     ) {
         self.camera = camera
@@ -155,7 +159,20 @@ final class ScannerModel {
         self.makeBatch = makeBatch
         self.now = now
         self.makeID = makeID
+        self.confidenceRule = confidenceRule
         self.settleDelay = settleDelay
+    }
+
+    /// The confident tier's thresholds in force right now.
+    var rule: ConfidenceRule { confidenceRule() }
+
+    /// How many accepted scans "Spot-check 10" re-checks.
+    static let spotCheckLimit = 10
+
+    /// This run's scans that were accepted without a look, newest first; what
+    /// "Spot-check 10" draws from.
+    var spotCheckCandidates: [ScanRecord.ID] {
+        runRecords.filter { $0.lastDecision?.source == .autoAccepted }.map(\.id)
     }
 
     var pendingScan: PendingScan? {
@@ -364,15 +381,17 @@ final class ScannerModel {
     }
 
     /// Records an `autoAccepted` correct decision for each of this run's
-    /// confident scans that is still pending on disk. The batch is re-read
-    /// first, so a scan someone judged on another screen since the run is
-    /// left alone; the uncertain ones stay pending for the review queue.
+    /// confident scans that is still pending on disk and not held for audit.
+    /// The batch is re-read first, so a scan someone judged on another screen
+    /// since the run is left alone; the uncertain ones and the audit sample
+    /// stay pending for the review queue (ADR-002, decision 9).
     func acceptConfidentScans() async {
         guard let batch else { return }
+        let rule = confidenceRule()
         do {
             let onDisk = try await store.records(in: batch.id)
             let runIDs = Set(runRecords.map(\.id))
-            let eligible = onDisk.filter { runIDs.contains($0.id) && $0.isAutoConfirmable }
+            let eligible = onDisk.filter { runIDs.contains($0.id) && $0.isAcceptable(under: rule) }
             guard !eligible.isEmpty else { return }
             var accepted: [ScanRecord.ID: ScanRecord] = [:]
             for record in eligible {

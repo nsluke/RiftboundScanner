@@ -123,6 +123,10 @@ actor HTTPCollectionClient: CollectionServing {
         return PolicyDocument(version: header.version, json: response.data)
     }
 
+    func learningStats() async throws(ServerError) -> LearningStats {
+        try await get("api/learning/stats")
+    }
+
     func decks(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<[DeckSummary]> {
         let page: Versioned<DecksResponse> = try await getConditional("api/decks", validator: validator)
         return Versioned(value: page.value.items, validator: page.validator)

@@ -257,6 +257,30 @@ batch with `legacy` training quality, so nothing recorded before the ledger
 existed is ever ledgered or learned from. Until the start-run sheet exists,
 batches started in the app are `calibration` too.
 
+**The confident tier** (ADR-002, decision 9) is `ScanConfidence` under a
+`ConfidenceRule` built from the installed `LearningPolicy.confidence` and the
+server's audit count (`App/Sources/Scans/ScanConfidence.swift`). A scan is
+confident only when a code was read *literally* (a candidate matched through a
+parser repair is `codeRepaired`), it names the top candidate exactly, the
+score clears `minimumFusedScore` (1.0), and no shortlisted card of a
+*different* `ArtGroup` has a learned `exemplarSimilarity` of at least 0.88 that
+beats the top's own best descriptor evidence by 0.10 (`exemplarDisagrees`);
+same-art siblings such as `sfd-014` and `sfd-014a` never veto each other. There
+is no descriptor floor. Each candidate records `codeOrigin` (`alternative`
+when written; absent means literal). Confident scans are sampled for a human
+audit deterministically from the scan id (UUID first byte modulo 10 against
+the rate in tenths: 0.3 until the server reports 300 random audits, then 0.1):
+"Accept N confident · M held for audit" on the run strip skips the sample,
+the review queue shows the uncertain scans first and then the audit rows with
+an Audit badge, and their verdicts are `audit` decisions. "Spot-check 10"
+re-checks a sample of the run's accepted scans as `spotCheck` decisions, which
+the server records but never counts. The Settings tab's Learning card shows
+the server's 95 % Wilson lower bound from `GET /api/learning/stats`
+(`LearningStats`: `wilson_lower_bound`, `confidence_level`, `random_audits`,
+`random_audits_wrong`, `unresolved_wrong_audits`, `spot_checks`,
+`human_labels`, `sittings`, `exemplars`, …) as "Precision ≥ 98.1 % (95 %)",
+healthy while the bound is at least 97 % and no wrong audit is unresolved.
+
 The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 from `App/project.yml`; the card index is bundled from `cache/index.json`, so
 build it first. From the repository root:
@@ -272,9 +296,11 @@ xcrun devicectl device install app --device <device udid> \
 
 `xcrun devicectl list devices` prints the UDID. Unit tests for the app (scan log
 coding incl. the v1 and v2 fixtures, the file store, decisions through the
-store, the scanner model with stubbed camera and recogniser, the server client
-against a stubbed `URLProtocol`, endpoint discovery with an injected clock) run
-on a simulator; `sh Scripts/check-verdict-writers.sh` is the matching CI grep:
+store, the confident tier with the 024/014 veto fixture and crafted audit ids,
+the scanner model with stubbed camera and recogniser, the review queue's audit
+and spot-check rows, the server client against a stubbed `URLProtocol`,
+endpoint discovery with an injected clock) run on a simulator;
+`sh Scripts/check-verdict-writers.sh` is the matching CI grep:
 
 ```bash
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \

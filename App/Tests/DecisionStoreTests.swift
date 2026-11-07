@@ -17,7 +17,8 @@ struct DecisionStoreTests {
             store: store,
             makeBatch: { _ in batch },
             now: { Fixtures.epoch },
-            makeID: { UUID() },
+            // Never an audit sample: these tests are about the store, not the policy.
+            makeID: Fixtures.unsampledIDs,
             settleDelay: .zero
         )
     }

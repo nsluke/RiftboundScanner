@@ -178,6 +178,7 @@ nonisolated struct ServerScript: Sendable {
     var overlay: Result<Versioned<Data>, ServerError> = .failure(.notFound)
     var overlayChanges: Result<OverlayChanges, ServerError> = .failure(.gone)
     var policy: Result<PolicyDocument, ServerError> = .failure(.notFound)
+    var learningStats: Result<LearningStats, ServerError> = .failure(.notFound)
     var decks: Result<Versioned<[DeckSummary]>, ServerError> = .success(Versioned(value: [], validator: "d0"))
     var deckDetails: [Int: Result<DeckDetail, ServerError>] = [:]
     var setDeckCard: Result<DeckDetail, ServerError>?
@@ -189,6 +190,7 @@ nonisolated struct ServerScript: Sendable {
 /// Everything a `StubCollectionClient` was asked, in order.
 nonisolated struct ServerRecording: Sendable {
     var healthCalls = 0
+    var learningStatsCalls = 0
     var syncRequests: [LedgerSyncRequest] = []
     var batches: [BatchUpload] = []
     var scans: [ScanUpload] = []
@@ -285,6 +287,11 @@ actor StubCollectionClient: CollectionServing {
 
     func policy() async throws(ServerError) -> PolicyDocument {
         try script.policy.get()
+    }
+
+    func learningStats() async throws(ServerError) -> LearningStats {
+        recording.learningStatsCalls += 1
+        return try script.learningStats.get()
     }
 
     func decks(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<[DeckSummary]> {

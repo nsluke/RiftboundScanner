@@ -49,7 +49,7 @@ struct ScoringTests {
         #expect(decoded != .default)
         let json = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         #expect(json["codeExactBonus"] as? Double == 0.45)
-        #expect(json.count == 13, "every weight and threshold is a named key")
+        #expect(json.count == 14, "every weight and threshold is a named key")
     }
 
     @Test func scoringPolicyFillsMissingKeysWithDefaults() throws {
@@ -84,7 +84,8 @@ struct ScoringTests {
 
         let upright = matcher.rank([OrientedDescriptor(descriptor: b, orientation: .upright)], in: index, limit: 2)
         #expect(upright.map(\.entry.id.rawValue) == ["b", "a"] || upright.map(\.entry.id.rawValue) == ["b", "c"])
-        #expect(upright.first?.score == 1)
+        #expect(upright.first?.referenceScore == 1)
+        #expect(upright.first?.fusedScore == 1 && upright.first?.exemplarSimilarity == nil, "no overlay: the fused score is the reference score")
         #expect(upright.count == 2)
 
         let flipped = matcher.rank([

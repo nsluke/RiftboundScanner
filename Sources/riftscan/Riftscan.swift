@@ -6,7 +6,8 @@ struct Riftscan {
     static let usage = """
     usage: riftscan <command> [options]
 
-      identify <photo> [--index cache/index.json] [--top 3] [--json] [--verbose] [--save-rectified out.png]
+      identify <photo> [--index cache/index.json] [--overlay overlay.json|.bin] [--policy policy.json] [--top 3]
+               [--json] [--verbose] [--save-rectified out.png]
       build-index [--cards data/cards.json] [--images cache/images] [--output cache/index.json] [--concurrency N]
       synth [--cards data/cards.json] [--images cache/images] [--output synthetic] [--count 100] [--seed 42]
             [--severities mild,moderate,harsh]

@@ -96,6 +96,13 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
     /// against some unrelated printing, which must not outrank a located card.
     public var wholeImageMinimumScore = 0.8
 
+    /// How much a learned exemplar's feature-print similarity counts for in the
+    /// fused descriptor score: `fused = max(reference, exemplarScale × exemplarFP)`.
+    /// Below 1 so that a photo identical to an exemplar still ranks under a
+    /// perfect reference match, and so the exemplar side never reaches the
+    /// confident tier's fused threshold without code evidence.
+    public var exemplarScale = 0.95
+
     public init() {}
 
     public static let `default` = ScoringPolicy()
@@ -104,7 +111,7 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
         case featurePrintWeight, wholeDifferenceHashWeight, wholePerceptualHashWeight, artDifferenceHashWeight
         case codeExactBonus, codeVariantMismatchBonus, codeSetMismatchPenalty, codeMismatchPenalty
         case rerankedCandidateCount, codeInjectionMinimumConfidence, maximumLocationHypotheses, ocrHypothesisCount
-        case wholeImageMinimumScore
+        case wholeImageMinimumScore, exemplarScale
     }
 
     public init(from decoder: any Decoder) throws {
@@ -123,13 +130,23 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
         maximumLocationHypotheses = try container.decodeIfPresent(Int.self, forKey: .maximumLocationHypotheses) ?? defaults.maximumLocationHypotheses
         ocrHypothesisCount = try container.decodeIfPresent(Int.self, forKey: .ocrHypothesisCount) ?? defaults.ocrHypothesisCount
         wholeImageMinimumScore = try container.decodeIfPresent(Double.self, forKey: .wholeImageMinimumScore) ?? defaults.wholeImageMinimumScore
+        exemplarScale = try container.decodeIfPresent(Double.self, forKey: .exemplarScale) ?? defaults.exemplarScale
     }
 
+    /// The reference-only descriptor score: the weighted similarities to an index entry.
     public func descriptorScore(_ components: ScoreComponents) -> Double {
         featurePrintWeight * components.featurePrint
             + wholeDifferenceHashWeight * components.wholeDifferenceHash
             + wholePerceptualHashWeight * components.wholePerceptualHash
             + artDifferenceHashWeight * components.artDifferenceHash
+    }
+
+    /// The reference score lifted by exemplar evidence, when there is any;
+    /// exactly the reference score (not a copy that merely compares equal) when
+    /// there is none, so an empty overlay changes nothing.
+    public func fusedScore(reference: Double, exemplarSimilarity: Double?) -> Double {
+        guard let exemplarSimilarity else { return reference }
+        return max(reference, exemplarScale * exemplarSimilarity)
     }
 
     public func codeAdjustment(for agreement: CodeAgreement, confidence: Double) -> Double {

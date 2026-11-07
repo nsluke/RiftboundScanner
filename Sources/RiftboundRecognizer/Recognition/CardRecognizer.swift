@@ -1,11 +1,19 @@
 import CoreGraphics
+import Foundation
 
 /// One ranked candidate.
 public struct Match: Hashable, Sendable, Identifiable {
     public let card: Card
-    /// Descriptor score plus OCR adjustment; higher is better.
+    /// Fused descriptor score plus OCR adjustment; higher is better.
     public let score: Double
+    /// The fused descriptor score: the reference score lifted by exemplar
+    /// evidence for the card's art group, when there is any.
     public let descriptorScore: Double
+    /// The descriptor score against the reference index alone.
+    public let referenceScore: Double
+    /// The best feature-print cosine to an exemplar of the card's art group;
+    /// `nil` when none has been learned.
+    public let exemplarSimilarity: Double?
     public let components: ScoreComponents
     public let orientation: CardOrientation
     /// `nil` when no code could be read.
@@ -13,14 +21,40 @@ public struct Match: Hashable, Sendable, Identifiable {
 
     public var id: Card.ID { card.id }
 
-    /// Apps and their tests build matches directly, e.g. to stub a recogniser.
-    public init(card: Card, score: Double, descriptorScore: Double, components: ScoreComponents, orientation: CardOrientation, codeAgreement: CodeAgreement?) {
+    public init(
+        card: Card,
+        score: Double,
+        descriptorScore: Double,
+        referenceScore: Double,
+        exemplarSimilarity: Double?,
+        components: ScoreComponents,
+        orientation: CardOrientation,
+        codeAgreement: CodeAgreement?
+    ) {
         self.card = card
         self.score = score
         self.descriptorScore = descriptorScore
+        self.referenceScore = referenceScore
+        self.exemplarSimilarity = exemplarSimilarity
         self.components = components
         self.orientation = orientation
         self.codeAgreement = codeAgreement
+    }
+
+    /// A match with no exemplar evidence, whose reference score is its
+    /// descriptor score. Apps and their tests build matches directly, e.g. to
+    /// stub a recogniser.
+    public init(card: Card, score: Double, descriptorScore: Double, components: ScoreComponents, orientation: CardOrientation, codeAgreement: CodeAgreement?) {
+        self.init(
+            card: card,
+            score: score,
+            descriptorScore: descriptorScore,
+            referenceScore: descriptorScore,
+            exemplarSimilarity: nil,
+            components: components,
+            orientation: orientation,
+            codeAgreement: codeAgreement
+        )
     }
 }
 
@@ -29,7 +63,11 @@ public struct HypothesisSummary: Hashable, Sendable {
     public let location: CardLocation
     public let bestCard: Card.ID?
     public let bestScore: Double
+    /// The fused descriptor score of the best match.
     public let descriptorScore: Double
+    /// The hypothesis's best reference score over every candidate: what ranked
+    /// it against the other hypotheses.
+    public let referenceScore: Double
     public let codeRead: PrintedCode?
 }
 
@@ -77,12 +115,13 @@ public struct RecognitionResult: Sendable {
         if case .detected(let quad, _) = location { quad } else { nil }
     }
 
-    var summary: HypothesisSummary {
+    func summary(referenceScore: Double) -> HypothesisSummary {
         HypothesisSummary(
             location: location,
             bestCard: best?.id,
             bestScore: best?.score ?? 0,
             descriptorScore: best?.descriptorScore ?? 0,
+            referenceScore: referenceScore,
             codeRead: codeReading?.code
         )
     }
@@ -91,9 +130,18 @@ public struct RecognitionResult: Sendable {
 /// The recognition pipeline: locate → rectify → describe → nearest neighbours → OCR re-ranking.
 ///
 /// Every collaborator arrives through the initializer; ``live(index:renderer:policy:)``
-/// wires the production graph.
+/// wires the production graph. The data it matches against (the reference
+/// ``index``, the learned ``overlay`` and the ``policy``) can be swapped
+/// without rebuilding the collaborators through ``replacing(index:overlay:policy:excludedBatches:)``.
 public struct CardRecognizer: Sendable {
     public let index: CardIndex
+    /// Learned exemplars fused into descriptor scores; ``ExemplarIndex/empty``
+    /// leaves every result exactly as the reference index alone would.
+    public let overlay: ExemplarIndex
+    /// Batches whose exemplars are ignored (on-device re-identification of a
+    /// batch must not benefit from what that batch taught).
+    public let excludedBatches: Set<UUID>
+    public let policy: ScoringPolicy
     /// Stamped on every result; see ``EngineFingerprint``.
     public let fingerprint: EngineFingerprint
     private let locator: any CardLocating
@@ -101,7 +149,7 @@ public struct CardRecognizer: Sendable {
     private let descriptorExtractor: CardDescriptorExtractor
     private let codeReader: PrintedCodeReader
     private let frame: CardFrame
-    private let policy: ScoringPolicy
+    private let matcher: DescriptorMatcher
 
     /// `fingerprint` should come from the same feature printer as
     /// `descriptorExtractor` (``EngineFingerprint/current(calibrating:)``), so
@@ -114,9 +162,13 @@ public struct CardRecognizer: Sendable {
         codeReader: PrintedCodeReader,
         fingerprint: EngineFingerprint,
         frame: CardFrame = .riftbound,
-        policy: ScoringPolicy = .default
+        policy: ScoringPolicy = .default,
+        overlay: ExemplarIndex = .empty,
+        excludedBatches: Set<UUID> = []
     ) {
         self.index = index
+        self.overlay = overlay
+        self.excludedBatches = excludedBatches
         self.fingerprint = fingerprint
         self.locator = locator
         self.rectifier = rectifier
@@ -124,6 +176,34 @@ public struct CardRecognizer: Sendable {
         self.codeReader = codeReader
         self.frame = frame
         self.policy = policy
+        self.matcher = DescriptorMatcher(policy: policy, exemplars: overlay, excluding: excludedBatches)
+    }
+
+    /// The same collaborators (locator, rectifier, descriptor extractor and the
+    /// code reader with its single text recogniser) matching against new data.
+    /// Arguments left `nil` keep the current value.
+    ///
+    /// A replacement index must use the same canvas specification and sets as
+    /// the current one: the rectifier, extractor and OCR vocabulary were built
+    /// for it. Changing those means wiring a fresh recogniser.
+    public func replacing(
+        index: CardIndex? = nil,
+        overlay: ExemplarIndex? = nil,
+        policy: ScoringPolicy? = nil,
+        excludedBatches: Set<UUID>? = nil
+    ) -> CardRecognizer {
+        CardRecognizer(
+            index: index ?? self.index,
+            locator: locator,
+            rectifier: rectifier,
+            descriptorExtractor: descriptorExtractor,
+            codeReader: codeReader,
+            fingerprint: fingerprint,
+            frame: frame,
+            policy: policy ?? self.policy,
+            overlay: overlay ?? self.overlay,
+            excludedBatches: excludedBatches ?? self.excludedBatches
+        )
     }
 
     /// Identifies the card in a photo. Runs off the caller's actor: Vision,
@@ -137,6 +217,11 @@ public struct CardRecognizer: Sendable {
     /// hypothesis whose best match scores highest is returned, with every
     /// hypothesis summarised in ``RecognitionResult/hypotheses``. The whole-image
     /// hypothesis is held to ``ScoringPolicy/wholeImageMinimumScore``.
+    ///
+    /// Everything that chooses between hypotheses (their ordering for OCR, the
+    /// whole-image rule and the final winner) uses reference scores only, so
+    /// learned exemplars can change which card wins but never where the card
+    /// was found (ADR-002, decision 7).
     @concurrent
     public func identify(_ photo: CGImage) async throws -> RecognitionResult {
         let candidates = try await locator.locateCards(in: photo)
@@ -177,11 +262,11 @@ public struct CardRecognizer: Sendable {
         // when the rectangle detector has latched onto something else.
         let located = described.filter { if case .assumedWholeImage = $0.location { false } else { true } }
         let wholeImage = described.first { if case .assumedWholeImage = $0.location { true } else { false } }
-        var shortlist = Array(located.sorted { $0.descriptorScore > $1.descriptorScore }.prefix(max(1, policy.ocrHypothesisCount)))
+        var shortlist = Array(located.sorted { $0.referenceScore > $1.referenceScore }.prefix(max(1, policy.ocrHypothesisCount)))
         if let wholeImage {
             shortlist.append(wholeImage)
         }
-        var results: [Int: RecognitionResult] = [:]
+        var recognised: [Int: RecognisedHypothesis] = [:]
         for hypothesis in shortlist {
             var reading = try await codeReader.readCode(from: hypothesis.canvas).first
             if reading == nil, case .assumedWholeImage = hypothesis.location {
@@ -189,46 +274,52 @@ public struct CardRecognizer: Sendable {
                 // a crop; read the photo itself before giving up on it.
                 reading = try await codeReader.readCode(fromFullImage: photo).first
             }
-            let matches = rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries)
-            results[hypothesis.order] = RecognitionResult(
-                matches: matches,
+            let reranked = rerank(hypothesis.candidates, with: reading, queries: hypothesis.queries)
+            let result = RecognitionResult(
+                matches: reranked.map(\.match),
                 location: hypothesis.location,
                 codeReading: reading,
                 rectifiedCard: hypothesis.canvas,
-                descriptor: Self.winningDescriptor(for: matches, among: hypothesis.queries),
+                descriptor: Self.winningDescriptor(for: reranked.map(\.match), among: hypothesis.queries),
                 engine: fingerprint
+            )
+            recognised[hypothesis.order] = RecognisedHypothesis(
+                result: result,
+                referenceScore: hypothesis.referenceScore,
+                selectionScore: reranked.map(\.selectionScore).max() ?? -1
             )
         }
 
         // The whole image only competes when it looks like a cropped card (a
-        // high descriptor score, or a code read off it), or when nothing else
+        // high reference score, or a code read off it), or when nothing else
         // was found: a photo's background routinely scores 0.6–0.7 against some
         // unrelated printing, which must not outrank a located card.
-        let eligible = results.values.filter { result in
-            guard case .assumedWholeImage = result.location else { return true }
+        let eligible = recognised.sorted { $0.key < $1.key }.map(\.value).filter { hypothesis in
+            guard case .assumedWholeImage = hypothesis.result.location else { return true }
             return located.isEmpty
-                || result.codeReading != nil
-                || (result.best?.descriptorScore ?? 0) >= policy.wholeImageMinimumScore
+                || hypothesis.result.codeReading != nil
+                || hypothesis.referenceScore >= policy.wholeImageMinimumScore
         }
-        guard let winner = eligible.max(by: { ($0.best?.score ?? -1) < ($1.best?.score ?? -1) }) else {
+        guard let winner = eligible.max(by: { $0.selectionScore < $1.selectionScore }) else {
             throw RecognitionError.noHypotheses
         }
         let summaries = described.map { hypothesis in
-            results[hypothesis.order]?.summary ?? HypothesisSummary(
+            recognised[hypothesis.order]?.result.summary(referenceScore: hypothesis.referenceScore) ?? HypothesisSummary(
                 location: hypothesis.location,
                 bestCard: hypothesis.candidates.first?.entry.id,
-                bestScore: hypothesis.descriptorScore,
-                descriptorScore: hypothesis.descriptorScore,
+                bestScore: hypothesis.referenceScore,
+                descriptorScore: hypothesis.candidates.first?.fusedScore ?? 0,
+                referenceScore: hypothesis.referenceScore,
                 codeRead: nil
             )
         }
         return RecognitionResult(
-            matches: winner.matches,
-            location: winner.location,
-            codeReading: winner.codeReading,
-            rectifiedCard: winner.rectifiedCard,
-            descriptor: winner.descriptor,
-            engine: winner.engine,
+            matches: winner.result.matches,
+            location: winner.result.location,
+            codeReading: winner.result.codeReading,
+            rectifiedCard: winner.result.rectifiedCard,
+            descriptor: winner.result.descriptor,
+            engine: winner.result.engine,
             hypotheses: summaries
         )
     }
@@ -240,7 +331,7 @@ public struct CardRecognizer: Sendable {
         async let readings = codeReader.readCode(from: canvas)
         let reading = try await readings.first
         let (queries, candidates) = try await described
-        let matches = rerank(candidates, with: reading, queries: queries)
+        let matches = rerank(candidates, with: reading, queries: queries).map(\.match)
         return RecognitionResult(
             matches: matches,
             location: location,
@@ -268,7 +359,24 @@ public struct CardRecognizer: Sendable {
         let queries: [OrientedDescriptor]
         let candidates: [DescriptorCandidate]
 
-        var descriptorScore: Double { candidates.first?.score ?? 0 }
+        /// The best reference score over every candidate: the hypothesis's
+        /// standing against the other hypotheses, untouched by exemplars.
+        var referenceScore: Double { candidates.map(\.referenceScore).max() ?? 0 }
+    }
+
+    private struct RecognisedHypothesis: Sendable {
+        let result: RecognitionResult
+        let referenceScore: Double
+        /// The best reference-plus-code score among the matches: what decides
+        /// the winning hypothesis. Identical to the best match's `score` when
+        /// there are no exemplars.
+        let selectionScore: Double
+    }
+
+    /// A match together with the score the hypothesis is chosen by.
+    private struct RerankedMatch: Sendable {
+        let match: Match
+        let selectionScore: Double
     }
 
     /// Descriptor candidates for a canvas, tried upright and upside down, with
@@ -281,7 +389,7 @@ public struct CardRecognizer: Sendable {
             OrientedDescriptor(descriptor: try await uprightDescriptor, orientation: .upright),
             OrientedDescriptor(descriptor: try await flippedDescriptor, orientation: .upsideDown),
         ]
-        return (queries, DescriptorMatcher(policy: policy).rank(queries, in: index, limit: policy.rerankedCandidateCount))
+        return (queries, matcher.rank(queries, in: index, limit: policy.rerankedCandidateCount))
     }
 
     /// Applies the OCR evidence to each candidate and sorts by the fused score.
@@ -290,14 +398,14 @@ public struct CardRecognizer: Sendable {
     /// code it matches joins the candidates even when the descriptors ranked it
     /// outside the shortlist: a poorly located card (the whole feeder tray, say)
     /// can still carry a legible code while its art matches nothing.
-    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?, queries: [OrientedDescriptor]) -> [Match] {
+    private func rerank(_ candidates: [DescriptorCandidate], with reading: CodeReading?, queries: [OrientedDescriptor]) -> [RerankedMatch] {
         var candidates = candidates
         if let reading, reading.confidence >= policy.codeInjectionMinimumConfidence {
             let present = Set(candidates.map(\.entry.id))
             for entry in index.entries where !present.contains(entry.id) {
                 switch CodeAgreement(reading: reading.code, candidate: entry.card.code) {
                 case .exact, .variantDiffers:
-                    if let candidate = DescriptorMatcher(policy: policy).candidate(for: entry, queries: queries) {
+                    if let candidate = matcher.candidate(for: entry, queries: queries) {
                         candidates.append(candidate)
                     }
                 default:
@@ -305,21 +413,24 @@ public struct CardRecognizer: Sendable {
                 }
             }
         }
-        return candidates.map { candidate -> Match in
+        return candidates.map { candidate -> RerankedMatch in
             let agreement = reading.map { CodeAgreement(reading: $0.code, candidate: candidate.entry.card.code) }
             var adjustment = 0.0
             if let reading, let agreement {
                 adjustment = policy.codeAdjustment(for: agreement, confidence: reading.confidence)
             }
-            return Match(
+            let match = Match(
                 card: candidate.entry.card,
-                score: candidate.score + adjustment,
-                descriptorScore: candidate.score,
+                score: candidate.fusedScore + adjustment,
+                descriptorScore: candidate.fusedScore,
+                referenceScore: candidate.referenceScore,
+                exemplarSimilarity: candidate.exemplarSimilarity,
                 components: candidate.components,
                 orientation: candidate.orientation,
                 codeAgreement: agreement
             )
-        }.sorted { $0.score > $1.score }
+            return RerankedMatch(match: match, selectionScore: candidate.referenceScore + adjustment)
+        }.sorted { $0.match.score > $1.match.score }
     }
 }
 
@@ -335,7 +446,7 @@ extension CardRecognizer {
     ///
     /// Calibrates Vision's feature printer first (one feature print of the
     /// ``CalibrationCanvas``), which is why this runs asynchronously and can fail.
-    public static func live(index: CardIndex, renderer: ImageRenderer = ImageRenderer(), policy: ScoringPolicy = .default) async throws -> CardRecognizer {
+    public static func live(index: CardIndex, renderer: ImageRenderer = ImageRenderer(), policy: ScoringPolicy = .default, overlay: ExemplarIndex = .empty) async throws -> CardRecognizer {
         let featurePrinter = VisionFeaturePrintGenerator()
         return CardRecognizer(
             index: index,
@@ -349,7 +460,8 @@ extension CardRecognizer {
                 parser: PrintedCodeParser(vocabulary: index.vocabulary)
             ),
             fingerprint: try await EngineFingerprint.current(calibrating: featurePrinter),
-            policy: policy
+            policy: policy,
+            overlay: overlay
         )
     }
 }

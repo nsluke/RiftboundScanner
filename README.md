@@ -66,6 +66,16 @@ Two targets live in this package:
    better descriptor match, which is what separates printings that share an
    illustration: standard vs signature, or the same rune reprinted in another set.
 
+8. **Learn.** Confirmed scans become *exemplars*: real-photo feature prints keyed
+   by `ArtGroup` (the printing with its total and `a`/`*` suffix stripped, so every
+   printing of one illustration shares them). An `ExemplarIndex` overlay fuses
+   into the descriptor score as `max(reference, 0.95 · exemplar cosine)`; each
+   match reports both its `referenceScore` and the fused `descriptorScore`.
+   Everything that chooses *where* the card is (hypothesis ordering, the
+   whole-image rule, the winning hypothesis) uses reference scores only, so
+   exemplars can change which card wins but never where it was found, and an
+   empty overlay changes nothing at all. See `docs/learning-policy.md`.
+
 The result carries the ranked matches, where the card was found (and its corner
 quad when a card was detected), the code that was read and where it came from
 (an edge band of the canvas, or the whole photo as a fallback), the rectified
@@ -118,9 +128,13 @@ Code:  UNL-157/219 read from "UNL • 157/219" (confidence 1.00, upright, portra
 ```
 
 `--json` prints the same as JSON (plus `quad`, `codeSource`, the `descriptor`
-orientation and digest, and the `engine` fingerprint), `--verbose` lists every
-hypothesis that was tried, and `--save-rectified out.png` writes the winning
-canvas so you can see what the hasher and the OCR saw.
+orientation and digest, the `engine` fingerprint, and per match the
+`referenceScore` and `exemplarSimilarity` beside the fused `descriptorScore`),
+`--verbose` lists every hypothesis that was tried, and `--save-rectified out.png`
+writes the winning canvas so you can see what the hasher and the OCR saw.
+`--overlay overlay.json` (or a phone-side `.bin`) fuses learned exemplars into
+the scores after checking its calibration print against this machine's, and
+`--policy policy.json` applies a `LearningPolicy` file (`docs/learning-policy.md`).
 
 Check what this machine's Vision model makes of the calibration canvas, and
 whether it matches the index:
@@ -198,6 +212,10 @@ sleeves, motion blur and the feeder's actual lighting are untested.
   `CardIndex.read(from:)` loads it. Reference images are not needed at run time.
 - `CardRecognizer.live(index:)` wires the production graph; every collaborator is an
   initializer parameter, so an app can swap the locator, OCR or scoring policy.
+- `recognizer.replacing(index:overlay:policy:excludedBatches:)` swaps the data a
+  recogniser matches against while keeping its collaborators, including the one
+  `VisionTextRecognizer` whose limiter keeps Vision OCR from crashing; this is how
+  a downloaded `ExemplarIndex` overlay or `LearningPolicy` goes live at run time.
 - `identify(_:)` is `@concurrent`: call it from the main actor with the camera
   frame as a `CGImage` and await the result; the heavy Vision and Core Image work
   never runs on the main actor.
@@ -303,6 +321,13 @@ through the official API under those terms.
   (base64), unit-normalised at build time so similarity is a dot product. The
   format is versioned; a mismatch is refused rather than misread. An optional
   `calibrationPrint` (same encoding) records the embedding the index was built in.
+- **Overlay and policy formats.** `ExemplarIndex` is JSON `formatVersion` 2
+  (`version`, `calibrationPrint`, `exemplars[{artGroup, featurePrint, scanID,
+  batchID, admittedAt}]`), stored on the phone by `BinaryExemplarStore` (packed
+  Float32 plus an id table, patched by `ExemplarDelta`s) and compared with the
+  device's calibration print before use. `LearningPolicy` (`version`, `scoring`,
+  `confidence`, `admission`, `calibrationMinimum`) decodes with defaults for every
+  missing key. Both are documented in `docs/learning-policy.md`.
 - **Engine fingerprint.** `EngineFingerprint` = package version (`RecognizerInfo.version`),
   the 16-byte digest (`FeaturePrint.Digest`, the first 16 bytes of SHA-256 over the
   Float32 bytes) of the device's calibration print, platform and OS version. It is

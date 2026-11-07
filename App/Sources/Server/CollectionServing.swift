@@ -39,6 +39,8 @@ nonisolated protocol CollectionServing: Sendable {
     func deck(id: Int) async throws(ServerError) -> DeckDetail
     /// `PUT /api/decks/{id}/cards`; returns the refreshed deck.
     func setDeckCard(deckID: Int, _ change: DeckCardChange) async throws(ServerError) -> DeckDetail
+    /// `GET /api/decks/{id}/export?style=`: the decklist as text, for sharing.
+    func deckExport(id: Int, style: DeckExportStyle) async throws(ServerError) -> String
     /// `POST /api/learning/evaluations`.
     func postEvaluation(_ run: EvaluationRunUpload) async throws(ServerError) -> EvaluationReceipt
 }

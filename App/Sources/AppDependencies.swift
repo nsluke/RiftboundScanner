@@ -22,6 +22,8 @@ nonisolated struct AppDependencies: Sendable {
     let settings: any ServerSettingsStoring
     let endpoints: any EndpointResolving
     let client: any CollectionServing
+    /// The Decks tab's offline copy, under `paths.catalog`.
+    let deckCache: any DeckCacheStoring
     let appVersion: String
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
@@ -107,6 +109,7 @@ nonisolated struct AppDependencies: Sendable {
             settings: settings,
             endpoints: endpoints,
             client: client,
+            deckCache: FileDeckCacheStore(url: paths.catalog.appending(path: "decks.json")),
             appVersion: appVersion
         )
     }

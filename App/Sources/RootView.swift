@@ -5,7 +5,9 @@ struct RootView: View {
     @State private var scanner: ScannerModel
     @State private var history: HistoryModel
     @State private var collection: CollectionModel
+    @State private var decks: DecksModel
     @State private var settings: SettingsModel
+    private let deckDependencies: DeckDependencies
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
@@ -20,6 +22,8 @@ struct RootView: View {
         ))
         _history = State(wrappedValue: HistoryModel(store: dependencies.store))
         _collection = State(wrappedValue: CollectionModel(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, priceSource: dependencies.priceSource))
+        deckDependencies = DeckDependencies(client: dependencies.client, endpoints: dependencies.endpoints, cache: dependencies.deckCache, now: dependencies.now)
+        _decks = State(wrappedValue: DecksModel(client: dependencies.client, cache: dependencies.deckCache, now: dependencies.now))
         _settings = State(wrappedValue: SettingsModel(
             settingsStore: dependencies.settings,
             client: dependencies.client,
@@ -42,6 +46,12 @@ struct RootView: View {
             Tab("Collection", systemImage: "square.grid.2x2") {
                 NavigationStack {
                     CollectionView(model: collection)
+                }
+                .environment(\.deckDependencies, deckDependencies)
+            }
+            Tab("Decks", systemImage: "rectangle.stack") {
+                NavigationStack {
+                    DecksView(model: decks, dependencies: deckDependencies)
                 }
             }
             Tab("History", systemImage: "list.bullet.rectangle") {

@@ -294,6 +294,41 @@ client against a local server, run the server repo's
 `RC_PORT=<port> python -m riftbound_collection serve`, enter `127.0.0.1:<port>` as
 the fallback address in a simulator build and tap Test connection.
 
+### Decks
+
+The Decks tab (`App/Sources/Decks/`) is the phone's read-only view of the
+decks built in the server's web builder (ADR-002, decision 11). `DecksModel`
+reads `GET /api/decks` conditionally on the cached validator; `DeckDetailModel`
+reads `GET /api/decks/{id}` (every slot including the sideboard, the server's
+`owned` / `used_elsewhere` / `available` / `short` per card, per-slot `counts`
+and the `validation` verdict with its issue codes) together with
+`GET /api/decks/{id}/export?style=piltover`, which the Share button hands to
+`ShareLink`. Both are saved under `Library/Application Support/Riftbound/Catalog/decks.json`
+(`FileDeckCacheStore`), so when the server is out of reach the tab shows the
+saved copy with a "Showing decks saved …" line and a retry; with nothing saved
+it shows the error and a retry. Short counts are the server's, never recomputed
+on the phone.
+
+The one deck write is **Add to deck…** on a card's detail sheet
+(`AddToDeckSheet`): pick a deck (the most recently edited is pre-selected), a
+slot pre-filled by the same rule as the server's `default_slot` (Legend, Rune
+and Battlefield by type; Signature cards to the main deck; other Champion units
+to the champion slot; everything else to the main deck), and the number of
+copies the deck should hold, then `PUT /api/decks/{id}/cards`. The server
+answers with the refreshed deck, which replaces the cached detail. Decks are
+server-authoritative and online-only: when discovery finds no endpoint the
+button is disabled with the reason and a "Try again" that re-probes.
+
+Slot headers stack their count under the name at accessibility text sizes and
+every row is one VoiceOver element ("3 × Back to Back, OGN-206, Main Deck,
+2 short"). The tests (`App/Tests/DecksModelTests.swift`) run the models
+against `StubCollectionClient` and decode `App/Tests/Fixtures/deck-detail-v4.json`,
+a deck captured from the server at `user_version` 4. To see it live, run the
+server locally (`RC_DB_PATH=/tmp/x.sqlite RC_PRICE_SYNC=0 RC_PORT=8096 python -m riftbound_collection serve`
+in the server repo), build a deck at `http://127.0.0.1:8096/decks`, enter
+`127.0.0.1:8096` as the fallback address in a simulator build and open the
+Decks tab.
+
 ### Reviewing the results
 
 The app writes `Documents/Scans/<batch>/batch.json`, `scans.json`, `photos/` and

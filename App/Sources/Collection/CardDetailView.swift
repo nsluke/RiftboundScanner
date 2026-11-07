@@ -7,6 +7,9 @@ struct CardDetailView: View {
     let pricesAsOf: Date
 
     @Environment(\.dismiss) private var dismiss
+    /// Set by the root view when the server is wired; absent, the action is hidden.
+    @Environment(\.deckDependencies) private var decks
+    @State private var addToDeck: AddToDeckModel?
 
     var body: some View {
         NavigationStack {
@@ -23,8 +26,14 @@ struct CardDetailView: View {
                     if !entry.vault.tags.isEmpty { tags }
                     prices
                     links
+                    if let decks {
+                        addToDeckButton(decks)
+                    }
                 }
                 .padding()
+            }
+            .sheet(item: $addToDeck) { model in
+                AddToDeckSheet(model: model)
             }
             .background(Theme.ground.ignoresSafeArea())
             .foregroundStyle(Theme.text)
@@ -172,6 +181,20 @@ struct CardDetailView: View {
         }
         .font(.body.monospacedDigit())
         .accessibilityElement(children: .combine)
+    }
+
+    /// Opens the deck picker for this printing (ADR-002 Decision 11: the
+    /// phone's one deck write).
+    private func addToDeckButton(_ decks: DeckDependencies) -> some View {
+        Button {
+            addToDeck = decks.makeAddToDeckModel(for: entry.vault)
+        } label: {
+            Label("Add to deck…", systemImage: "plus.rectangle.on.rectangle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(Theme.amber)
+        .accessibilityHint("Chooses a deck on your server to add \(entry.vault.name) to")
     }
 
     private var links: some View {

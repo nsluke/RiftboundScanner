@@ -137,6 +137,11 @@ actor HTTPCollectionClient: CollectionServing {
         return try decode(DeckDetail.self, from: response.data)
     }
 
+    func deckExport(id: Int, style: DeckExportStyle) async throws(ServerError) -> String {
+        let response = try await send(.get, "api/decks/\(id)/export", query: [URLQueryItem(name: "style", value: style.rawValue)])
+        return String(decoding: response.data, as: UTF8.self)
+    }
+
     func postEvaluation(_ run: EvaluationRunUpload) async throws(ServerError) -> EvaluationReceipt {
         let response = try await send(.post, "api/learning/evaluations", body: try encode(run))
         return (try? decoder.decode(EvaluationReceipt.self, from: response.data)) ?? EvaluationReceipt(id: run.id)

@@ -1,0 +1,344 @@
+{
+  "id": 1,
+  "name": "Phone test",
+  "format": "constructed",
+  "notes": "A10 fixture",
+  "created_at": "2026-11-07T21:41:44Z",
+  "updated_at": "2026-11-07T21:42:05Z",
+  "cards": [
+    {
+      "card_id": "OGN-255",
+      "slot": "legend",
+      "quantity": 1,
+      "name": "Ahri - Nine-Tailed Fox",
+      "name_key": "Ahri, Nine-Tailed Fox",
+      "set_code": "OGN",
+      "rarity": "Rare",
+      "type": "Legend",
+      "supertype": null,
+      "domains": [
+        "Calm",
+        "Mind"
+      ],
+      "tags": [
+        "Ahri"
+      ],
+      "energy": null,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-255.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 1,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "OGN-066",
+      "slot": "champion",
+      "quantity": 1,
+      "name": "Ahri - Alluring",
+      "name_key": "Ahri, Alluring",
+      "set_code": "OGN",
+      "rarity": "Rare",
+      "type": "Unit",
+      "supertype": "Champion",
+      "domains": [
+        "Calm"
+      ],
+      "tags": [
+        "Ahri",
+        "Ionia"
+      ],
+      "energy": 5,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-066.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 1,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "RAD-R01",
+      "slot": "rune",
+      "quantity": 12,
+      "name": "Fury Rune",
+      "name_key": "Fury Rune",
+      "set_code": "RAD",
+      "rarity": "Common",
+      "type": "Rune",
+      "supertype": "Basic",
+      "domains": [
+        "Fury"
+      ],
+      "tags": [],
+      "energy": null,
+      "banned": false,
+      "image_url": "https://example.invalid/RAD-R01.webp",
+      "owned": 8,
+      "used_elsewhere": 4,
+      "available": 4,
+      "short": 8,
+      "printing_sets": [
+        "OGN",
+        "RAD",
+        "SFD",
+        "UNL",
+        "VEN"
+      ]
+    },
+    {
+      "card_id": "OGN-275",
+      "slot": "battlefield",
+      "quantity": 1,
+      "name": "Altar to Unity",
+      "name_key": "Altar to Unity",
+      "set_code": "OGN",
+      "rarity": "Uncommon",
+      "type": "Battlefield",
+      "supertype": null,
+      "domains": [
+        "Colorless"
+      ],
+      "tags": [],
+      "energy": null,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-275.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 1,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "OGN-276",
+      "slot": "battlefield",
+      "quantity": 1,
+      "name": "Aspirant's Climb",
+      "name_key": "Aspirant's Climb",
+      "set_code": "OGN",
+      "rarity": "Uncommon",
+      "type": "Battlefield",
+      "supertype": null,
+      "domains": [
+        "Colorless"
+      ],
+      "tags": [],
+      "energy": null,
+      "banned": true,
+      "image_url": "https://example.invalid/OGN-276.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 1,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "VEN-150",
+      "slot": "main",
+      "quantity": 2,
+      "name": "Acceleration Gate",
+      "name_key": "Acceleration Gate",
+      "set_code": "VEN",
+      "rarity": "Epic",
+      "type": "Spell",
+      "supertype": "Signature",
+      "domains": [
+        "Mind",
+        "Body"
+      ],
+      "tags": [
+        "Jayce"
+      ],
+      "energy": 3,
+      "banned": false,
+      "image_url": "https://example.invalid/VEN-150.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 2,
+      "printing_sets": [
+        "VEN"
+      ]
+    },
+    {
+      "card_id": "OGN-179",
+      "slot": "main",
+      "quantity": 3,
+      "name": "Acceptable Losses",
+      "name_key": "Acceptable Losses",
+      "set_code": "OGN",
+      "rarity": "Uncommon",
+      "type": "Spell",
+      "supertype": null,
+      "domains": [
+        "Chaos"
+      ],
+      "tags": [],
+      "energy": 1,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-179.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 3,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "OGN-206",
+      "slot": "main",
+      "quantity": 3,
+      "name": "Back to Back",
+      "name_key": "Back to Back",
+      "set_code": "OGN",
+      "rarity": "Common",
+      "type": "Spell",
+      "supertype": null,
+      "domains": [
+        "Order"
+      ],
+      "tags": [],
+      "energy": 3,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-206.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 3,
+      "printing_sets": [
+        "OGN"
+      ]
+    },
+    {
+      "card_id": "OGN-025",
+      "slot": "sideboard",
+      "quantity": 2,
+      "name": "Blind Fury",
+      "name_key": "Blind Fury",
+      "set_code": "OGN",
+      "rarity": "Rare",
+      "type": "Spell",
+      "supertype": null,
+      "domains": [
+        "Fury"
+      ],
+      "tags": [],
+      "energy": 4,
+      "banned": false,
+      "image_url": "https://example.invalid/OGN-025.webp",
+      "owned": 0,
+      "used_elsewhere": 0,
+      "available": 0,
+      "short": 2,
+      "printing_sets": [
+        "OGN"
+      ]
+    }
+  ],
+  "card_count": 26,
+  "short_count": 22,
+  "counts": {
+    "legend": 1,
+    "champion": 1,
+    "rune": 12,
+    "battlefield": 2,
+    "main": 8,
+    "sideboard": 2
+  },
+  "validation": {
+    "ok": false,
+    "format": "constructed",
+    "as_of": "2026-10-09",
+    "issues": [
+      {
+        "code": "battlefield_count",
+        "severity": "error",
+        "message": "Battlefields: 2 cards, needs 3",
+        "card_ids": [],
+        "slot": "battlefield"
+      },
+      {
+        "code": "main_size",
+        "severity": "error",
+        "message": "Main Deck: 8 cards, needs 40",
+        "card_ids": [],
+        "slot": "main"
+      },
+      {
+        "code": "domain_identity",
+        "severity": "error",
+        "message": "Fury Rune is Fury; the legend is Calm, Mind",
+        "card_ids": [
+          "RAD-R01"
+        ],
+        "slot": "rune"
+      },
+      {
+        "code": "domain_identity",
+        "severity": "error",
+        "message": "Acceleration Gate is Body; the legend is Calm, Mind",
+        "card_ids": [
+          "VEN-150"
+        ],
+        "slot": "main"
+      },
+      {
+        "code": "domain_identity",
+        "severity": "error",
+        "message": "Acceptable Losses is Chaos; the legend is Calm, Mind",
+        "card_ids": [
+          "OGN-179"
+        ],
+        "slot": "main"
+      },
+      {
+        "code": "domain_identity",
+        "severity": "error",
+        "message": "Back to Back is Order; the legend is Calm, Mind",
+        "card_ids": [
+          "OGN-206"
+        ],
+        "slot": "main"
+      },
+      {
+        "code": "domain_identity",
+        "severity": "error",
+        "message": "Blind Fury is Fury; the legend is Calm, Mind",
+        "card_ids": [
+          "OGN-025"
+        ],
+        "slot": "sideboard"
+      },
+      {
+        "code": "signature_tag",
+        "severity": "error",
+        "message": "Acceleration Gate is a Signature card for Jayce",
+        "card_ids": [
+          "VEN-150"
+        ],
+        "slot": "main"
+      },
+      {
+        "code": "banned",
+        "severity": "error",
+        "message": "Aspirant's Climb is banned in constructed",
+        "card_ids": [
+          "OGN-276"
+        ],
+        "slot": "battlefield"
+      }
+    ],
+    "error_count": 9,
+    "warning_count": 0
+  }
+}

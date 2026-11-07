@@ -253,7 +253,7 @@ struct CollectionClientTests {
         #expect(deck.cards[1].domains == ["Body", "Fury"])
         #expect(deck.cards[1].short == 2)
         #expect(deck.shortCount == 2)
-        #expect(deck.validation.first?.code == "main_size")
+        #expect(deck.validation.issues.first?.code == "main_size", "the pre-S9 bare array still decodes")
     }
 
     @Test func aCellularOnlyPathNeverSendsARequest() async {

@@ -939,35 +939,51 @@ nonisolated struct DecksResponse: Hashable, Sendable, Codable {
     }
 }
 
-/// A deck slot entry with the server's ownership arithmetic. The server row
-/// also carries `image_url`; it is not read.
-nonisolated struct DeckCard: Hashable, Sendable, Codable {
+/// A deck slot entry with the server's ownership arithmetic
+/// (`owned` copies held, `usedElsewhere` committed to other decks,
+/// `available = owned - usedElsewhere`, `short = max(0, quantity - available)`).
+/// The server row also carries `image_url`, `tags` and `printing_sets`; they
+/// are not read.
+nonisolated struct DeckCard: Hashable, Sendable, Codable, Identifiable {
     let cardID: String
     let slot: DeckSlot
     let quantity: Int
     let name: String
+    /// The copy-limit identity (`Ahri, Nine-Tailed Fox`), when the server sends it.
+    let nameKey: String?
     let setCode: String?
     let rarity: String?
     let type: String?
     let supertype: String?
     let domains: [String]
     let energy: Int?
+    let banned: Bool
     let owned: Int
     let usedElsewhere: Int
     let available: Int
     let short: Int
 
-    init(cardID: String, slot: DeckSlot, quantity: Int, name: String, setCode: String? = nil, rarity: String? = nil, type: String? = nil, supertype: String? = nil, domains: [String] = [], energy: Int? = nil, owned: Int, usedElsewhere: Int, available: Int, short: Int) {
+    /// One card can sit in two slots (main and sideboard), so the identity is both.
+    struct ID: Hashable, Sendable {
+        let cardID: String
+        let slot: DeckSlot
+    }
+
+    var id: ID { ID(cardID: cardID, slot: slot) }
+
+    init(cardID: String, slot: DeckSlot, quantity: Int, name: String, nameKey: String? = nil, setCode: String? = nil, rarity: String? = nil, type: String? = nil, supertype: String? = nil, domains: [String] = [], energy: Int? = nil, banned: Bool = false, owned: Int, usedElsewhere: Int, available: Int, short: Int) {
         self.cardID = cardID
         self.slot = slot
         self.quantity = quantity
         self.name = name
+        self.nameKey = nameKey
         self.setCode = setCode
         self.rarity = rarity
         self.type = type
         self.supertype = supertype
         self.domains = domains
         self.energy = energy
+        self.banned = banned
         self.owned = owned
         self.usedElsewhere = usedElsewhere
         self.available = available
@@ -975,8 +991,9 @@ nonisolated struct DeckCard: Hashable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case slot, quantity, name, rarity, type, supertype, domains, energy, owned, available, short
+        case slot, quantity, name, rarity, type, supertype, domains, energy, banned, owned, available, short
         case cardID = "card_id"
+        case nameKey = "name_key"
         case setCode = "set_code"
         case usedElsewhere = "used_elsewhere"
     }
@@ -987,6 +1004,7 @@ nonisolated struct DeckCard: Hashable, Sendable, Codable {
         slot = try container.decode(DeckSlot.self, forKey: .slot)
         quantity = try container.decode(Int.self, forKey: .quantity)
         name = try container.decode(String.self, forKey: .name)
+        nameKey = try container.decodeIfPresent(String.self, forKey: .nameKey)
         setCode = try container.decodeIfPresent(String.self, forKey: .setCode)
         rarity = try container.decodeIfPresent(String.self, forKey: .rarity)
         type = try container.decodeIfPresent(String.self, forKey: .type)
@@ -1002,6 +1020,12 @@ nonisolated struct DeckCard: Hashable, Sendable, Codable {
             domains = []
         }
         energy = try container.decodeIfPresent(Int.self, forKey: .energy)
+        // SQLite's 0/1 or JSON's true/false.
+        if let flag = try? container.decodeIfPresent(Bool.self, forKey: .banned) {
+            banned = flag
+        } else {
+            banned = (try container.decodeIfPresent(Int.self, forKey: .banned) ?? 0) != 0
+        }
         owned = try container.decode(Int.self, forKey: .owned)
         usedElsewhere = try container.decodeIfPresent(Int.self, forKey: .usedElsewhere) ?? 0
         available = try container.decodeIfPresent(Int.self, forKey: .available) ?? (owned - usedElsewhere)
@@ -1009,18 +1033,155 @@ nonisolated struct DeckCard: Hashable, Sendable, Codable {
     }
 }
 
-nonisolated struct DeckIssue: Hashable, Sendable, Codable {
-    let code: String
-    let message: String?
-    let severity: String?
-    let cardID: String?
+/// How bad a validation issue is. Unknown severities decode as themselves
+/// so a new server does not break the phone.
+nonisolated enum DeckIssueSeverity: Hashable, Sendable, Codable {
+    case error
+    case warning
+    case unknown(String)
 
-    private enum CodingKeys: String, CodingKey {
-        case code, message, severity
-        case cardID = "card_id"
+    var rawValue: String {
+        switch self {
+        case .error: "error"
+        case .warning: "warning"
+        case .unknown(let raw): raw
+        }
+    }
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "error": self = .error
+        case "warning": self = .warning
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
+/// One finding from the server's `decks.validate()` (ADR-002 Decision 11):
+/// a code such as `main_size`, `copy_limit`, `domain_identity` or `banned`,
+/// the cards it names and, for slot-sized rules, the slot.
+nonisolated struct DeckIssue: Hashable, Sendable, Codable {
+    let code: String
+    let severity: DeckIssueSeverity
+    let message: String?
+    let cardIDs: [String]
+    let slot: DeckSlot?
+
+    init(code: String, severity: DeckIssueSeverity = .error, message: String? = nil, cardIDs: [String] = [], slot: DeckSlot? = nil) {
+        self.code = code
+        self.severity = severity
+        self.message = message
+        self.cardIDs = cardIDs
+        self.slot = slot
+    }
+
+    var isError: Bool { severity == .error }
+
+    private enum CodingKeys: String, CodingKey {
+        case code, severity, message, slot
+        case cardIDs = "card_ids"
+        case cardID = "card_id"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(String.self, forKey: .code)
+        severity = try container.decodeIfPresent(DeckIssueSeverity.self, forKey: .severity) ?? .error
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        if let list = try container.decodeIfPresent([String].self, forKey: .cardIDs) {
+            cardIDs = list
+        } else if let single = try container.decodeIfPresent(String.self, forKey: .cardID) {
+            cardIDs = [single]
+        } else {
+            cardIDs = []
+        }
+        slot = try container.decodeIfPresent(DeckSlot.self, forKey: .slot)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(code, forKey: .code)
+        try container.encode(severity, forKey: .severity)
+        try container.encodeIfPresent(message, forKey: .message)
+        try container.encode(cardIDs, forKey: .cardIDs)
+        try container.encodeIfPresent(slot, forKey: .slot)
+    }
+}
+
+/// The server's verdict on a deck against its format's dated rules.
+/// `isOK` is the server's `ok`: no error-severity issue (warnings do not block).
+nonisolated struct DeckValidation: Hashable, Sendable, Codable {
+    let isOK: Bool
+    let format: String?
+    /// The `as_of` date of the rules file the server judged by.
+    let rulesAsOf: String?
+    let issues: [DeckIssue]
+    let errorCount: Int
+    let warningCount: Int
+
+    init(isOK: Bool, format: String? = nil, rulesAsOf: String? = nil, issues: [DeckIssue] = [], errorCount: Int? = nil, warningCount: Int? = nil) {
+        self.isOK = isOK
+        self.format = format
+        self.rulesAsOf = rulesAsOf
+        self.issues = issues
+        self.errorCount = errorCount ?? issues.filter(\.isError).count
+        self.warningCount = warningCount ?? issues.filter { !$0.isError }.count
+    }
+
+    /// A deck the server has not judged (an older server, or a list row).
+    static let unjudged = DeckValidation(isOK: true)
+
+    var errors: [DeckIssue] { issues.filter(\.isError) }
+    var warnings: [DeckIssue] { issues.filter { !$0.isError } }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, format, issues
+        case rulesAsOf = "as_of"
+        case errorCount = "error_count"
+        case warningCount = "warning_count"
+    }
+
+    init(from decoder: any Decoder) throws {
+        // The deployed server sends the object; a bare array of issues (the
+        // shape the client first guessed at) still decodes.
+        if let container = try? decoder.container(keyedBy: CodingKeys.self), container.contains(.ok) || container.contains(.issues) {
+            let issues = try container.decodeIfPresent([DeckIssue].self, forKey: .issues) ?? []
+            self.init(
+                isOK: try container.decodeIfPresent(Bool.self, forKey: .ok) ?? !issues.contains(where: \.isError),
+                format: try container.decodeIfPresent(String.self, forKey: .format),
+                rulesAsOf: try container.decodeIfPresent(String.self, forKey: .rulesAsOf),
+                issues: issues,
+                errorCount: try container.decodeIfPresent(Int.self, forKey: .errorCount),
+                warningCount: try container.decodeIfPresent(Int.self, forKey: .warningCount)
+            )
+        } else {
+            let issues = try decoder.singleValueContainer().decode([DeckIssue].self)
+            self.init(isOK: !issues.contains(where: \.isError), issues: issues)
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isOK, forKey: .ok)
+        try container.encodeIfPresent(format, forKey: .format)
+        try container.encodeIfPresent(rulesAsOf, forKey: .rulesAsOf)
+        try container.encode(issues, forKey: .issues)
+        try container.encode(errorCount, forKey: .errorCount)
+        try container.encode(warningCount, forKey: .warningCount)
+    }
+}
+
+/// `GET /api/decks/{id}`: the deck, its cards with the server's ownership
+/// arithmetic, per-slot counts and the validation verdict.
 nonisolated struct DeckDetail: Hashable, Sendable, Codable, Identifiable {
     let id: Int
     let name: String
@@ -1028,26 +1189,44 @@ nonisolated struct DeckDetail: Hashable, Sendable, Codable, Identifiable {
     let notes: String?
     let cards: [DeckCard]
     let cardCount: Int
+    /// Copies the deck lacks across every slot, as the server computed it.
     let shortCount: Int
-    let validation: [DeckIssue]
+    /// Quantity per slot; every known slot is present, zero when empty.
+    let counts: [DeckSlot: Int]
+    let validation: DeckValidation
     let createdAt: String?
     let updatedAt: String?
 
-    init(id: Int, name: String, format: String, notes: String? = nil, cards: [DeckCard], cardCount: Int, shortCount: Int, validation: [DeckIssue] = [], createdAt: String? = nil, updatedAt: String? = nil) {
+    init(id: Int, name: String, format: String, notes: String? = nil, cards: [DeckCard], cardCount: Int? = nil, shortCount: Int? = nil, counts: [DeckSlot: Int]? = nil, validation: DeckValidation = .unjudged, createdAt: String? = nil, updatedAt: String? = nil) {
         self.id = id
         self.name = name
         self.format = format
         self.notes = notes
         self.cards = cards
-        self.cardCount = cardCount
-        self.shortCount = shortCount
+        self.cardCount = cardCount ?? cards.reduce(0) { $0 + $1.quantity }
+        self.shortCount = shortCount ?? cards.reduce(0) { $0 + $1.short }
+        self.counts = counts ?? Self.counts(of: cards)
         self.validation = validation
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
+    /// Quantity per slot from the card rows, every known slot present.
+    static func counts(of cards: [DeckCard]) -> [DeckSlot: Int] {
+        var counts = Dictionary(uniqueKeysWithValues: DeckSlot.allCases.map { ($0, 0) })
+        for card in cards {
+            counts[card.slot, default: 0] += card.quantity
+        }
+        return counts
+    }
+
+    /// The cards in one slot, in the server's order (slot, name, id).
+    func cards(in slot: DeckSlot) -> [DeckCard] {
+        cards.filter { $0.slot == slot }
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case id, name, format, notes, cards, validation
+        case id, name, format, notes, cards, counts, validation
         case cardCount = "card_count"
         case shortCount = "short_count"
         case createdAt = "created_at"
@@ -1056,17 +1235,55 @@ nonisolated struct DeckDetail: Hashable, Sendable, Codable, Identifiable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(Int.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        format = try container.decode(String.self, forKey: .format)
-        notes = try container.decodeIfPresent(String.self, forKey: .notes)
-        cards = try container.decodeIfPresent([DeckCard].self, forKey: .cards) ?? []
-        cardCount = try container.decodeIfPresent(Int.self, forKey: .cardCount) ?? cards.reduce(0) { $0 + $1.quantity }
-        shortCount = try container.decodeIfPresent(Int.self, forKey: .shortCount) ?? cards.reduce(0) { $0 + $1.short }
-        validation = try container.decodeIfPresent([DeckIssue].self, forKey: .validation) ?? []
-        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
-        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        let cards = try container.decodeIfPresent([DeckCard].self, forKey: .cards) ?? []
+        // `[DeckSlot: Int]` would decode as alternating pairs; the wire is an
+        // object keyed by slot name.
+        var counts: [DeckSlot: Int]?
+        if let raw = try container.decodeIfPresent([String: Int].self, forKey: .counts) {
+            var mapped = Self.counts(of: [])
+            for (key, value) in raw {
+                mapped[DeckSlot(rawValue: key)] = value
+            }
+            counts = mapped
+        }
+        self.init(
+            id: try container.decode(Int.self, forKey: .id),
+            name: try container.decode(String.self, forKey: .name),
+            format: try container.decode(String.self, forKey: .format),
+            notes: try container.decodeIfPresent(String.self, forKey: .notes),
+            cards: cards,
+            cardCount: try container.decodeIfPresent(Int.self, forKey: .cardCount),
+            shortCount: try container.decodeIfPresent(Int.self, forKey: .shortCount),
+            counts: counts,
+            validation: try container.decodeIfPresent(DeckValidation.self, forKey: .validation) ?? .unjudged,
+            createdAt: try container.decodeIfPresent(String.self, forKey: .createdAt),
+            updatedAt: try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        )
     }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(format, forKey: .format)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encode(cards, forKey: .cards)
+        try container.encode(cardCount, forKey: .cardCount)
+        try container.encode(shortCount, forKey: .shortCount)
+        try container.encode(Dictionary(uniqueKeysWithValues: counts.map { ($0.key.rawValue, $0.value) }), forKey: .counts)
+        try container.encode(validation, forKey: .validation)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+    }
+}
+
+/// How `GET /api/decks/{id}/export?style=` lays the list out.
+nonisolated enum DeckExportStyle: String, Hashable, Sendable, Codable, CaseIterable {
+    /// `# Name` / `## Slot (N)` sections.
+    case text
+    /// Piltover Archive layout: bare `Legend`, `Champion`, `Battlefields`,
+    /// `Runes`, `Main Deck`, `Sideboard` headers.
+    case piltover
 }
 
 /// `PUT /api/decks/{id}/cards`: sets a card's quantity in one slot (0 removes it).

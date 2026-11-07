@@ -57,13 +57,10 @@ public struct CardCatalog: Sendable {
         cards.first { $0.id == id }
     }
 
-    /// Every set code and collector-number prefix in the catalog; the OCR parser
-    /// uses them to repair misread characters.
+    /// Every printing's code in the catalog; the OCR parser accepts only
+    /// readings that name one and repairs misread characters towards them.
     public var vocabulary: PrintedCodeParser.Vocabulary {
-        PrintedCodeParser.Vocabulary(
-            sets: Set(cards.map(\.code.set)),
-            numberPrefixes: Set(cards.map(\.code.number.prefix))
-        )
+        PrintedCodeParser.Vocabulary(codes: cards.map(\.code))
     }
 }
 

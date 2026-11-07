@@ -129,6 +129,7 @@ nonisolated enum Fixtures {
         score: Double = 1,
         descriptorScore: Double = 0.9,
         codeAgreement: CodeAgreement? = .exact,
+        codeOrigin: CodeAlternative.Origin? = nil,
         analysis: ScanAnalysis? = nil,
         engine: EngineStamp? = nil,
         captureQuality: CaptureQuality = .legacy
@@ -148,6 +149,7 @@ nonisolated enum Fixtures {
             score: score,
             descriptorScore: descriptorScore,
             codeAgreement: codeAgreement,
+            codeOrigin: codeOrigin,
             analysis: analysis,
             engine: engine,
             captureQuality: captureQuality
@@ -164,6 +166,7 @@ nonisolated enum Fixtures {
         score: Double = 1,
         descriptorScore: Double = 0.9,
         codeAgreement: CodeAgreement? = .exact,
+        codeOrigin: CodeAlternative.Origin? = nil,
         analysis: ScanAnalysis? = nil,
         engine: EngineStamp? = nil,
         captureQuality: CaptureQuality = .legacy
@@ -178,7 +181,7 @@ nonisolated enum Fixtures {
             placement: .detected(confidence: 0.95),
             codeReading: codeRead ? CodeReadingSummary(code: PrintedCode(parsing: "OGN-001/298")!, confidence: 0.9, text: "OGN • 001/298", orientation: .upright, layout: .portrait) : nil,
             candidates: candidates.enumerated().map { offset, card in
-                Candidate(card: card, score: offset == 0 ? score : score - 0.3, descriptorScore: descriptorScore, orientation: .upright, codeAgreement: offset == 0 ? codeAgreement : nil)
+                Candidate(card: card, score: offset == 0 ? score : score - 0.3, descriptorScore: descriptorScore, orientation: .upright, codeAgreement: offset == 0 ? codeAgreement : nil, codeOrigin: offset == 0 ? codeOrigin : nil)
             },
             decisions: decisions,
             analysis: analysis,
@@ -186,6 +189,56 @@ nonisolated enum Fixtures {
             captureQuality: captureQuality
         )
     }
+
+    /// A fresh UUID whose first byte is `firstByte`; the audit sample keys on
+    /// it (`ConfidenceRule.isAuditSample`), so tests can choose which scans
+    /// the policy holds back while every id stays unique.
+    static func uuid(firstByte: UInt8) -> UUID {
+        var bytes = UUID().uuid
+        bytes.0 = firstByte
+        return UUID(uuid: bytes)
+    }
+
+    /// A first byte in bucket nine: never an audit sample at any rate up to 0.9.
+    static let unsampledByte: UInt8 = 0x09
+
+    /// An id factory that hands out `uuid(firstByte:)` for each byte in turn,
+    /// then unsampled ids forever.
+    static func idSequence(firstBytes: [UInt8]) -> @Sendable () -> UUID {
+        let counter = Counter()
+        return {
+            let index = counter.next()
+            return uuid(firstByte: index < firstBytes.count ? firstBytes[index] : unsampledByte)
+        }
+    }
+
+    /// Ids that are never audit samples, for runs whose every confident scan
+    /// should be accepted.
+    static let unsampledIDs: @Sendable () -> UUID = { uuid(firstByte: unsampledByte) }
+
+    /// An analysis whose shortlist is given, for the exemplar veto.
+    static func analysis(shortlist: [ShortlistEntry]) -> ScanAnalysis {
+        ScanAnalysis(descriptor: descriptor, quad: nil, codeSource: .edgeBand, codeAlternatives: [], shortlist: shortlist, analyzedAt: epoch)
+    }
+
+    static func shortlistEntry(_ card: Card, referenceScore: Double, exemplarSimilarity: Double? = nil, codeAgreement: CodeAgreement? = nil) -> ShortlistEntry {
+        ShortlistEntry(
+            cardID: card.id,
+            score: referenceScore + (codeAgreement == .exact ? 0.5 : 0),
+            referenceScore: referenceScore,
+            fusedScore: max(referenceScore, (exemplarSimilarity ?? 0) * 0.95),
+            components: ScoreComponents(featurePrint: referenceScore, wholeDifferenceHash: 0.8, wholePerceptualHash: 0.8, artDifferenceHash: 0.8),
+            orientation: .upright,
+            codeAgreement: codeAgreement,
+            exemplarSimilarity: exemplarSimilarity
+        )
+    }
+
+    /// Spiritforged printings from the two confident misreads in ADR-002:
+    /// OCR read `024` for `014`; `014a` is the same art as `014`.
+    static let sfd024 = card(id: "sfd-024-221", code: "SFD-024/221", name: "Ambusher")
+    static let sfd014 = card(id: "sfd-014-221", code: "SFD-014/221", name: "Sentinel")
+    static let sfd014a = card(id: "sfd-014a-221", code: "SFD-014a/221", name: "Sentinel")
 
     /// A class in the test bundle, for `Bundle(for:)` lookups of fixture files.
     final class BundleMarker {}
@@ -199,6 +252,19 @@ nonisolated enum Fixtures {
 
     enum FixtureError: Error {
         case missing(String)
+    }
+
+    /// A thread-safe counter for id factories.
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+
+        func next() -> Int {
+            lock.withLock {
+                defer { value += 1 }
+                return value
+            }
+        }
     }
 
     static let radRune = card(id: "rad-r01", code: "RAD-R01", name: "Calm Rune")

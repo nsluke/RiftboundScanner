@@ -22,14 +22,65 @@ public struct CodeReading: Hashable, Sendable {
     public let layout: Card.Orientation
     public let text: String
     public let source: CodeSource
+    /// Whether ``code`` is what the text literally says or a digit alternative
+    /// the parser substituted because the literal reading named nothing.
+    public let origin: CodeOrigin
+    /// Every index-known code the text could name, best first, beginning with
+    /// ``code``; the rest are the parser's ranked digit alternatives
+    /// (`1` ↔ `2`, `7` ↔ `1`). The recogniser credits a candidate that matches
+    /// one of them, less than it credits the literal reading.
+    public let alternatives: [PrintedCode]
 
-    public init(code: PrintedCode, confidence: Double, orientation: CardOrientation, layout: Card.Orientation, text: String, source: CodeSource) {
+    /// `alternatives` need not repeat `code`; it is placed first regardless.
+    public init(
+        code: PrintedCode,
+        confidence: Double,
+        orientation: CardOrientation,
+        layout: Card.Orientation,
+        text: String,
+        source: CodeSource,
+        origin: CodeOrigin = .literal,
+        alternatives: [PrintedCode] = []
+    ) {
         self.code = code
         self.confidence = confidence
         self.orientation = orientation
         self.layout = layout
         self.text = text
         self.source = source
+        self.origin = origin
+        self.alternatives = [code] + alternatives.filter { $0 != code }
+    }
+
+    init(_ interpretation: CodeInterpretation, confidence: Double, orientation: CardOrientation, layout: Card.Orientation, text: String, source: CodeSource) {
+        self.init(
+            code: interpretation.code, confidence: confidence, orientation: orientation, layout: layout, text: text, source: source,
+            origin: interpretation.origin, alternatives: interpretation.alternatives
+        )
+    }
+
+    /// How this reading bears on a candidate printing's code, or `nil` when it
+    /// says nothing about it.
+    ///
+    /// A literal reading is compared first and supplies every kind of
+    /// agreement, penalties included; when it is not an exact match, an exact
+    /// match against one of the alternatives counts as ``CodeAgreement/exact``
+    /// *via* ``CodeOrigin/alternative``. Alternatives, and a reading whose
+    /// ``code`` is itself an alternative (the literal text named no printing),
+    /// are guesses and therefore only ever positive evidence: they never
+    /// penalise a candidate and never supply variant-only matches, so a garbled
+    /// code cannot demote the card the descriptors favour.
+    public func evidence(for candidate: PrintedCode) -> CodeEvidence? {
+        var literal: CodeEvidence?
+        if origin == .literal {
+            literal = CodeEvidence(agreement: CodeAgreement(reading: code, candidate: candidate), origin: .literal)
+            if literal?.agreement == .exact { return literal }
+        }
+        let guesses = origin == .literal ? alternatives.dropFirst() : alternatives[...]
+        if guesses.contains(where: { CodeAgreement(reading: $0, candidate: candidate) == .exact }) {
+            return CodeEvidence(agreement: .exact, origin: .alternative)
+        }
+        return literal
     }
 }
 
@@ -96,8 +147,9 @@ public struct PrintedCodeReader: Sendable {
         self.parser = parser
     }
 
-    /// Every code found on the card, most confident first.
-    public func readCode(from canvasImage: CGImage) async throws -> [CodeReading] {
+    /// Every code found on the card, most confident first. `hints` restrain the
+    /// parser's repairs; see ``RecognitionHints/expectedSet``.
+    public func readCode(from canvasImage: CGImage, hints: RecognitionHints = .none) async throws -> [CodeReading] {
         let base = CIImage(cgImage: canvasImage)
         let size = PixelSize(width: canvasImage.width, height: canvasImage.height)
         var strips: [(CodeStrip, CGImage)] = []
@@ -107,7 +159,7 @@ public struct PrintedCodeReader: Sendable {
         var readings: [CodeReading] = []
         try await withThrowingTaskGroup(of: [CodeReading].self) { group in
             for (strip, image) in strips {
-                group.addTask { try await self.read(strip: strip, image: image) }
+                group.addTask { try await self.read(strip: strip, image: image, hints: hints) }
             }
             for try await part in group {
                 readings += part
@@ -120,7 +172,7 @@ public struct PrintedCodeReader: Sendable {
     /// tried upright and turned through 180°. For a photo that is already a
     /// tight crop of a card (a feeder stand), the code is legible in the photo
     /// itself even when nothing card-shaped could be located in it.
-    public func readCode(fromFullImage image: CGImage, maxPixelSize: Int = 1536) async throws -> [CodeReading] {
+    public func readCode(fromFullImage image: CGImage, maxPixelSize: Int = 1536, hints: RecognitionHints = .none) async throws -> [CodeReading] {
         let base = CIImage(cgImage: image)
         let longest = CGFloat(max(image.width, image.height))
         let scale = min(1, CGFloat(maxPixelSize) / longest)
@@ -130,14 +182,14 @@ public struct PrintedCodeReader: Sendable {
         // a full-frame OCR pass is the costliest step in the pipeline.
         let upright = try renderer.makeCGImage(fitting: base, to: fitted)
         let uprightReadings = try await textRecognizer.recognizeText(in: upright).flatMap { line in
-            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upright, layout: layout, text: line.string, source: .fullImage) }
+            parser.interpretations(in: line.string, hints: hints).map { CodeReading($0, confidence: line.confidence, orientation: .upright, layout: layout, text: line.string, source: .fullImage) }
         }
         if !uprightReadings.isEmpty {
             return uprightReadings.sorted { $0.confidence > $1.confidence }
         }
         let upsideDown = try renderer.makeCGImage(fitting: base.rotated(quarterTurnsCounterclockwise: 2), to: fitted)
         return try await textRecognizer.recognizeText(in: upsideDown).flatMap { line in
-            parser.codes(in: line.string).map { CodeReading(code: $0, confidence: line.confidence, orientation: .upsideDown, layout: layout, text: line.string, source: .fullImage) }
+            parser.interpretations(in: line.string, hints: hints).map { CodeReading($0, confidence: line.confidence, orientation: .upsideDown, layout: layout, text: line.string, source: .fullImage) }
         }.sorted { $0.confidence > $1.confidence }
     }
 
@@ -151,10 +203,10 @@ public struct PrintedCodeReader: Sendable {
         return try renderer.makeCGImage(fitting: upright, to: enlarged)
     }
 
-    private func read(strip: CodeStrip, image: CGImage) async throws -> [CodeReading] {
+    private func read(strip: CodeStrip, image: CGImage, hints: RecognitionHints) async throws -> [CodeReading] {
         try await textRecognizer.recognizeText(in: image).flatMap { line in
-            parser.codes(in: line.string).map { code in
-                CodeReading(code: code, confidence: line.confidence, orientation: strip.orientation, layout: strip.layout, text: line.string, source: .edgeBand)
+            parser.interpretations(in: line.string, hints: hints).map { interpretation in
+                CodeReading(interpretation, confidence: line.confidence, orientation: strip.orientation, layout: strip.layout, text: line.string, source: .edgeBand)
             }
         }
     }

@@ -33,12 +33,16 @@ nonisolated protocol CollectionServing: Sendable {
     func overlayChanges(calibration: String, sinceVersion: Int) async throws(ServerError) -> OverlayChanges
     /// `GET /api/learning/policy`.
     func policy() async throws(ServerError) -> PolicyDocument
+    /// `GET /api/learning/stats`: the Wilson bound and audit counts (decision 9).
+    func learningStats() async throws(ServerError) -> LearningStats
     /// `GET /api/decks`, conditional.
     func decks(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<[DeckSummary]>
     /// `GET /api/decks/{id}`.
     func deck(id: Int) async throws(ServerError) -> DeckDetail
     /// `PUT /api/decks/{id}/cards`; returns the refreshed deck.
     func setDeckCard(deckID: Int, _ change: DeckCardChange) async throws(ServerError) -> DeckDetail
+    /// `GET /api/decks/{id}/export?style=`: the decklist as text, for sharing.
+    func deckExport(id: Int, style: DeckExportStyle) async throws(ServerError) -> String
     /// `POST /api/learning/evaluations`.
     func postEvaluation(_ run: EvaluationRunUpload) async throws(ServerError) -> EvaluationReceipt
 }

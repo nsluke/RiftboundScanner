@@ -79,6 +79,12 @@ public struct PrintedCode: Hashable, Sendable, Codable, CustomStringConvertible 
         self.init(set: set, number: number, variant: variant, total: match.output.total.flatMap { Int($0) })
     }
 
+    /// The same code with no denominator: set, number and variant, which is
+    /// what identifies a printing (the denominator is constant per set).
+    public var withoutTotal: PrintedCode {
+        PrintedCode(set: set, number: number, variant: variant, total: nil)
+    }
+
     /// The catalog spelling, e.g. `OGN-007a/298` or `RAD-R01`.
     public var canonical: String {
         var text = "\(set.rawValue)-\(number.rawValue)\(variant.rawValue)"

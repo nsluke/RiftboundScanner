@@ -100,14 +100,32 @@ struct TestRig {
         return await builder.build(cards: deck.map(\.card), image: { images[$0.id] }).index
     }
 
-    func recognizer(index: CardIndex, locator: any CardLocating = FakeCardLocator(), ocr: [String] = []) -> CardRecognizer {
+    func recognizer(
+        index: CardIndex,
+        locator: any CardLocating = FakeCardLocator(),
+        ocr: [String] = [],
+        policy: ScoringPolicy = .default,
+        overlay: ExemplarIndex = .empty,
+        excludedBatches: Set<UUID> = []
+    ) -> CardRecognizer {
         CardRecognizer(
             index: index,
             locator: locator,
             rectifier: rectifier,
             descriptorExtractor: extractor,
             codeReader: PrintedCodeReader(textRecognizer: StubTextRecognizer(ocr), renderer: renderer, canvas: canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
-            fingerprint: fingerprint
+            fingerprint: fingerprint,
+            policy: policy,
+            overlay: overlay,
+            excludedBatches: excludedBatches
         )
+    }
+
+    /// An overlay holding one exemplar per print, all for `group`, all from `batch`.
+    func overlay(group: ArtGroup, prints: [FeaturePrint], batch: UUID = UUID(), version: Int = 1) async throws -> ExemplarIndex {
+        let calibration = try await ThumbnailFeaturePrintGenerator().calibrationPrint()
+        return ExemplarIndex(version: version, calibrationPrint: calibration, exemplars: prints.enumerated().map { offset, print in
+            ExemplarIndex.Exemplar(artGroup: group, featurePrint: print, scanID: UUID(), batchID: batch, admittedAt: fixedDate.addingTimeInterval(Double(offset)))
+        })
     }
 }

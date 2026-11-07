@@ -19,6 +19,10 @@ final class SettingsModel {
     }
 
     private(set) var connection: Loadable<Connection, ServerError> = .idle
+    /// The server's view of the confident tier: the Wilson bound and the
+    /// audit counts (ADR-002, decision 9). Loaded with the screen; "offline"
+    /// is a failure state with the server's reason, not a blank card.
+    private(set) var learning: Loadable<LearningStats, ServerError> = .idle
     private(set) var storage: Storage?
     /// Whether the fields hold what is on disk; the view shows a placeholder until then.
     private(set) var isLoaded = false
@@ -34,15 +38,28 @@ final class SettingsModel {
     private let client: any CollectionServing
     private let endpoints: any EndpointResolving
     private let paths: AppPaths?
+    private let confidenceRule: @Sendable () -> ConfidenceRule
 
-    init(settingsStore: any ServerSettingsStoring, client: any CollectionServing, endpoints: any EndpointResolving, paths: AppPaths?, appVersion: String, index: IndexSummary) {
+    init(
+        settingsStore: any ServerSettingsStoring,
+        client: any CollectionServing,
+        endpoints: any EndpointResolving,
+        paths: AppPaths?,
+        appVersion: String,
+        index: IndexSummary,
+        confidenceRule: @escaping @Sendable () -> ConfidenceRule = { .default }
+    ) {
         self.settingsStore = settingsStore
         self.client = client
         self.endpoints = endpoints
         self.paths = paths
         self.appVersion = appVersion
         self.index = index
+        self.confidenceRule = confidenceRule
     }
+
+    /// The confident tier in force; the Learning card shows its audit rate.
+    var rule: ConfidenceRule { confidenceRule() }
 
     /// The address as it would be saved, or `nil` when the text is not a URL.
     var parsedEndpoint: URL? { ServerSettings.parseEndpoint(manualEndpointText) }
@@ -57,6 +74,18 @@ final class SettingsModel {
         token = settings.token ?? ""
         isLoaded = true
         refreshStorage()
+        await refreshLearning()
+    }
+
+    /// Reads `/api/learning/stats`. A server without the route yet (`notFound`)
+    /// or no reachable server leaves the card in its failed state with the reason.
+    func refreshLearning() async {
+        learning = .loading
+        do {
+            learning = .loaded(try await client.learningStats())
+        } catch {
+            learning = .failed(error)
+        }
     }
 
     /// Writes the fields and forgets the resolved endpoint, since the

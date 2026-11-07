@@ -234,6 +234,16 @@ struct CollectionClientTests {
         #expect(policy.json == Data(json.utf8))
     }
 
+    @Test func learningStatsAreAPlainGet() async throws {
+        let server = StubServer()
+        server.on("/api/learning/stats", .json(200, #"{"wilson_lower_bound":0.975,"confidence_level":0.95,"random_audits":150,"random_audits_wrong":0,"spot_checks":4}"#))
+        let stats = try await server.client().learningStats()
+        #expect(stats.wilsonLowerBound == 0.975)
+        #expect(stats.randomAudits == 150)
+        #expect(stats.spotChecks == 4)
+        #expect(server.requests.first?.method == "GET")
+    }
+
     @Test func decksAndDetailDecodeTheServerShape() async throws {
         let server = StubServer()
         server.on("/api/decks", .json(200, #"{"items":[{"id":3,"name":"Vi aggro","format":"constructed","notes":null,"created_at":"2026-11-01T00:00:00Z","updated_at":"2026-11-02T00:00:00Z","card_count":52}]}"#, headers: ["ETag": "\"d7\""]))
@@ -253,7 +263,7 @@ struct CollectionClientTests {
         #expect(deck.cards[1].domains == ["Body", "Fury"])
         #expect(deck.cards[1].short == 2)
         #expect(deck.shortCount == 2)
-        #expect(deck.validation.first?.code == "main_size")
+        #expect(deck.validation.issues.first?.code == "main_size", "the pre-S9 bare array still decodes")
     }
 
     @Test func aCellularOnlyPathNeverSendsARequest() async {

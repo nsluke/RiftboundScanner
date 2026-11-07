@@ -14,6 +14,46 @@ struct SettingsModelTests {
         SettingsModel(settingsStore: store, client: client, endpoints: endpoints, paths: nil, appVersion: "0.2.0", index: index)
     }
 
+    @Test func loadReadsTheLearningStatsAndShowsTheWilsonBound() async throws {
+        let client = StubCollectionClient()
+        let stats = LearningStats(wilsonLowerBound: 0.981, confidenceLevel: 0.95, randomAudits: 212, randomAuditsWrong: 1, unresolvedWrongAudits: 0, spotChecks: 12, humanLabels: 320, sittings: 3, exemplars: 412)
+        await client.update { $0.learningStats = .success(stats) }
+        let model = makeModel(client: client)
+        #expect(model.learning.value == nil)
+        await model.load()
+        #expect(model.learning.value == stats)
+        #expect(await client.recording.learningStatsCalls == 1)
+        #expect(stats.isHealthy == true)
+        let text = try #require(LearningCard.precisionText(stats))
+        #expect(text.contains("98.1"), "the bound is shown to one decimal: \(text)")
+        #expect(text.contains("95"), "and names its confidence level: \(text)")
+        #expect(model.rule.auditRate == 0.3)
+
+        await client.update { $0.learningStats = .failure(.timedOut) }
+        await model.refreshLearning()
+        guard case .failed(let error) = model.learning else {
+            Issue.record("expected a failure, got \(model.learning)")
+            return
+        }
+        #expect(error == .timedOut)
+        #expect(await client.recording.learningStatsCalls == 2)
+    }
+
+    @Test func aServerWithoutStatsLeavesTheCardFailedNotBlank() async {
+        let model = makeModel()
+        await model.load()
+        guard case .failed(let error) = model.learning else {
+            Issue.record("expected notFound, got \(model.learning)")
+            return
+        }
+        #expect(error == .notFound)
+        #expect(model.isLoaded, "the rest of the screen does not wait for the server")
+        #expect(LearningCard.precisionText(LearningStats()) == nil)
+        #expect(LearningStats().isHealthy == nil)
+        #expect(LearningStats(wilsonLowerBound: 0.96, randomAudits: 40).isHealthy == false)
+        #expect(LearningStats(wilsonLowerBound: 0.98, randomAudits: 300, unresolvedWrongAudits: 1).isHealthy == false)
+    }
+
     @Test func loadFillsTheFieldsFromTheStore() async {
         let store = InMemoryServerSettingsStore(ServerSettings(manualEndpoint: URL(string: "http://10.0.0.5:8096"), token: "t0k"))
         let model = makeModel(store: store)

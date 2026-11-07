@@ -219,17 +219,54 @@ nonisolated struct Candidate: Hashable, Sendable, Codable {
     let descriptorScore: Double
     let orientation: CardOrientation
     let codeAgreement: CodeAgreement?
+    /// Whether `codeAgreement` was judged against the code as read (`literal`)
+    /// or against a parser repair of it (`alternative`); `nil` without a code
+    /// agreement. On the wire only `alternative` is written: absent means
+    /// literal, so records written before the parser offered alternatives
+    /// (which all matched the literal reading) re-encode byte for byte.
+    let codeOrigin: CodeAlternative.Origin?
 
-    init(card: Card, score: Double, descriptorScore: Double, orientation: CardOrientation, codeAgreement: CodeAgreement?) {
+    init(card: Card, score: Double, descriptorScore: Double, orientation: CardOrientation, codeAgreement: CodeAgreement?, codeOrigin: CodeAlternative.Origin? = nil) {
         self.card = card
         self.score = score
         self.descriptorScore = descriptorScore
         self.orientation = orientation
         self.codeAgreement = codeAgreement
+        self.codeOrigin = codeAgreement == nil ? nil : codeOrigin ?? .literal
     }
 
+    /// Until the parser's alternatives reach `Match` (P2), every agreement is
+    /// against the literal reading.
     init(_ match: Match) {
-        self.init(card: match.card, score: match.score, descriptorScore: match.descriptorScore, orientation: match.orientation, codeAgreement: match.codeAgreement)
+        self.init(card: match.card, score: match.score, descriptorScore: match.descriptorScore, orientation: match.orientation, codeAgreement: match.codeAgreement, codeOrigin: .literal)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case card, score, descriptorScore, orientation, codeAgreement, codeOrigin
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            card: try container.decode(Card.self, forKey: .card),
+            score: try container.decode(Double.self, forKey: .score),
+            descriptorScore: try container.decode(Double.self, forKey: .descriptorScore),
+            orientation: try container.decode(CardOrientation.self, forKey: .orientation),
+            codeAgreement: try container.decodeIfPresent(CodeAgreement.self, forKey: .codeAgreement),
+            codeOrigin: try container.decodeIfPresent(CodeAlternative.Origin.self, forKey: .codeOrigin)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(card, forKey: .card)
+        try container.encode(score, forKey: .score)
+        try container.encode(descriptorScore, forKey: .descriptorScore)
+        try container.encode(orientation, forKey: .orientation)
+        try container.encodeIfPresent(codeAgreement, forKey: .codeAgreement)
+        if codeOrigin == .alternative {
+            try container.encode(codeOrigin, forKey: .codeOrigin)
+        }
     }
 }
 

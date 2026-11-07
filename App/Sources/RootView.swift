@@ -3,7 +3,7 @@ import SwiftUI
 struct RootView: View {
     /// Which tab is showing; the sync engine's periodic flush runs on Scan.
     enum RootTab: Hashable {
-        case scan, collection, history, settings
+        case scan, collection, decks, history, settings
     }
 
     let dependencies: AppDependencies
@@ -12,8 +12,10 @@ struct RootView: View {
     @State private var scanner: ScannerModel
     @State private var history: HistoryModel
     @State private var collection: CollectionModel
+    @State private var decks: DecksModel
     @State private var settings: SettingsModel
     @State private var sync: SyncEngine
+    private let deckDependencies: DeckDependencies
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
@@ -24,17 +26,21 @@ struct RootView: View {
             store: dependencies.store,
             makeBatch: dependencies.makeBatch,
             now: dependencies.now,
-            makeID: dependencies.makeID
+            makeID: dependencies.makeID,
+            confidenceRule: dependencies.confidenceRule
         ))
         _history = State(wrappedValue: HistoryModel(store: dependencies.store))
         _collection = State(wrappedValue: CollectionModel(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, priceSource: dependencies.priceSource))
+        deckDependencies = DeckDependencies(client: dependencies.client, endpoints: dependencies.endpoints, cache: dependencies.deckCache, now: dependencies.now)
+        _decks = State(wrappedValue: DecksModel(client: dependencies.client, cache: dependencies.deckCache, now: dependencies.now))
         _settings = State(wrappedValue: SettingsModel(
             settingsStore: dependencies.settings,
             client: dependencies.client,
             endpoints: dependencies.endpoints,
             paths: dependencies.paths,
             appVersion: dependencies.appVersion,
-            index: dependencies.index
+            index: dependencies.index,
+            confidenceRule: dependencies.confidenceRule
         ))
         _sync = State(wrappedValue: dependencies.makeSyncEngine())
     }
@@ -45,17 +51,23 @@ struct RootView: View {
                 NavigationStack {
                     ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
                         .toolbarVisibility(.hidden, for: .navigationBar)
-                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory)
+                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Collection", systemImage: "square.grid.2x2", value: RootTab.collection) {
                 NavigationStack {
                     CollectionView(model: collection)
                 }
+                .environment(\.deckDependencies, deckDependencies)
+            }
+            Tab("Decks", systemImage: "rectangle.stack", value: RootTab.decks) {
+                NavigationStack {
+                    DecksView(model: decks, dependencies: deckDependencies)
+                }
             }
             Tab("History", systemImage: "list.bullet.rectangle", value: RootTab.history) {
                 NavigationStack {
-                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index)
+                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Settings", systemImage: "gearshape", value: RootTab.settings) {

@@ -22,7 +22,13 @@ nonisolated struct AppDependencies: Sendable {
     let settings: any ServerSettingsStoring
     let endpoints: any EndpointResolving
     let client: any CollectionServing
+    /// The Decks tab's offline copy, under `paths.catalog`.
+    let deckCache: any DeckCacheStoring
     let appVersion: String
+    /// The confident tier in force, read at each use. Built-in defaults until
+    /// the learning sync (A8) installs a downloaded policy and the server's
+    /// audit count.
+    let confidenceRule: @Sendable () -> ConfidenceRule
     /// Built on the main actor by the root view (the feeder pattern): the
     /// engine is main-actor state and cannot be constructed inside `live()`.
     let makeSyncEngine: @MainActor @Sendable () -> SyncEngine
@@ -119,7 +125,9 @@ nonisolated struct AppDependencies: Sendable {
             settings: settings,
             endpoints: endpoints,
             client: client,
+            deckCache: FileDeckCacheStore(url: paths.catalog.appending(path: "decks.json")),
             appVersion: appVersion,
+            confidenceRule: { .default },
             makeSyncEngine: {
                 SyncEngine(
                     store: store,

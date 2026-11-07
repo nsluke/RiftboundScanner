@@ -123,6 +123,10 @@ actor HTTPCollectionClient: CollectionServing {
         return PolicyDocument(version: header.version, json: response.data)
     }
 
+    func learningStats() async throws(ServerError) -> LearningStats {
+        try await get("api/learning/stats")
+    }
+
     func decks(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<[DeckSummary]> {
         let page: Versioned<DecksResponse> = try await getConditional("api/decks", validator: validator)
         return Versioned(value: page.value.items, validator: page.validator)
@@ -135,6 +139,11 @@ actor HTTPCollectionClient: CollectionServing {
     func setDeckCard(deckID: Int, _ change: DeckCardChange) async throws(ServerError) -> DeckDetail {
         let response = try await send(.put, "api/decks/\(deckID)/cards", body: try encode(change))
         return try decode(DeckDetail.self, from: response.data)
+    }
+
+    func deckExport(id: Int, style: DeckExportStyle) async throws(ServerError) -> String {
+        let response = try await send(.get, "api/decks/\(id)/export", query: [URLQueryItem(name: "style", value: style.rawValue)])
+        return String(decoding: response.data, as: UTF8.self)
     }
 
     func postEvaluation(_ run: EvaluationRunUpload) async throws(ServerError) -> EvaluationReceipt {

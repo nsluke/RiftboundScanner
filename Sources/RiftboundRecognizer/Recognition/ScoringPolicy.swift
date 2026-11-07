@@ -52,13 +52,31 @@ public enum CodeAgreement: String, Hashable, Sendable, Codable {
     }
 }
 
+/// What a code reading says about one candidate: how the codes agree, and
+/// whether the agreeing code was read literally or is a parser alternative.
+public struct CodeEvidence: Hashable, Sendable, Codable {
+    public let agreement: CodeAgreement
+    /// ``CodeOrigin/literal`` when the comparison was against what the text
+    /// says, ``CodeOrigin/alternative`` when only a digit alternative matched.
+    public let origin: CodeOrigin
+
+    public init(agreement: CodeAgreement, origin: CodeOrigin) {
+        self.agreement = agreement
+        self.origin = origin
+    }
+}
+
 /// Weights that fuse descriptor similarities and OCR evidence into one score.
 ///
 /// Descriptor similarities are each in 0...1 and the weights sum to 1, so the
 /// descriptor score is in 0...1. OCR evidence then shifts the score by a bonus
 /// or penalty scaled by the OCR confidence; the defaults let a confident code
 /// reading outrank a stronger descriptor match, which is what disambiguates
-/// alternate printings that share an illustration.
+/// alternate printings that share an illustration. A code matched only through
+/// a parser alternative earns the smaller ``codeAlternativeBonus``, so a guess
+/// can tip a close descriptor contest but never manufacture confidence on its
+/// own; a candidate in the hinted set earns ``expectedSetBonus``, a flat prior
+/// independent of OCR.
 ///
 /// The policy is data: it encodes as JSON with one key per value, and a key
 /// missing on decode takes the default, so a policy file written for an older
@@ -69,7 +87,11 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
     public var wholePerceptualHashWeight = 0.15
     public var artDifferenceHashWeight = 0.15
 
+    /// For a candidate whose code the text literally names.
     public var codeExactBonus = 0.5
+    /// For a candidate named only by a digit alternative of the reading
+    /// (`014` offered for a literal `024`); deliberately below ``codeExactBonus``.
+    public var codeAlternativeBonus = 0.3
     public var codeVariantMismatchBonus = 0.2
     public var codeSetMismatchPenalty = 0.15
     public var codeMismatchPenalty = 0.4
@@ -96,15 +118,27 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
     /// against some unrelated printing, which must not outrank a located card.
     public var wholeImageMinimumScore = 0.8
 
+    /// How much a learned exemplar's feature-print similarity counts for in the
+    /// fused descriptor score: `fused = max(reference, exemplarScale × exemplarFP)`.
+    /// Below 1 so that a photo identical to an exemplar still ranks under a
+    /// perfect reference match, and so the exemplar side never reaches the
+    /// confident tier's fused threshold without code evidence.
+    public var exemplarScale = 0.95
+
+    /// Added to every candidate in ``RecognitionHints/expectedSet``: enough to
+    /// break a descriptor tie between same-art printings in different sets,
+    /// far too little to overrule a read code.
+    public var expectedSetBonus = 0.05
+
     public init() {}
 
     public static let `default` = ScoringPolicy()
 
     private enum CodingKeys: String, CodingKey {
         case featurePrintWeight, wholeDifferenceHashWeight, wholePerceptualHashWeight, artDifferenceHashWeight
-        case codeExactBonus, codeVariantMismatchBonus, codeSetMismatchPenalty, codeMismatchPenalty
+        case codeExactBonus, codeAlternativeBonus, codeVariantMismatchBonus, codeSetMismatchPenalty, codeMismatchPenalty
         case rerankedCandidateCount, codeInjectionMinimumConfidence, maximumLocationHypotheses, ocrHypothesisCount
-        case wholeImageMinimumScore
+        case wholeImageMinimumScore, exemplarScale, expectedSetBonus
     }
 
     public init(from decoder: any Decoder) throws {
@@ -115,6 +149,7 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
         wholePerceptualHashWeight = try container.decodeIfPresent(Double.self, forKey: .wholePerceptualHashWeight) ?? defaults.wholePerceptualHashWeight
         artDifferenceHashWeight = try container.decodeIfPresent(Double.self, forKey: .artDifferenceHashWeight) ?? defaults.artDifferenceHashWeight
         codeExactBonus = try container.decodeIfPresent(Double.self, forKey: .codeExactBonus) ?? defaults.codeExactBonus
+        codeAlternativeBonus = try container.decodeIfPresent(Double.self, forKey: .codeAlternativeBonus) ?? defaults.codeAlternativeBonus
         codeVariantMismatchBonus = try container.decodeIfPresent(Double.self, forKey: .codeVariantMismatchBonus) ?? defaults.codeVariantMismatchBonus
         codeSetMismatchPenalty = try container.decodeIfPresent(Double.self, forKey: .codeSetMismatchPenalty) ?? defaults.codeSetMismatchPenalty
         codeMismatchPenalty = try container.decodeIfPresent(Double.self, forKey: .codeMismatchPenalty) ?? defaults.codeMismatchPenalty
@@ -123,8 +158,11 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
         maximumLocationHypotheses = try container.decodeIfPresent(Int.self, forKey: .maximumLocationHypotheses) ?? defaults.maximumLocationHypotheses
         ocrHypothesisCount = try container.decodeIfPresent(Int.self, forKey: .ocrHypothesisCount) ?? defaults.ocrHypothesisCount
         wholeImageMinimumScore = try container.decodeIfPresent(Double.self, forKey: .wholeImageMinimumScore) ?? defaults.wholeImageMinimumScore
+        exemplarScale = try container.decodeIfPresent(Double.self, forKey: .exemplarScale) ?? defaults.exemplarScale
+        expectedSetBonus = try container.decodeIfPresent(Double.self, forKey: .expectedSetBonus) ?? defaults.expectedSetBonus
     }
 
+    /// The reference-only descriptor score: the weighted similarities to an index entry.
     public func descriptorScore(_ components: ScoreComponents) -> Double {
         featurePrintWeight * components.featurePrint
             + wholeDifferenceHashWeight * components.wholeDifferenceHash
@@ -132,13 +170,30 @@ public struct ScoringPolicy: Hashable, Sendable, Codable {
             + artDifferenceHashWeight * components.artDifferenceHash
     }
 
-    public func codeAdjustment(for agreement: CodeAgreement, confidence: Double) -> Double {
+    /// The reference score lifted by exemplar evidence, when there is any;
+    /// exactly the reference score (not a copy that merely compares equal) when
+    /// there is none, so an empty overlay changes nothing.
+    public func fusedScore(reference: Double, exemplarSimilarity: Double?) -> Double {
+        guard let exemplarSimilarity else { return reference }
+        return max(reference, exemplarScale * exemplarSimilarity)
+    }
+
+    /// The score shift a code reading earns a candidate, scaled by the OCR
+    /// confidence. An exact match pays ``codeExactBonus`` for the literal
+    /// reading and ``codeAlternativeBonus`` when only a digit alternative matched.
+    public func codeAdjustment(for evidence: CodeEvidence, confidence: Double) -> Double {
         let weight = min(max(confidence, 0), 1)
-        return switch agreement {
-        case .exact: codeExactBonus * weight
+        return switch evidence.agreement {
+        case .exact: (evidence.origin == .literal ? codeExactBonus : codeAlternativeBonus) * weight
         case .variantDiffers: codeVariantMismatchBonus * weight
         case .setDiffers: -codeSetMismatchPenalty * weight
         case .numberDiffers, .unrelated: -codeMismatchPenalty * weight
         }
+    }
+
+    /// The flat prior a candidate's set earns under `hints`: ``expectedSetBonus``
+    /// for the expected set, nothing otherwise or without a hint.
+    public func setAdjustment(for set: SetCode, hints: RecognitionHints) -> Double {
+        hints.expectedSet == set ? expectedSetBonus : 0
     }
 }

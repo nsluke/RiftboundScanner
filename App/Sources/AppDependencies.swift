@@ -17,6 +17,12 @@ nonisolated struct AppDependencies: Sendable {
     let makeBatch: @Sendable (_ label: String) -> ScanBatch
     let now: @Sendable () -> Date
     let makeID: @Sendable () -> UUID
+    /// `Library/Application Support/Riftbound`, prepared and excluded from backup.
+    let paths: AppPaths
+    let settings: any ServerSettingsStoring
+    let endpoints: any EndpointResolving
+    let client: any CollectionServing
+    let appVersion: String
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
     /// takes long enough to count as a hang.
@@ -52,6 +58,26 @@ nonisolated struct AppDependencies: Sendable {
         let device = ScanBatch.Device.current(appVersion: appVersion)
         let now: @Sendable () -> Date = { Date() }
         let makeID: @Sendable () -> UUID = { UUID() }
+        let paths: AppPaths
+        do {
+            paths = try AppPaths.live.prepare()
+        } catch {
+            throw .storageUnavailable(String(describing: error))
+        }
+        let settings = DefaultsServerSettingsStore(defaults: .standard, secrets: KeychainSecretStore())
+        let endpoints = EndpointResolver(
+            candidates: { await settings.load().candidates },
+            probe: URLSessionEndpointProbe(),
+            paths: LiveNetworkPathSource(),
+            clock: ContinuousClock(),
+            now: now
+        )
+        let client = HTTPCollectionClient(
+            endpoints: endpoints,
+            token: { await settings.load().token },
+            clientIdentity: HTTPCollectionClient.clientIdentity(appVersion: appVersion, device: device),
+            cache: ResponseCache(directory: paths.catalog.appending(path: "responses", directoryHint: .isDirectory))
+        )
         return AppDependencies(
             camera: CaptureEngine(),
             makeFeeder: { CSC100Feeder() },
@@ -65,7 +91,12 @@ nonisolated struct AppDependencies: Sendable {
                 ScanBatch(id: ScanBatch.ID(rawValue: makeID()), startedAt: now(), label: label, device: device, index: summary)
             },
             now: now,
-            makeID: makeID
+            makeID: makeID,
+            paths: paths,
+            settings: settings,
+            endpoints: endpoints,
+            client: client,
+            appVersion: appVersion
         )
     }
 }
@@ -74,6 +105,7 @@ nonisolated enum BootstrapError: Error, Hashable {
     case indexMissing
     case indexUnreadable(String)
     case recognizerUncalibrated(String)
+    case storageUnavailable(String)
 
     var message: String {
         switch self {
@@ -83,6 +115,8 @@ nonisolated enum BootstrapError: Error, Hashable {
             String(localized: "The bundled card index could not be read. \(detail)")
         case .recognizerUncalibrated(let detail):
             String(localized: "The recogniser could not calibrate this device's image model. \(detail)")
+        case .storageUnavailable(let detail):
+            String(localized: "The app's storage folder could not be created. \(detail)")
         }
     }
 }

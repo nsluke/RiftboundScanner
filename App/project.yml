@@ -44,9 +44,24 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Riftbound Scanner
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
-        NSCameraUsageDescription: Riftbound Scanner photographs your cards to identify them. Photos stay on this phone.
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
+        NSCameraUsageDescription: Riftbound Scanner photographs your cards to identify them. Card photos are kept on this phone and uploaded only to your own home server.
+        # The collection server is plain HTTP on the home network (ADR-002
+        # Decision 5): riftbound.lan over the UniFi VPN, riftbound.local at
+        # home, or a LAN address. Local networking covers .local and IPs;
+        # the .lan name needs an explicit exception.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            riftbound.lan:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+            riftbound.local:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings.
+        NSBonjourServices: [_http._tcp]
         NSBluetoothAlwaysUsageDescription: Riftbound Scanner connects to your TCG Archivist card feeder over Bluetooth to advance cards while scanning.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

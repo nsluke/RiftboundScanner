@@ -227,13 +227,45 @@ xcrun devicectl device install app --device <device udid> \
 ```
 
 `xcrun devicectl list devices` prints the UDID. Unit tests for the app (scan log
-coding, the file store, and the scanner model with stubbed camera and recogniser)
-run on a simulator:
+coding, the file store, the scanner model with stubbed camera and recogniser, the
+server client against a stubbed `URLProtocol`, endpoint discovery with an injected
+clock) run on a simulator:
 
 ```bash
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath App/DerivedData
 ```
+
+### Talking to the collection server
+
+The app is a client of the [RiftboundCollection](../RiftboundCollection) server
+(ADR-002): the ledger on the Pi is the source of truth for holdings. The
+networking layer lives in `App/Sources/Server/`:
+
+- `CollectionServing` is the one protocol every feature talks to; the live
+  implementation is `HTTPCollectionClient` (plain HTTP, no `URLCache`, 15 s
+  request / 60 s resource timeouts, `X-Client` header, optional bearer token,
+  typed `ServerError`). Conditional GETs carry the app's own validator as
+  `If-None-Match`; a 304 is answered from `ResponseCache` under that validator.
+- `EndpointResolver` probes `/health` on `riftbound.lan`, then `riftbound.local`,
+  then the fallback address from Settings (default `192.168.1.155:8096`), 3 s per
+  probe, only over Wi-Fi, wired or VPN (`utun`) paths. A hit is cached for
+  10 minutes; a cycle where nothing answers backs off for 5 minutes.
+- `ServerSettings` holds the fallback address (UserDefaults) and the write token
+  (Keychain). The Settings tab edits both and has **Test connection**, which
+  shows the `/health` fields and "Server needs updating" when the server's
+  `user_version` is below 3.
+- `AppPaths` is `Library/Application Support/Riftbound/{Sync,Learning,Catalog}`,
+  excluded from backup; `Documents/Scans` stays the only file-shared tree.
+
+`App/project.yml` carries the plist keys the transport needs: `NSAppTransportSecurity`
+(local networking plus exceptions for `riftbound.lan` and `riftbound.local`),
+`NSLocalNetworkUsageDescription`, `NSBonjourServices` and the reworded camera
+string. The tests stub `URLProtocol` (`App/Tests/Support/StubServer.swift`) and
+inject a `TestClock`; nothing in the suite touches the network. To try the real
+client against a local server, run the server repo's
+`RC_PORT=<port> python -m riftbound_collection serve`, enter `127.0.0.1:<port>` as
+the fallback address in a simulator build and tap Test connection.
 
 ### Reviewing the results
 

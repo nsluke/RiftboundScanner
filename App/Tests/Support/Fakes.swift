@@ -126,3 +126,217 @@ nonisolated struct StubPriceSource: PriceQuoting {
         try outcome.get()
     }
 }
+
+// MARK: - Server fakes
+
+/// Scripted answers for `StubCollectionClient`. Ledger items are answered
+/// per `client_ref`; anything unscripted gets `defaultItemStatus`.
+nonisolated struct ServerScript: Sendable {
+    var health: Result<HealthReport, ServerError> = .success(HealthReport(status: "ok", version: "2.0.0", cards: 1822, userVersion: 5, apiVersion: 2, catalogVersion: "cat-1"))
+    var itemStatuses: [String: LedgerItemStatus] = [:]
+    var defaultItemStatus: LedgerItemStatus = .applied
+    /// When set, every sync fails with this before any item is answered.
+    var syncFailure: ServerError?
+    var batch: Result<UpsertOutcome, ServerError> = .success(.created)
+    var scan: Result<ScanUploadReceipt, ServerError> = .success(ScanUploadReceipt(outcome: .created))
+    var asset: Result<UpsertOutcome, ServerError> = .success(.created)
+    var resolve: Result<ResolveResponse, ServerError> = .success(ResolveResponse(resolved: [:]))
+    var holdings: Result<Versioned<HoldingsResponse>, ServerError> = .success(Versioned(value: HoldingsResponse(summary: HoldingsSummary(distinctCards: 0, totalCards: 0), items: []), validator: "h0"))
+    var ledger: Result<LedgerPage, ServerError> = .success(LedgerPage(items: [], head: 0))
+    var catalog: Result<Versioned<CatalogResponse>, ServerError> = .failure(.notFound)
+    var prices: Result<Versioned<PriceSheetResponse>, ServerError> = .success(Versioned(value: PriceSheetResponse(day: "2026-11-07", items: [:]), validator: "2026-11-07"))
+    var overlayMeta: Result<OverlayMeta, ServerError> = .failure(.notFound)
+    var overlay: Result<Versioned<Data>, ServerError> = .failure(.notFound)
+    var overlayChanges: Result<OverlayChanges, ServerError> = .failure(.gone)
+    var policy: Result<PolicyDocument, ServerError> = .failure(.notFound)
+    var decks: Result<Versioned<[DeckSummary]>, ServerError> = .success(Versioned(value: [], validator: "d0"))
+    var deckDetails: [Int: Result<DeckDetail, ServerError>] = [:]
+    var setDeckCard: Result<DeckDetail, ServerError>?
+    var evaluation: Result<EvaluationReceipt, ServerError>?
+
+    init() {}
+}
+
+/// Everything a `StubCollectionClient` was asked, in order.
+nonisolated struct ServerRecording: Sendable {
+    var healthCalls = 0
+    var syncRequests: [LedgerSyncRequest] = []
+    var batches: [BatchUpload] = []
+    var scans: [ScanUpload] = []
+    var assets: [(scanID: UUID, kind: AssetKind, bytes: Int)] = []
+    var holdingsValidators: [String?] = []
+    var ledgerSince: [Int] = []
+    var deckChanges: [(deckID: Int, change: DeckCardChange)] = []
+    var evaluations: [EvaluationRunUpload] = []
+}
+
+/// A `CollectionServing` whose answers are scripted per call and per item.
+actor StubCollectionClient: CollectionServing {
+    private(set) var script: ServerScript
+    private(set) var recording = ServerRecording()
+    private var nextLedgerID = 1
+
+    init(script: ServerScript = ServerScript()) {
+        self.script = script
+    }
+
+    func update(_ change: @Sendable (inout ServerScript) -> Void) {
+        change(&script)
+    }
+
+    func health() async throws(ServerError) -> HealthReport {
+        recording.healthCalls += 1
+        return try script.health.get()
+    }
+
+    func resolve(keys: [String]) async throws(ServerError) -> ResolveResponse {
+        try script.resolve.get()
+    }
+
+    func syncLedger(_ request: LedgerSyncRequest) async throws(ServerError) -> LedgerSyncResponse {
+        recording.syncRequests.append(request)
+        if let failure = script.syncFailure { throw failure }
+        let results = request.items.map { item in
+            let status = script.itemStatuses[item.clientRef] ?? script.defaultItemStatus
+            var ledgerID: Int?
+            if status == .applied {
+                ledgerID = nextLedgerID
+                nextLedgerID += 1
+            }
+            let cardID: String? = if case .delta(let delta) = item { delta.cardKey } else { nil }
+            return LedgerItemResult(clientRef: item.clientRef, status: status, cardID: status == .applied ? cardID : nil, finish: nil, ledgerID: ledgerID)
+        }
+        return LedgerSyncResponse(results: results)
+    }
+
+    func putBatch(_ batch: BatchUpload) async throws(ServerError) -> UpsertOutcome {
+        recording.batches.append(batch)
+        return try script.batch.get()
+    }
+
+    func putScan(_ scan: ScanUpload) async throws(ServerError) -> ScanUploadReceipt {
+        recording.scans.append(scan)
+        return try script.scan.get()
+    }
+
+    func putAsset(_ data: Data, kind: AssetKind, scanID: UUID) async throws(ServerError) -> AssetReceipt {
+        recording.assets.append((scanID, kind, data.count))
+        return AssetReceipt(outcome: try script.asset.get(), sha256: "")
+    }
+
+    func holdings(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<HoldingsResponse> {
+        recording.holdingsValidators.append(validator)
+        return try script.holdings.get()
+    }
+
+    func ledger(since id: Int) async throws(ServerError) -> LedgerPage {
+        recording.ledgerSince.append(id)
+        return try script.ledger.get()
+    }
+
+    func catalog(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<CatalogResponse> {
+        try script.catalog.get()
+    }
+
+    func latestPrices(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<PriceSheetResponse> {
+        try script.prices.get()
+    }
+
+    func overlayMeta(calibration: String) async throws(ServerError) -> OverlayMeta {
+        try script.overlayMeta.get()
+    }
+
+    func overlay(calibration: String, ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<Data> {
+        try script.overlay.get()
+    }
+
+    func overlayChanges(calibration: String, sinceVersion: Int) async throws(ServerError) -> OverlayChanges {
+        try script.overlayChanges.get()
+    }
+
+    func policy() async throws(ServerError) -> PolicyDocument {
+        try script.policy.get()
+    }
+
+    func decks(ifNoneMatch validator: String?) async throws(ServerError) -> Versioned<[DeckSummary]> {
+        try script.decks.get()
+    }
+
+    func deck(id: Int) async throws(ServerError) -> DeckDetail {
+        guard let result = script.deckDetails[id] else { throw .notFound }
+        return try result.get()
+    }
+
+    func setDeckCard(deckID: Int, _ change: DeckCardChange) async throws(ServerError) -> DeckDetail {
+        recording.deckChanges.append((deckID, change))
+        guard let result = script.setDeckCard ?? script.deckDetails[deckID] else { throw .notFound }
+        return try result.get()
+    }
+
+    func postEvaluation(_ run: EvaluationRunUpload) async throws(ServerError) -> EvaluationReceipt {
+        recording.evaluations.append(run)
+        return try (script.evaluation ?? .success(EvaluationReceipt(id: run.id))).get()
+    }
+}
+
+/// Settings that live in memory for one test.
+actor InMemoryServerSettingsStore: ServerSettingsStoring {
+    private(set) var settings: ServerSettings
+    private(set) var saveCount = 0
+    var failure: (any Error)?
+
+    init(_ settings: ServerSettings = ServerSettings()) {
+        self.settings = settings
+    }
+
+    func load() -> ServerSettings { settings }
+
+    func save(_ settings: ServerSettings) throws {
+        if let failure { throw failure }
+        self.settings = settings
+        saveCount += 1
+    }
+}
+
+actor InMemorySecretStore: SecretStoring {
+    private(set) var values: [String: String] = [:]
+
+    func read(_ key: String) -> String? { values[key] }
+
+    func write(_ value: String?, for key: String) {
+        values[key] = value
+    }
+}
+
+/// A probe whose answers are scripted per endpoint kind, counting calls.
+actor ScriptedProbe: EndpointProbing {
+    var outcomes: [ServerEndpoint.Kind: ProbeOutcome]
+    private(set) var probed: [ServerEndpoint.Kind] = []
+
+    init(_ outcomes: [ServerEndpoint.Kind: ProbeOutcome]) {
+        self.outcomes = outcomes
+    }
+
+    func probe(_ endpoint: ServerEndpoint, timeout: Duration) async -> ProbeOutcome {
+        probed.append(endpoint.kind)
+        return outcomes[endpoint.kind] ?? .unhealthy("unscripted")
+    }
+
+    func set(_ kind: ServerEndpoint.Kind, _ outcome: ProbeOutcome) {
+        outcomes[kind] = outcome
+    }
+}
+
+actor ScriptedPaths: NetworkPathObserving {
+    var path: NetworkPathSummary
+
+    init(_ path: NetworkPathSummary) {
+        self.path = path
+    }
+
+    func currentPath() -> NetworkPathSummary { path }
+
+    func set(_ path: NetworkPathSummary) {
+        self.path = path
+    }
+}

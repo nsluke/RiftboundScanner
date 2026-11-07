@@ -41,8 +41,17 @@ struct TestRig {
     let renderer = ImageRenderer()
     let canvas = CanvasSpecification.standard
     let fixedDate = Date(timeIntervalSince1970: 1_762_000_000)
+    /// A fixed stamp for hand-wired recognisers; tests check it is passed through.
+    let fingerprint = EngineFingerprint(
+        packageVersion: "test",
+        calibrationHash: FeaturePrint(elements: [1, 0, 0]).digest,
+        platform: "test",
+        osVersion: "0.0.0"
+    )
 
     var rectifier: CardRectifier { CardRectifier(renderer: renderer, canvas: canvas) }
+
+    var extractor: CardDescriptorExtractor { CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: canvas) }
 
     static func code(_ text: String) -> PrintedCode {
         guard let code = PrintedCode(parsing: text) else { fatalError("bad fixture code \(text)") }
@@ -96,8 +105,9 @@ struct TestRig {
             index: index,
             locator: locator,
             rectifier: rectifier,
-            descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: canvas),
-            codeReader: PrintedCodeReader(textRecognizer: StubTextRecognizer(ocr), renderer: renderer, canvas: canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary))
+            descriptorExtractor: extractor,
+            codeReader: PrintedCodeReader(textRecognizer: StubTextRecognizer(ocr), renderer: renderer, canvas: canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: fingerprint
         )
     }
 }

@@ -12,7 +12,8 @@ hardware; the CoreBluetooth feeder driver is a separate piece.
 Two targets live in this package:
 
 - **`RiftboundRecognizer`**, a library that uses only Foundation, CoreGraphics,
-  Core Image, ImageIO, Accelerate and Vision, so it drops into an iOS app unchanged.
+  Core Image, ImageIO, Accelerate, CryptoKit and Vision, so it drops into an iOS
+  app unchanged.
   `Scripts/check-platform-neutral.sh` fails the moment a UI framework is imported.
 - **`riftscan`**, a macOS command-line tool around it: `riftscan identify photo.jpg`
   prints the top matches with scores, and the other subcommands build the index,
@@ -65,8 +66,12 @@ Two targets live in this package:
    better descriptor match, which is what separates printings that share an
    illustration: standard vs signature, or the same rune reprinted in another set.
 
-The result carries the ranked matches, where the card was found, the code that was
-read, the rectified canvas, and a summary of every hypothesis for diagnostics.
+The result carries the ranked matches, where the card was found (and its corner
+quad when a card was detected), the code that was read and where it came from
+(an edge band of the canvas, or the whole photo as a fallback), the rectified
+canvas, the query descriptor in the orientation of the winning match (the one to
+compare with a reference or keep as an exemplar), the engine fingerprint that
+produced it, and a summary of every hypothesis for diagnostics.
 
 ## Getting started
 
@@ -86,7 +91,11 @@ Build the index once. It reads every cached image, puts it on the canvas, comput
 the descriptors in parallel and writes `cache/index.json` (about 6.4 MB; roughly
 five seconds on an M-series Mac). Rebuild it whenever the catalog or the canvas
 specification changes; the file embeds the card metadata, so recognition needs
-no catalog at run time.
+no catalog at run time. The index also records the **calibration print**: the
+feature print of a procedural, Riot-free card drawn by `CalibrationCanvas`, which
+identifies the embedding the building machine's Vision model produced (the SDK's
+`Revision` enum has one case and cannot). Indexes built before this field existed
+still load; the format version is unchanged.
 
 ```bash
 swift run -c release riftscan build-index
@@ -108,9 +117,23 @@ Code:  UNL-157/219 read from "UNL • 157/219" (confidence 1.00, upright, portra
  …
 ```
 
-`--json` prints the same as JSON, `--verbose` lists every hypothesis that was tried,
-and `--save-rectified out.png` writes the winning canvas so you can see what the
-hasher and the OCR saw.
+`--json` prints the same as JSON (plus `quad`, `codeSource`, the `descriptor`
+orientation and digest, and the `engine` fingerprint), `--verbose` lists every
+hypothesis that was tried, and `--save-rectified out.png` writes the winning
+canvas so you can see what the hasher and the OCR saw.
+
+Check what this machine's Vision model makes of the calibration canvas, and
+whether it matches the index:
+
+```bash
+swift run -c release riftscan check-revision --index cache/index.json   # --json for machine comparison, --no-vector to skip the 768 floats
+```
+
+It prints the engine fingerprint (package version, platform, OS version), the
+print's dimension and 16-byte hash, the cosine similarity to the index's stored
+print, and the vector itself. Run it on the Mac and the equivalent path on the
+phone to learn whether the two embed images the same way before trusting a
+Mac-built index or phone-learned exemplars across the gap.
 
 Run the tests (Swift Testing; the Vision-backed ones are tagged `vision`):
 
@@ -254,7 +277,14 @@ through the official API under those terms.
   `async`, which is why they were chosen over the Objective-C-era API.
 - **Index format.** JSON with feature prints stored as little-endian Float32 bytes
   (base64), unit-normalised at build time so similarity is a dot product. The
-  format is versioned; a mismatch is refused rather than misread.
+  format is versioned; a mismatch is refused rather than misread. An optional
+  `calibrationPrint` (same encoding) records the embedding the index was built in.
+- **Engine fingerprint.** `EngineFingerprint` = package version (`RecognizerInfo.version`),
+  the 16-byte digest (`FeaturePrint.Digest`, the first 16 bytes of SHA-256 over the
+  Float32 bytes) of the device's calibration print, platform and OS version. It is
+  stamped on every `RecognitionResult`; `CardRecognizer.live` computes it, which
+  is why that factory is `async throws`. `ScoringPolicy` and `ScoreComponents` are
+  `Codable` so policies can ship as data and analyses can be recorded.
 - **Tests.** Every stage has a Swift Testing suite. Card images for tests are drawn
   procedurally with CoreGraphics and CoreText (no Riot assets), feature prints come
   from a deterministic thumbnail-based fake, and the Vision-backed tests exercise

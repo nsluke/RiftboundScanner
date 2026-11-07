@@ -78,7 +78,7 @@ struct VisionIntegrationTests {
         let visionRig = CardDescriptorExtractor(featurePrinter: VisionFeaturePrintGenerator(), canvas: rig.canvas)
         let images = Dictionary(uniqueKeysWithValues: deck.map { ($0.card.id, $0.image) })
         let index = await CardIndexBuilder(rectifier: rig.rectifier, extractor: visionRig).build(cards: deck.map(\.card), image: { images[$0.id] }).index
-        let recognizer = CardRecognizer.live(index: index, renderer: rig.renderer)
+        let recognizer = try await CardRecognizer.live(index: index, renderer: rig.renderer)
 
         var generator = SeededRandomNumberGenerator(seed: 7)
         for (number, severity) in [Severity.mild, .moderate].enumerated() {

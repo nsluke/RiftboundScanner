@@ -19,6 +19,10 @@ struct CardRecognizerTests {
         #expect(abs(best.descriptorScore - 1) < 1e-6)
         #expect(result.matches.count == min(deck.count, ScoringPolicy.default.rerankedCandidateCount))
         #expect(result.matches[1].score < best.score - 0.1, "other cards are clearly worse")
+        #expect(result.descriptor.orientation == .upright, "the winner matched upright, so the upright query is reported")
+        #expect(result.descriptor.descriptor == (try await rig.extractor.descriptor(for: result.rectifiedCard)))
+        #expect(result.engine == rig.fingerprint)
+        #expect(result.quad == nil, "the whole image was assumed; there is no detected quad")
     }
 
     @Test func recognisesAnUpsideDownCard() async throws {
@@ -29,6 +33,34 @@ struct CardRecognizerTests {
         let result = try await recognizer.identify(flipped)
         #expect(result.best?.id == deck[4].card.id)
         #expect(result.best?.orientation == .upsideDown)
+
+        // The reported descriptor is the upside-down query: the one computed from
+        // the canvas turned through 180°, which is what lines up with the reference.
+        #expect(result.descriptor.orientation == .upsideDown)
+        let turned = try rig.renderer.rotated(result.rectifiedCard, quarterTurnsCounterclockwise: 2)
+        #expect(result.descriptor.descriptor == (try await rig.extractor.descriptor(for: turned)))
+        let reference = try #require(index.entries.first { $0.id == deck[4].card.id }).descriptor
+        let chosen = result.descriptor.descriptor.featurePrint.similarity(to: reference.featurePrint)
+        let upright = try await rig.extractor.descriptor(for: result.rectifiedCard).featurePrint.similarity(to: reference.featurePrint)
+        #expect(chosen > 0.99)
+        #expect(upright < chosen, "the upright query of a flipped card is the wrong one to keep")
+    }
+
+    @Test func identifyingARectifiedCardReportsItsDescriptorAndEngine() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let recognizer = rig.recognizer(index: index)
+        let result = try await recognizer.identify(rectifiedCard: deck[1].image)
+        #expect(result.best?.id == deck[1].card.id)
+        #expect(result.descriptor.orientation == .upright)
+        #expect(result.descriptor.descriptor == (try await rig.extractor.descriptor(for: deck[1].image)))
+        #expect(result.engine == rig.fingerprint)
+        #expect(result.location == .assumedWholeImage && result.quad == nil)
+
+        let flipped = try await recognizer.identify(rectifiedCard: try rig.renderer.rotated(deck[1].image, quarterTurnsCounterclockwise: 2))
+        #expect(flipped.best?.orientation == .upsideDown)
+        #expect(flipped.descriptor.orientation == .upsideDown)
+        #expect(flipped.descriptor.descriptor == (try await rig.extractor.descriptor(for: deck[1].image)), "turning the flipped canvas back gives the original")
     }
 
     @Test func rectifiesALocatedCard() async throws {
@@ -39,7 +71,9 @@ struct CardRecognizerTests {
         let result = try await recognizer.identify(photo)
         #expect(result.best?.id == deck[1].card.id)
         #expect(result.location == .detected(quad, confidence: 0.9), "the exact detection beats its frame-expanded variant")
+        #expect(result.quad == quad, "a detected placement exposes its corners")
         #expect(result.rectifiedCard.width == 756 && result.rectifiedCard.height == 1056)
+        #expect(result.descriptor.descriptor == (try await rig.extractor.descriptor(for: result.rectifiedCard)), "the descriptor belongs to the winning hypothesis")
     }
 
     @Test func prefersTheHypothesisThatRecoversTheCode() async throws {
@@ -60,7 +94,8 @@ struct CardRecognizerTests {
             locator: FakeCardLocator(quad: inner, confidence: 0.8),
             rectifier: rig.rectifier,
             descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: rig.canvas),
-            codeReader: PrintedCodeReader(textRecognizer: fakeOCR, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary))
+            codeReader: PrintedCodeReader(textRecognizer: fakeOCR, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: rig.fingerprint
         )
         let result = try await recognizer.identify(photo)
         #expect(result.best?.id == deck[3].card.id)
@@ -85,6 +120,7 @@ struct CardRecognizerTests {
             rectifier: rig.rectifier,
             descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: rig.canvas),
             codeReader: PrintedCodeReader(textRecognizer: StubTextRecognizer(["OGN • 006/298"]), renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: rig.fingerprint,
             policy: policy
         )
         let result = try await recognizer.identify(deck[0].image)
@@ -113,7 +149,8 @@ struct CardRecognizerTests {
             locator: FakeCardLocator(quad: wrong, confidence: 0.7),
             rectifier: rig.rectifier,
             descriptorExtractor: CardDescriptorExtractor(featurePrinter: ThumbnailFeaturePrintGenerator(), canvas: rig.canvas),
-            codeReader: PrintedCodeReader(textRecognizer: ocr, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary))
+            codeReader: PrintedCodeReader(textRecognizer: ocr, renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: rig.fingerprint
         )
         let result = try await recognizer.identify(photo)
         let best = try #require(result.best)
@@ -125,6 +162,47 @@ struct CardRecognizerTests {
         #expect(whole.codeRead == deck[3].card.code)
         #expect(whole.bestCard == deck[3].card.id)
         #expect(whole.bestScore > 1, "descriptor score plus the exact-code bonus")
+        #expect(result.codeReading?.source == .edgeBand, "the crop's own bottom band carried the code")
+    }
+
+    @Test func aCodeReadOffTheWholePhotoIsMarkedAsSuch() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        // The same tight crop with a background rectangle, but OCR that finds the
+        // code only in a photo-shaped image: every edge band is far too elongated,
+        // so the whole-image hypothesis falls back to reading the photo itself.
+        let (photo, _) = TestImages.photo(of: deck[3].image, at: CGRect(x: 150, y: 200, width: 756, height: 1056), canvas: PixelSize(width: 1100, height: 1500))
+        let wrong = CardQuad(
+            topLeft: CGPoint(x: 10, y: 10), topRight: CGPoint(x: 140, y: 10),
+            bottomRight: CGPoint(x: 140, y: 190), bottomLeft: CGPoint(x: 10, y: 190)
+        )
+        let recognizer = CardRecognizer(
+            index: index,
+            locator: FakeCardLocator(quad: wrong, confidence: 0.7),
+            rectifier: rig.rectifier,
+            descriptorExtractor: rig.extractor,
+            codeReader: PrintedCodeReader(textRecognizer: PhotoShapedTextRecognizer(code: "OGN • 004/298"), renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary)),
+            fingerprint: rig.fingerprint
+        )
+        let result = try await recognizer.identify(photo)
+        #expect(result.best?.id == deck[3].card.id)
+        #expect(result.best?.codeAgreement == .exact)
+        #expect(result.location == .assumedWholeImage)
+        let reading = try #require(result.codeReading)
+        #expect(reading.source == .fullImage)
+        #expect(reading.orientation == .upright)
+    }
+
+    @Test func theReaderLabelsWhereACodeCameFrom() async throws {
+        let deck = rig.standardDeck()
+        let index = await rig.buildIndex(deck)
+        let reader = PrintedCodeReader(textRecognizer: StubTextRecognizer(["OGN • 003/298"]), renderer: rig.renderer, canvas: rig.canvas, parser: PrintedCodeParser(vocabulary: index.vocabulary))
+        let fromBands = try await reader.readCode(from: deck[2].image)
+        #expect(!fromBands.isEmpty && fromBands.allSatisfy { $0.source == .edgeBand })
+        let (photo, _) = TestImages.photo(of: deck[2].image, at: CGRect(x: 100, y: 100, width: 378, height: 528), canvas: PixelSize(width: 600, height: 800))
+        let fromPhoto = try await reader.readCode(fromFullImage: photo)
+        #expect(fromPhoto.first?.source == .fullImage)
+        #expect(fromPhoto.first?.code.canonical == "OGN-003/298")
     }
 
     @Test func aReadCodeDoesNotDuplicateAListedCandidate() async throws {
@@ -216,6 +294,18 @@ struct FakeTextRecognizerKeyedByWidth: TextRecognizing {
         let bitmap = try GrayscaleBitmap(rendering: image, width: 16, height: 4)
         let mean = bitmap.pixels.reduce(0) { $0 + Int($1) } / bitmap.pixels.count
         return mean < 90 ? [TextLine(string: codeIfWide, confidence: 1)] : []
+    }
+}
+
+/// Returns the code only for an image shaped like a photo (aspect between 1:2
+/// and 2:1): the canvas's edge bands are far more elongated than that, so only
+/// the full-image pass of the reader ever sees text.
+struct PhotoShapedTextRecognizer: TextRecognizing {
+    let code: String
+
+    func recognizeText(in image: CGImage) async throws -> [TextLine] {
+        let aspect = Double(image.width) / Double(image.height)
+        return (0.5...2).contains(aspect) ? [TextLine(string: code, confidence: 1)] : []
     }
 }
 

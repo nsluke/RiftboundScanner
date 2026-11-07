@@ -8,7 +8,7 @@ enum EvaluateCommand {
         let limit = try options.int("limit", default: Int.max)
         let verbose = options.bool("verbose")
         let index = try CardIndex.read(from: options.url("index", default: Defaults.indexPath))
-        let recognizer = CardRecognizer.live(index: index)
+        let recognizer = try await CardRecognizer.live(index: index)
 
         var cases: [EvaluationCase]
         if FileManager.default.fileExists(atPath: folder.appendingPathComponent(EvaluationManifest.fileName).path) {

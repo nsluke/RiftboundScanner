@@ -39,7 +39,20 @@ nonisolated enum Fixtures {
     }
 
     /// A reading of the first fixture card's code, for results that should count as confident.
-    static let viCodeReading = CodeReading(code: PrintedCode(parsing: "OGN-001/298")!, confidence: 0.9, orientation: .upright, layout: .portrait, text: "OGN • 001/298")
+    static let viCodeReading = CodeReading(code: PrintedCode(parsing: "OGN-001/298")!, confidence: 0.9, orientation: .upright, layout: .portrait, text: "OGN • 001/298", source: .edgeBand)
+
+    /// A stand-in query descriptor; stubbed results never compare it with anything.
+    static let descriptor = OrientedDescriptor(
+        descriptor: CardDescriptor(
+            wholeDifferenceHash: ImageHash(bits: 0x0F0F_0F0F_0F0F_0F0F),
+            wholePerceptualHash: ImageHash(bits: 0xF0F0_F0F0_F0F0_F0F0),
+            artDifferenceHash: ImageHash(bits: 0xFFFF_0000_FFFF_0000),
+            featurePrint: FeaturePrint(elements: [1, 0, 0])
+        ),
+        orientation: .upright
+    )
+
+    static let engine = EngineFingerprint(packageVersion: "test", calibrationHash: FeaturePrint(elements: [1, 0, 0]).digest, platform: "iOS", osVersion: "26.1.0")
 
     static func result(cards: [Card], codeReading: CodeReading? = nil) -> RecognitionResult {
         let matches = cards.enumerated().map { offset, card in
@@ -53,7 +66,7 @@ nonisolated enum Fixtures {
             )
         }
         let quad = CardQuad(fullImageOfSize: PixelSize(width: 63, height: 88))
-        return RecognitionResult(matches: matches, location: .detected(quad, confidence: 0.95), codeReading: codeReading, rectifiedCard: image())
+        return RecognitionResult(matches: matches, location: .detected(quad, confidence: 0.95), codeReading: codeReading, rectifiedCard: image(), descriptor: descriptor, engine: engine)
     }
 
     static func batch(id: UUID = UUID()) -> ScanBatch {

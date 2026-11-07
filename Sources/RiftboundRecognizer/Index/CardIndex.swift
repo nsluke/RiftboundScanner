@@ -22,13 +22,23 @@ public struct CardIndex: Sendable, Codable {
     public let canvas: CanvasSpecification
     public let builtAt: Date
     public let entries: [Entry]
+    /// The ``CalibrationCanvas`` as printed by the feature printer that produced
+    /// the entries; compare it with the device's own calibration print to know
+    /// whether the two embed images the same way. Absent from indexes built
+    /// before it was recorded (still format version 1).
+    public let calibrationPrint: FeaturePrint?
 
-    public init(canvas: CanvasSpecification, builtAt: Date, entries: [Entry]) {
+    public init(canvas: CanvasSpecification, builtAt: Date, entries: [Entry], calibrationPrint: FeaturePrint? = nil) {
         self.formatVersion = Self.currentFormatVersion
         self.canvas = canvas
         self.builtAt = builtAt
         self.entries = entries
+        self.calibrationPrint = calibrationPrint
     }
+
+    /// The digest of ``calibrationPrint``, the key artefacts in the same
+    /// embedding space share.
+    public var calibrationHash: FeaturePrint.Digest? { calibrationPrint?.digest }
 
     public var vocabulary: PrintedCodeParser.Vocabulary {
         PrintedCodeParser.Vocabulary(

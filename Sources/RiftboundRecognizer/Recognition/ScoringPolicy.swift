@@ -5,7 +5,7 @@ public enum CardOrientation: String, Hashable, Sendable, Codable {
 }
 
 /// Per-descriptor similarities between a query and a reference, each in 0...1.
-public struct ScoreComponents: Hashable, Sendable {
+public struct ScoreComponents: Hashable, Sendable, Codable {
     public let featurePrint: Double
     public let wholeDifferenceHash: Double
     public let wholePerceptualHash: Double
@@ -59,7 +59,11 @@ public enum CodeAgreement: String, Hashable, Sendable, Codable {
 /// or penalty scaled by the OCR confidence; the defaults let a confident code
 /// reading outrank a stronger descriptor match, which is what disambiguates
 /// alternate printings that share an illustration.
-public struct ScoringPolicy: Hashable, Sendable {
+///
+/// The policy is data: it encodes as JSON with one key per value, and a key
+/// missing on decode takes the default, so a policy file written for an older
+/// build still loads.
+public struct ScoringPolicy: Hashable, Sendable, Codable {
     public var featurePrintWeight = 0.5
     public var wholeDifferenceHashWeight = 0.2
     public var wholePerceptualHashWeight = 0.15
@@ -95,6 +99,31 @@ public struct ScoringPolicy: Hashable, Sendable {
     public init() {}
 
     public static let `default` = ScoringPolicy()
+
+    private enum CodingKeys: String, CodingKey {
+        case featurePrintWeight, wholeDifferenceHashWeight, wholePerceptualHashWeight, artDifferenceHashWeight
+        case codeExactBonus, codeVariantMismatchBonus, codeSetMismatchPenalty, codeMismatchPenalty
+        case rerankedCandidateCount, codeInjectionMinimumConfidence, maximumLocationHypotheses, ocrHypothesisCount
+        case wholeImageMinimumScore
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ScoringPolicy()
+        featurePrintWeight = try container.decodeIfPresent(Double.self, forKey: .featurePrintWeight) ?? defaults.featurePrintWeight
+        wholeDifferenceHashWeight = try container.decodeIfPresent(Double.self, forKey: .wholeDifferenceHashWeight) ?? defaults.wholeDifferenceHashWeight
+        wholePerceptualHashWeight = try container.decodeIfPresent(Double.self, forKey: .wholePerceptualHashWeight) ?? defaults.wholePerceptualHashWeight
+        artDifferenceHashWeight = try container.decodeIfPresent(Double.self, forKey: .artDifferenceHashWeight) ?? defaults.artDifferenceHashWeight
+        codeExactBonus = try container.decodeIfPresent(Double.self, forKey: .codeExactBonus) ?? defaults.codeExactBonus
+        codeVariantMismatchBonus = try container.decodeIfPresent(Double.self, forKey: .codeVariantMismatchBonus) ?? defaults.codeVariantMismatchBonus
+        codeSetMismatchPenalty = try container.decodeIfPresent(Double.self, forKey: .codeSetMismatchPenalty) ?? defaults.codeSetMismatchPenalty
+        codeMismatchPenalty = try container.decodeIfPresent(Double.self, forKey: .codeMismatchPenalty) ?? defaults.codeMismatchPenalty
+        rerankedCandidateCount = try container.decodeIfPresent(Int.self, forKey: .rerankedCandidateCount) ?? defaults.rerankedCandidateCount
+        codeInjectionMinimumConfidence = try container.decodeIfPresent(Double.self, forKey: .codeInjectionMinimumConfidence) ?? defaults.codeInjectionMinimumConfidence
+        maximumLocationHypotheses = try container.decodeIfPresent(Int.self, forKey: .maximumLocationHypotheses) ?? defaults.maximumLocationHypotheses
+        ocrHypothesisCount = try container.decodeIfPresent(Int.self, forKey: .ocrHypothesisCount) ?? defaults.ocrHypothesisCount
+        wholeImageMinimumScore = try container.decodeIfPresent(Double.self, forKey: .wholeImageMinimumScore) ?? defaults.wholeImageMinimumScore
+    }
 
     public func descriptorScore(_ components: ScoreComponents) -> Double {
         featurePrintWeight * components.featurePrint

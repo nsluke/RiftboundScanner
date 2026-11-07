@@ -11,6 +11,7 @@ struct Riftscan {
       synth [--cards data/cards.json] [--images cache/images] [--output synthetic] [--count 100] [--seed 42]
             [--severities mild,moderate,harsh]
       evaluate <folder> [--index cache/index.json] [--group mild|moderate|harsh|samples] [--limit N] [--verbose]
+      check-revision [--index cache/index.json] [--json] [--no-vector]
 
     Paths are relative to the current directory; run from the repository root.
     """
@@ -27,6 +28,7 @@ struct Riftscan {
             case "build-index": try await BuildIndexCommand.run(arguments.dropFirst())
             case "synth": try SynthCommand.run(arguments.dropFirst())
             case "evaluate": try await EvaluateCommand.run(arguments.dropFirst())
+            case "check-revision": try await CheckRevisionCommand.run(arguments.dropFirst())
             case "help", "--help", "-h": Console.line(usage)
             default: throw UsageError("unknown command '\(command)'\n\n\(usage)")
             }

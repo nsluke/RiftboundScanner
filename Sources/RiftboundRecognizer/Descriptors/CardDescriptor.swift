@@ -31,6 +31,13 @@ public struct CardDescriptorExtractor: Sendable {
         self.canvas = canvas
     }
 
+    /// The calibration print of the feature printer this extractor describes
+    /// cards with, so an index built through it can record the embedding space
+    /// its entries live in.
+    public func calibrationPrint() async throws -> FeaturePrint {
+        try await featurePrinter.calibrationPrint()
+    }
+
     public func descriptor(for canvasImage: CGImage) async throws -> CardDescriptor {
         let whole = try PerceptualHashing.workingBitmap(for: canvasImage)
         let artRect = canvas.artRegion.pixelRect(in: PixelSize(width: canvasImage.width, height: canvasImage.height))

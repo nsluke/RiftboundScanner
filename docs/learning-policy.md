@@ -186,7 +186,17 @@ decodes exactly this text.
   (ADR-002, open risk 1). Identical models print identically (1.0).
 - `confidence` is decision 9: `auditRate(afterRandomAudits:)` returns
   `auditRate` until `auditRateSwitchCount` random audits exist, then
-  `auditRateAfter`.
+  `auditRateAfter`. The app folds this section and the server's random-audit
+  count into a `ConfidenceRule` (`App/Sources/Scans/ScanConfidence.swift`):
+  `minimumFusedScore` is the bar for the top candidate's score,
+  `requireLiteralCode` turns a candidate matched through a parser alternative
+  into `codeRepaired`, and `exemplarDisagreementThreshold` / `…Margin` are the
+  veto: uncertain (`exemplarDisagrees`) when a shortlisted card of another
+  `ArtGroup` has an exemplar similarity at or above the threshold that exceeds
+  the top's own best descriptor evidence (max of its reference score and its
+  exemplar similarity) by at least the margin. The audit sample is the scan
+  UUID's first byte modulo 10 compared with the rate in tenths, so 0.3 holds
+  buckets 0-2 and 0.1 holds bucket 0.
 - `admission` is section 7, rules 5-8: the 0.62 reference floor and 0.05
   alternative margin of tier `code`, the 0.85 / 0.60 two-witness thresholds of
   tier `artCorroborated`, the 0.90 impostor rule, the 0.985 dedupe and the cap

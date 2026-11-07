@@ -25,6 +25,10 @@ nonisolated struct AppDependencies: Sendable {
     /// The Decks tab's offline copy, under `paths.catalog`.
     let deckCache: any DeckCacheStoring
     let appVersion: String
+    /// The confident tier in force, read at each use. Built-in defaults until
+    /// the learning sync (A8) installs a downloaded policy and the server's
+    /// audit count.
+    let confidenceRule: @Sendable () -> ConfidenceRule
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
     /// takes long enough to count as a hang.
@@ -110,7 +114,8 @@ nonisolated struct AppDependencies: Sendable {
             endpoints: endpoints,
             client: client,
             deckCache: FileDeckCacheStore(url: paths.catalog.appending(path: "decks.json")),
-            appVersion: appVersion
+            appVersion: appVersion,
+            confidenceRule: { .default }
         )
     }
 }

@@ -1,8 +1,8 @@
 import RiftboundRecognizer
 import SwiftUI
 
-/// One uncertain scan at a time: the crop beside the matched card, why it
-/// needs a look, and one tap (or swipe) to settle it.
+/// One scan at a time: the crop beside the matched card, why it needs a look
+/// (or that it is an audit or a spot-check), and one tap (or swipe) to settle it.
 struct ReviewQueueView: View {
     @State private var model: ReviewQueueModel
     @Environment(\.dismiss) private var dismiss
@@ -39,9 +39,11 @@ struct ReviewQueueView: View {
                     done(tally)
                 case .nothingToReview:
                     ContentUnavailableView {
-                        Label("Nothing to review", systemImage: "checkmark.seal")
+                        Label(model.mode.isSpotCheck ? "Nothing to spot-check" : "Nothing to review", systemImage: "checkmark.seal")
                     } description: {
-                        Text("Every scan in this batch has a verdict or was confident on its own.")
+                        Text(model.mode.isSpotCheck
+                            ? "No accepted scans from this run are left to re-check."
+                            : "Every scan in this batch has a verdict or was confident on its own.")
                     } actions: {
                         Button("Back to scanning") { dismiss() }
                             .buttonStyle(.borderedProminent)
@@ -55,7 +57,7 @@ struct ReviewQueueView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
-        .navigationTitle("Review")
+        .navigationTitle(model.mode.isSpotCheck ? "Spot-check" : "Review")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await model.load() }
@@ -89,6 +91,9 @@ struct ReviewQueueView: View {
         ScrollView {
             VStack(spacing: 16) {
                 progressSegments(position: position, total: total)
+                if let kind = model.currentKind {
+                    kindBadge(kind)
+                }
                 comparison(record)
                     .offset(x: dragOffset)
                     .gesture(swipe)
@@ -154,6 +159,33 @@ struct ReviewQueueView: View {
         }
     }
 
+    /// Audit and spot-check rows say so up front: the verdict they take is a
+    /// different kind of label (ADR-002, decision 6), and the user should know
+    /// the recogniser was sure.
+    @ViewBuilder
+    private func kindBadge(_ kind: ReviewKind) -> some View {
+        switch kind {
+        case .uncertain:
+            EmptyView()
+        case .audit:
+            Label("Audit", systemImage: "checkmark.shield")
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Theme.blue.opacity(0.18), in: Capsule())
+                .foregroundStyle(Theme.blue)
+                .accessibilityLabel("Audit: the recogniser was confident about this scan")
+        case .spotCheck:
+            Label("Spot-check", systemImage: "eye")
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Theme.blue.opacity(0.18), in: Capsule())
+                .foregroundStyle(Theme.blue)
+                .accessibilityLabel("Spot-check of an accepted scan")
+        }
+    }
+
     private func details(_ record: ScanRecord) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(record.topCandidate?.card.displayName ?? String(localized: "No match in the index"))
@@ -163,10 +195,21 @@ struct ReviewQueueView: View {
                     .font(.subheadline)
                     .foregroundStyle(Theme.muted)
             }
-            if let reason = record.confidence.reason {
+            switch model.currentKind {
+            case .uncertain(let reason):
                 Label(reason.message(isArtWeak: record.hasWeakArtMatch), systemImage: "questionmark.circle")
                     .font(.footnote)
                     .foregroundStyle(Theme.amber)
+            case .audit:
+                Label("The code was read and the art matched; this scan was held back as a random check. Is it the right card?", systemImage: "checkmark.shield")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.blue)
+            case .spotCheck:
+                Label("Accepted without a look on \(record.verdictAt?.formatted(date: .omitted, time: .shortened) ?? "this run"). Is it the right card?", systemImage: "eye")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.blue)
+            case nil:
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,12 +276,12 @@ struct ReviewQueueView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 44))
                 .foregroundStyle(Theme.blue)
-            Text("Review complete")
+            Text(model.mode.isSpotCheck ? "Spot-check complete" : "Review complete")
                 .font(.title2.weight(.semibold))
             VStack(spacing: 4) {
                 Text("\(tally.confirmed) confirmed · \(tally.corrected) corrected · \(tally.rejected) rejected")
                 if tally.skipped > 0 {
-                    Text("\(tally.skipped) skipped, still pending")
+                    Text(model.mode.isSpotCheck ? "\(tally.skipped) skipped, left as accepted" : "\(tally.skipped) skipped, still pending")
                         .foregroundStyle(Theme.amber)
                 }
             }

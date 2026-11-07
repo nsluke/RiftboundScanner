@@ -816,6 +816,106 @@ nonisolated struct PolicyDocument: Hashable, Sendable {
     }
 }
 
+/// `GET /api/learning/stats` (ADR-002, decision 9): how well the confident
+/// tier is doing, as the server measures it over random audits alone.
+/// Spot-checks are counted separately and never move the bound. Every field
+/// but `random_audits` is optional so an older or partial server still decodes.
+nonisolated struct LearningStats: Hashable, Sendable, Codable {
+    /// The 95 % Wilson lower bound of auto-accept precision; `nil` until the
+    /// first random audit exists.
+    let wilsonLowerBound: Double?
+    /// The confidence level the bound was computed at (0.95).
+    let confidenceLevel: Double?
+    /// Random audits recorded so far; the policy's audit rate switches on it.
+    let randomAudits: Int
+    let randomAuditsWrong: Int?
+    /// Wrong audits nobody has resolved yet; one of these makes the tier unhealthy.
+    let unresolvedWrongAudits: Int?
+    let spotChecks: Int?
+    let auditsBySource: [String: Int]?
+    let humanLabels: Int?
+    /// Distinct sittings (batches) with human labels; phase 2 waits for three.
+    let sittings: Int?
+    let exemplars: Int?
+    let exemplarsBySet: [String: Int]?
+    let overlayVersion: Int?
+    let policyVersion: Int?
+
+    init(
+        wilsonLowerBound: Double? = nil,
+        confidenceLevel: Double? = nil,
+        randomAudits: Int = 0,
+        randomAuditsWrong: Int? = nil,
+        unresolvedWrongAudits: Int? = nil,
+        spotChecks: Int? = nil,
+        auditsBySource: [String: Int]? = nil,
+        humanLabels: Int? = nil,
+        sittings: Int? = nil,
+        exemplars: Int? = nil,
+        exemplarsBySet: [String: Int]? = nil,
+        overlayVersion: Int? = nil,
+        policyVersion: Int? = nil
+    ) {
+        self.wilsonLowerBound = wilsonLowerBound
+        self.confidenceLevel = confidenceLevel
+        self.randomAudits = randomAudits
+        self.randomAuditsWrong = randomAuditsWrong
+        self.unresolvedWrongAudits = unresolvedWrongAudits
+        self.spotChecks = spotChecks
+        self.auditsBySource = auditsBySource
+        self.humanLabels = humanLabels
+        self.sittings = sittings
+        self.exemplars = exemplars
+        self.exemplarsBySet = exemplarsBySet
+        self.overlayVersion = overlayVersion
+        self.policyVersion = policyVersion
+    }
+
+    /// The bound the tier must keep to count as healthy (ADR-002, decision 9).
+    static let healthyLowerBound = 0.97
+
+    /// Healthy while the bound is at least 97 % and no wrong audit is
+    /// unresolved; `nil` before any random audit exists.
+    var isHealthy: Bool? {
+        guard let wilsonLowerBound else { return nil }
+        return wilsonLowerBound >= Self.healthyLowerBound && (unresolvedWrongAudits ?? 0) == 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case exemplars, sittings
+        case wilsonLowerBound = "wilson_lower_bound"
+        case confidenceLevel = "confidence_level"
+        case randomAudits = "random_audits"
+        case randomAuditsWrong = "random_audits_wrong"
+        case unresolvedWrongAudits = "unresolved_wrong_audits"
+        case spotChecks = "spot_checks"
+        case auditsBySource = "audits_by_source"
+        case humanLabels = "human_labels"
+        case exemplarsBySet = "exemplars_by_set"
+        case overlayVersion = "overlay_version"
+        case policyVersion = "policy_version"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            wilsonLowerBound: try container.decodeIfPresent(Double.self, forKey: .wilsonLowerBound),
+            confidenceLevel: try container.decodeIfPresent(Double.self, forKey: .confidenceLevel),
+            randomAudits: try container.decodeIfPresent(Int.self, forKey: .randomAudits) ?? 0,
+            randomAuditsWrong: try container.decodeIfPresent(Int.self, forKey: .randomAuditsWrong),
+            unresolvedWrongAudits: try container.decodeIfPresent(Int.self, forKey: .unresolvedWrongAudits),
+            spotChecks: try container.decodeIfPresent(Int.self, forKey: .spotChecks),
+            auditsBySource: try container.decodeIfPresent([String: Int].self, forKey: .auditsBySource),
+            humanLabels: try container.decodeIfPresent(Int.self, forKey: .humanLabels),
+            sittings: try container.decodeIfPresent(Int.self, forKey: .sittings),
+            exemplars: try container.decodeIfPresent(Int.self, forKey: .exemplars),
+            exemplarsBySet: try container.decodeIfPresent([String: Int].self, forKey: .exemplarsBySet),
+            overlayVersion: try container.decodeIfPresent(Int.self, forKey: .overlayVersion),
+            policyVersion: try container.decodeIfPresent(Int.self, forKey: .policyVersion)
+        )
+    }
+}
+
 /// `POST /api/learning/evaluations`. The per-case payload belongs to the
 /// evaluation item and travels as it was written.
 nonisolated struct EvaluationRunUpload: Hashable, Sendable, Codable {

@@ -7,6 +7,7 @@ struct SettingsView: View {
         Form {
             serverSection
             connectionSection
+            learningSection
             storageSection
             aboutSection
         }
@@ -74,6 +75,39 @@ struct SettingsView: View {
 
     private var isTesting: Bool {
         if case .loading = model.connection { return true }
+        return false
+    }
+
+    /// The confident tier as the server measures it (ADR-002, decision 9):
+    /// the Wilson lower bound over random audits, with the audit rate in force.
+    @ViewBuilder
+    private var learningSection: some View {
+        Section {
+            switch model.learning {
+            case .idle, .loading:
+                ProgressView("Loading precision…")
+            case .failed(let error):
+                Label(error == .notFound ? String(localized: "The server does not report learning stats yet.") : error.message, systemImage: "wifi.exclamationmark")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Precision unavailable: \(error.message)")
+            case .loaded(let stats):
+                LearningCard(stats: stats, rule: model.rule)
+            }
+            Button {
+                Task { await model.refreshLearning() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(isRefreshingLearning)
+        } header: {
+            Text("Learning")
+        } footer: {
+            Text("Scans accepted without a look are audited at random; the bound is the precision the audits so far guarantee at 95 % confidence. Spot-checks are recorded but never counted.")
+        }
+    }
+
+    private var isRefreshingLearning: Bool {
+        if case .loading = model.learning { return true }
         return false
     }
 
@@ -167,6 +201,79 @@ struct ConnectionDetails: View {
         case .lan: String(localized: "riftbound.lan (UniFi name, works over the VPN)")
         case .local: String(localized: "riftbound.local (mDNS, home Wi-Fi)")
         case .manual: String(localized: "Fallback address")
+        }
+    }
+}
+
+/// The precision bound and audit counts from `/api/learning/stats`.
+struct LearningCard: View {
+    let stats: LearningStats
+    let rule: ConfidenceRule
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline)
+                    .font(.headline)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: symbolName)
+                .foregroundStyle(symbolColor)
+        }
+        .accessibilityElement(children: .combine)
+        LabeledContent("Audit rate", value: rule.auditRate.formatted(.percent.precision(.fractionLength(0))))
+        if let spotChecks = stats.spotChecks {
+            LabeledContent("Spot-checks", value: "\(spotChecks.formatted()), not counted")
+        }
+        if let exemplars = stats.exemplars {
+            LabeledContent("Exemplars", value: exemplars.formatted())
+        }
+        if let humanLabels = stats.humanLabels {
+            LabeledContent("Human labels", value: "\(humanLabels.formatted())" + (stats.sittings.map { " over \($0) sittings" } ?? ""))
+        }
+    }
+
+    /// "precision >= 98.1 % (95 %)", as the ADR words it.
+    static func precisionText(_ stats: LearningStats) -> String? {
+        guard let bound = stats.wilsonLowerBound else { return nil }
+        let level = (stats.confidenceLevel ?? 0.95).formatted(.percent.precision(.fractionLength(0)))
+        return String(localized: "Precision ≥ \(bound.formatted(.percent.precision(.fractionLength(1)))) (\(level))")
+    }
+
+    private var headline: String {
+        Self.precisionText(stats) ?? String(localized: "No audits yet")
+    }
+
+    private var detail: String {
+        if stats.wilsonLowerBound == nil {
+            return String(localized: "The bound appears once a confident scan has been audited.")
+        }
+        var parts = [String(localized: "\(stats.randomAudits) random audits")]
+        if let wrong = stats.randomAuditsWrong {
+            parts.append(String(localized: "\(wrong) wrong"))
+        }
+        if let unresolved = stats.unresolvedWrongAudits, unresolved > 0 {
+            parts.append(String(localized: "\(unresolved) unresolved"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var symbolName: String {
+        switch stats.isHealthy {
+        case true: "checkmark.shield.fill"
+        case false: "exclamationmark.shield.fill"
+        case nil: "shield"
+        }
+    }
+
+    private var symbolColor: Color {
+        switch stats.isHealthy {
+        case true: .green
+        case false: .orange
+        case nil: .secondary
         }
     }
 }

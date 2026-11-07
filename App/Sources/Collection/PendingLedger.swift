@@ -53,12 +53,18 @@ nonisolated struct OutboxPendingLedger: PendingLedgerProviding {
             case .delta(let delta):
                 deltas.append(PendingDelta(clientRef: delta.clientRef, cardKey: delta.cardKey, finish: delta.finish, quantity: delta.quantityDelta))
             case .undo(let undo):
-                if states[entry.batchID] == nil {
-                    states[entry.batchID] = await store.syncState(for: entry.batchID)
+                // Only a scan's decision can be undone; a manual add is always a
+                // `+N` delta, so a manual-origin undo has no applied row to read.
+                if case .scan(let batchID, let scanID) = entry.origin {
+                    if states[batchID] == nil {
+                        states[batchID] = await store.syncState(for: batchID)
+                    }
+                    if case .applied(_, let cardID, let finish)? = states[batchID]?[scanID].items[undo.undoOf] {
+                        deltas.append(PendingDelta(clientRef: undo.clientRef, cardKey: cardID, finish: finish, quantity: -1))
+                        continue
+                    }
                 }
-                if case .applied(_, let cardID, let finish)? = states[entry.batchID]?[entry.scanID].items[undo.undoOf] {
-                    deltas.append(PendingDelta(clientRef: undo.clientRef, cardKey: cardID, finish: finish, quantity: -1))
-                } else if let replayed = entries.first(where: { $0.item.clientRef == undo.undoOf }), case .delta(let delta) = replayed.item {
+                if let replayed = entries.first(where: { $0.item.clientRef == undo.undoOf }), case .delta(let delta) = replayed.item {
                     deltas.append(PendingDelta(clientRef: undo.clientRef, cardKey: delta.cardKey, finish: delta.finish, quantity: -delta.quantityDelta))
                 }
             }

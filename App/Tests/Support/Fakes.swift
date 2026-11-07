@@ -63,6 +63,12 @@ actor InMemoryScanStore: ScanStoring {
         recordsByBatch[record.batchID] = list
     }
 
+    func update(_ changes: [ScanRecord]) throws {
+        for change in changes {
+            try update(change)
+        }
+    }
+
     func deleteBatch(_ id: ScanBatch.ID) {
         batchesByID[id] = nil
         recordsByBatch[id] = nil
@@ -109,5 +115,14 @@ actor GatedIdentifier: CardIdentifying {
         } else {
             waiting.removeFirst().resume()
         }
+    }
+}
+
+
+nonisolated struct StubPriceSource: PriceQuoting {
+    var outcome: Result<PriceSheet, PriceSourceError> = .success(PriceSheet(fetchedAt: Fixtures.epoch, byProduct: [:]))
+
+    func quotes(maxAge: Duration) async throws -> PriceSheet {
+        try outcome.get()
     }
 }

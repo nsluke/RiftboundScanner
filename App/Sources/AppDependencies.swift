@@ -11,6 +11,8 @@ nonisolated struct AppDependencies: Sendable {
     let identifier: any CardIdentifying
     let store: any ScanStoring
     let directory: CardDirectory
+    let vault: CardVault
+    let priceSource: any PriceQuoting
     let index: IndexSummary
     let makeBatch: @Sendable (_ label: String) -> ScanBatch
     let now: @Sendable () -> Date
@@ -30,7 +32,14 @@ nonisolated struct AppDependencies: Sendable {
             throw .indexUnreadable(String(describing: error))
         }
         let summary = IndexSummary(builtAt: cardIndex.builtAt, entryCount: cardIndex.entries.count, formatVersion: cardIndex.formatVersion)
+        let vault: CardVault
+        if let vaultURL = Bundle.main.url(forResource: "CardVault", withExtension: "json") {
+            vault = (try? await CardVault.read(from: vaultURL)) ?? .empty
+        } else {
+            vault = .empty
+        }
         let documents = URL.documentsDirectory
+        let caches = URL.cachesDirectory
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let device = ScanBatch.Device.current(appVersion: appVersion)
         let now: @Sendable () -> Date = { Date() }
@@ -41,6 +50,8 @@ nonisolated struct AppDependencies: Sendable {
             identifier: LiveCardIdentifier(recognizer: CardRecognizer.live(index: cardIndex)),
             store: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory)),
             directory: CardDirectory(index: cardIndex),
+            vault: vault,
+            priceSource: TCGCSVPriceSource(cacheURL: caches.appending(path: "tcgcsv-prices.json"), now: now),
             index: summary,
             makeBatch: { label in
                 ScanBatch(id: ScanBatch.ID(rawValue: makeID()), startedAt: now(), label: label, device: device, index: summary)

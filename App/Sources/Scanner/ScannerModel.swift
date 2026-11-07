@@ -111,6 +111,11 @@ final class ScannerModel {
     private(set) var savedVerdictCount = 0
     private(set) var storageProblem: ScanProblem?
     private(set) var autoScan: AutoScan = .off
+    /// Records saved by the current or latest run, oldest first; what the
+    /// run-complete strip shows.
+    private(set) var runRecords: [ScanRecord] = []
+    /// Increments when confident scans are accepted in bulk; for haptics.
+    private(set) var acceptedCount = 0
     /// The whole run: feeding and identification. Finishes once the queue has
     /// drained; tests await it.
     private(set) var autoScanTask: Task<Void, Never>?
@@ -255,6 +260,7 @@ final class ScannerModel {
         let batchID: ScanBatch.ID
         let capturedAt: Date
         let jpeg: Data
+        var crop: CropDebug? = nil
     }
 
     /// What identification adds to a captured photo.
@@ -273,9 +279,15 @@ final class ScannerModel {
         // With a crop the full photo is decoded so the card keeps its pixels;
         // the recogniser downsamples what it is given.
         let decoded = try await PhotoDecoder.decode(encoded, maxPixelSize: guideCrop == nil ? 2048 : 4096)
-        let image = guideCrop.flatMap { decoded.cropping(to: $0.pixelRect(forPhotoSize: CGSize(width: decoded.width, height: decoded.height))) } ?? decoded
+        var image = decoded
+        var cropDebug: CropDebug?
+        if let guideCrop {
+            let pixelRect = guideCrop.pixelRect(forPhotoSize: CGSize(width: decoded.width, height: decoded.height))
+            cropDebug = CropDebug(crop: guideCrop, photoWidth: decoded.width, photoHeight: decoded.height, pixelRect: pixelRect)
+            image = decoded.cropping(to: pixelRect) ?? decoded
+        }
         let jpeg = try await PhotoDecoder.encodeJPEG(image, quality: 0.85)
-        let captured = CapturedPhoto(id: ScanRecord.ID(rawValue: makeID()), batchID: batch.id, capturedAt: now(), jpeg: jpeg)
+        let captured = CapturedPhoto(id: ScanRecord.ID(rawValue: makeID()), batchID: batch.id, capturedAt: now(), jpeg: jpeg, crop: cropDebug)
         return (captured, image)
     }
 
@@ -302,7 +314,8 @@ final class ScannerModel {
             processingSeconds: elapsed.seconds,
             placement: Placement(result.location),
             codeReading: result.codeReading.map(CodeReadingSummary.init),
-            candidates: result.matches.prefix(5).map(Candidate.init)
+            candidates: result.matches.prefix(5).map(Candidate.init),
+            crop: captured.crop
         )
         return IdentifiedScan(record: record, rectified: result.rectifiedCard, rectifiedData: rectifiedData)
     }
@@ -324,6 +337,7 @@ final class ScannerModel {
     /// waits for the recogniser.
     func startAutoScan() {
         guard canStartAutoScan else { return }
+        runRecords = []
         autoScan = .running(AutoScanProgress())
         let (queue, enqueue) = AsyncStream<CapturedPhoto>.makeStream(bufferingPolicy: .unbounded)
         autoScanTask = Task { await runAutoScan(queue: queue, enqueue: enqueue) }
@@ -338,6 +352,31 @@ final class ScannerModel {
     func dismissAutoScanResult() {
         if case .ended = autoScan {
             autoScan = .off
+        }
+    }
+
+    func photoURL(for record: ScanRecord) -> URL {
+        store.photoURL(for: record)
+    }
+
+    /// Marks this run's confident, still-pending scans correct in one write.
+    /// The uncertain ones stay pending for the review queue.
+    func acceptConfidentScans() async {
+        let accepted = runRecords.filter(\.isAutoConfirmable).map { record in
+            var changed = record
+            changed.verdict = .correct
+            changed.verdictAt = now()
+            return changed
+        }
+        guard !accepted.isEmpty else { return }
+        do {
+            try await store.update(accepted)
+            let byID = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            records = records.map { byID[$0.id] ?? $0 }
+            runRecords = runRecords.map { byID[$0.id] ?? $0 }
+            acceptedCount += accepted.count
+        } catch {
+            storageProblem = .storage(String(describing: error))
         }
     }
 
@@ -405,6 +444,7 @@ final class ScannerModel {
                 let identified = try await identify(captured)
                 try await store.append(identified.record, photo: captured.jpeg, rectified: identified.rectifiedData)
                 records.append(identified.record)
+                runRecords.append(identified.record)
                 advanceProgress { $0.identified += 1 }
             } catch {
                 feedTask?.cancel()

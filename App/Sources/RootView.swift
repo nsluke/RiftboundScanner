@@ -4,6 +4,7 @@ struct RootView: View {
     let dependencies: AppDependencies
     @State private var scanner: ScannerModel
     @State private var history: HistoryModel
+    @State private var collection: CollectionModel
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
@@ -17,12 +18,22 @@ struct RootView: View {
             makeID: dependencies.makeID
         ))
         _history = State(wrappedValue: HistoryModel(store: dependencies.store))
+        _collection = State(wrappedValue: CollectionModel(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, priceSource: dependencies.priceSource))
     }
 
     var body: some View {
         TabView {
             Tab("Scan", systemImage: "camera.viewfinder") {
-                ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
+                NavigationStack {
+                    ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
+                        .toolbarVisibility(.hidden, for: .navigationBar)
+                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, now: dependencies.now)
+                }
+            }
+            Tab("Collection", systemImage: "square.grid.2x2") {
+                NavigationStack {
+                    CollectionView(model: collection)
+                }
             }
             Tab("History", systemImage: "list.bullet.rectangle") {
                 NavigationStack {

@@ -4,6 +4,7 @@ import SwiftUI
 /// a distributed app must source art through Riot's API.
 struct CardArtView: View {
     let url: URL
+    var size = CGSize(width: 50, height: 70)
 
     var body: some View {
         AsyncImage(url: url) { phase in
@@ -22,7 +23,7 @@ struct CardArtView: View {
                     .fill(.quaternary)
             }
         }
-        .frame(width: 50, height: 70)
+        .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .accessibilityHidden(true)
     }

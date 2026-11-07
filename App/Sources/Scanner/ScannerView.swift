@@ -60,6 +60,7 @@ struct ScannerView: View {
             Text("Batches group scans so different lighting or setups can be compared.")
         }
         .sensoryFeedback(.success, trigger: model.savedVerdictCount)
+        .sensoryFeedback(.success, trigger: model.acceptedCount)
     }
 
     // MARK: - Layers
@@ -134,14 +135,17 @@ struct ScannerView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(.white.opacity(0.75), style: StrokeStyle(lineWidth: 2, dash: [10, 8]))
                 .aspectRatio(63.0 / 88.0, contentMode: .fit)
-                .padding(.horizontal, 48)
-                .accessibilityHidden(true)
+                // Measured before the padding: the crop must follow the dashed
+                // rectangle itself, not the padded box around it.
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { guideFrame = $0 }
+                // On the stand the card shows at about half the screen's width.
+                .padding(.horizontal, 100)
+                .accessibilityHidden(true)
 
             Spacer()
 
             if case .ended(let progress, let reason) = model.autoScan {
-                autoScanResult(progress: progress, reason: reason)
+                RunCompleteStrip(model: model, progress: progress, reason: reason)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
             }
@@ -258,27 +262,6 @@ struct ScannerView: View {
             action()
         }
         .accessibilityElement(children: .contain)
-    }
-
-    private func autoScanResult(progress: ScannerModel.AutoScanProgress, reason: ScannerModel.AutoScanEnd) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: reason == .hopperEmpty ? "tray" : "info.circle")
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(progress.fed) fed, \(progress.identified) identified and saved")
-                Text(reason.message)
-            }
-            .lineLimit(2)
-            Spacer(minLength: 8)
-            Button("Done") { model.dismissAutoScanResult() }
-                .buttonStyle(.bordered)
-                .tint(.white)
-        }
-        .font(.footnote.weight(.medium))
-        .foregroundStyle(.white)
-        .padding(8)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityElement(children: .combine)
-        .accessibilityAction(named: "Done") { model.dismissAutoScanResult() }
     }
 
     private var summaryLabel: some View {

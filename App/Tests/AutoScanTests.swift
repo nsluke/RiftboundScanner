@@ -55,6 +55,31 @@ struct AutoScanTests {
         #expect(model.autoScan == .off)
     }
 
+    @Test func acceptingConfidentScansMarksOnlyThemCorrect() async throws {
+        let feeder = StubFeeder(script: [.fed, .fed])
+        let store = InMemoryScanStore()
+        let confidentResult = Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx], codeReading: Fixtures.viCodeReading)
+        let model = makeModel(feeder: feeder, identifier: StubIdentifier(outcome: .success(confidentResult)), store: store)
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+        await model.autoScanTask?.value
+        #expect(model.runRecords.count == 2)
+        #expect(model.runRecords.allSatisfy { $0.isAutoConfirmable }, "an exact code at score 1.0 is confident")
+
+        await model.acceptConfidentScans()
+        let batch = try #require(model.batch)
+        let stored = await store.records(in: batch.id)
+        #expect(stored.allSatisfy { $0.verdict == .correct && $0.verdictAt == Fixtures.epoch })
+        #expect(model.records.allSatisfy { $0.verdict == .correct })
+        #expect(model.runRecords.allSatisfy { $0.verdict == .correct })
+        #expect(model.acceptedCount == 2)
+
+        // A second accept has nothing left to do.
+        await model.acceptConfidentScans()
+        #expect(model.acceptedCount == 2)
+    }
+
     @Test func stoppingEndsTheLoopAfterTheCurrentCard() async throws {
         let feeder = StubFeeder(script: [.fed, .hangs])
         let model = makeModel(feeder: feeder)

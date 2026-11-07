@@ -33,6 +33,10 @@ targets:
       # `swift run -c release riftscan build-index` before generating the project.
       - path: ../cache/index.json
         buildPhase: resources
+      # Rules text, domains, TCGplayer ids and a price snapshot per printing,
+      # extracted from Luke's Card Vault page.
+      - path: Resources
+        buildPhase: resources
     dependencies:
       - package: RiftboundScanner
         product: RiftboundRecognizer

@@ -32,16 +32,43 @@ final class HistoryModel {
 
 @Observable
 final class BatchDetailModel {
+    /// What the batch can be shared as.
+    enum ShareKind: Hashable {
+        /// The whole batch folder: photos, records, batch metadata.
+        case archive
+        /// The confirmed cards as a list other programs import.
+        case cards(CollectionExporter.Format)
+
+        var label: String {
+            switch self {
+            case .archive: String(localized: "Full archive (zip)")
+            case .cards(let format): format.label
+            }
+        }
+    }
+
+    struct ShareFile: Hashable {
+        let kind: ShareKind
+        let url: URL
+    }
+
     let batch: ScanBatch
+    let directory: CardDirectory
     private(set) var records: Loadable<[ScanRecord], ScanProblem> = .idle
-    private(set) var archive: Loadable<URL, ScanProblem> = .idle
+    private(set) var share: Loadable<ShareFile, ScanProblem> = .idle
     private let store: any ScanStoring
     private let now: @Sendable () -> Date
 
-    init(batch: ScanBatch, store: any ScanStoring, now: @escaping @Sendable () -> Date) {
+    init(batch: ScanBatch, store: any ScanStoring, directory: CardDirectory, now: @escaping @Sendable () -> Date) {
         self.batch = batch
         self.store = store
+        self.directory = directory
         self.now = now
+    }
+
+    /// The confirmed cards and what the list leaves out, once records are loaded.
+    var cardExport: CollectionExporter.Export? {
+        records.value.map { CollectionExporter.export($0, directory: directory) }
     }
 
     var summary: BatchSummary? {
@@ -67,19 +94,31 @@ final class BatchDetailModel {
                 list[position] = changed
                 records = .loaded(list)
             }
+            resetShare()
         } catch {
             records = .failed(.storage(String(describing: error)))
         }
     }
 
-    func prepareArchive() async {
-        archive = .loading
+    func prepareShare(_ kind: ShareKind) async {
+        share = .loading
+        let name = "riftbound-scans-\(batch.id.rawValue.uuidString.prefix(8))"
         do {
-            let name = "riftbound-scans-\(batch.id.rawValue.uuidString.prefix(8))"
-            archive = .loaded(try await BatchArchiver.archive(store.batchDirectory(for: batch.id), named: name))
+            switch kind {
+            case .archive:
+                share = .loaded(ShareFile(kind: kind, url: try await BatchArchiver.archive(store.batchDirectory(for: batch.id), named: name)))
+            case .cards(let format):
+                guard let cardExport else { return }
+                share = .loaded(ShareFile(kind: kind, url: try await CollectionExporter.write(cardExport, as: format, named: name)))
+            }
         } catch {
-            archive = .failed(.storage(String(describing: error)))
+            share = .failed(.storage(String(describing: error)))
         }
+    }
+
+    /// Forgets a prepared file, e.g. after a verdict changes what it would hold.
+    func resetShare() {
+        share = .idle
     }
 
     func photoURL(for record: ScanRecord) -> URL {

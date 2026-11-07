@@ -24,6 +24,22 @@ nonisolated struct CardDirectory: Sendable {
         byID[id]
     }
 
+    /// Every set in the index, in code order.
+    var sets: [SetCode] {
+        var seen: Set<SetCode> = []
+        return cards.compactMap { seen.insert($0.code.set).inserted ? $0.code.set : nil }
+    }
+
+    /// Printings in `set` whose collector number matches `numberText` as typed:
+    /// digits compare by value (`7`, `07` and `007` agree) and any letter prefix
+    /// must match exactly. Several printings can share a number (standard,
+    /// alternate art, signature), in catalog order.
+    func cards(in set: SetCode, number numberText: String) -> [Card] {
+        let trimmed = numberText.trimmingCharacters(in: .whitespaces).uppercased()
+        guard let typed = CollectorNumber(rawValue: trimmed) else { return [] }
+        return cards.filter { $0.code.set == set && $0.code.number.prefix == typed.prefix && $0.code.number.digits == typed.digits }
+    }
+
     /// Cards whose name or printed code contains `query`, ignoring case; every
     /// card when the query is blank.
     func matching(_ query: String) -> [Card] {

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import RiftboundRecognizer
 
@@ -35,6 +36,9 @@ nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
     let candidates: [Candidate]
     var verdict: Verdict
     var verdictAt: Date?
+    /// How the photo was cropped to the viewfinder guide, for diagnosing the
+    /// mapping from screen to sensor; absent for uncropped or older scans.
+    let crop: CropDebug?
 
     init(
         id: ID,
@@ -47,8 +51,10 @@ nonisolated struct ScanRecord: Hashable, Sendable, Codable, Identifiable {
         codeReading: CodeReadingSummary?,
         candidates: [Candidate],
         verdict: Verdict = .pending,
-        verdictAt: Date? = nil
+        verdictAt: Date? = nil,
+        crop: CropDebug? = nil
     ) {
+        self.crop = crop
         self.id = id
         self.batchID = batchID
         self.capturedAt = capturedAt
@@ -210,5 +216,37 @@ extension Verdict: Codable {
             try container.encode(Kind.rejected, forKey: .kind)
             try container.encode(reason, forKey: .reason)
         }
+    }
+}
+
+/// The numbers behind a guide crop, saved with the scan so a bad crop can be
+/// traced to the frame that produced it.
+nonisolated struct CropDebug: Hashable, Sendable, Codable {
+    struct Rect: Hashable, Sendable, Codable {
+        let x: Double
+        let y: Double
+        let width: Double
+        let height: Double
+
+        init(_ rect: CGRect) {
+            x = rect.origin.x
+            y = rect.origin.y
+            width = rect.width
+            height = rect.height
+        }
+    }
+
+    let guideFrame: Rect
+    let previewFrame: Rect
+    let photoWidth: Int
+    let photoHeight: Int
+    let pixelRect: Rect
+
+    init(crop: GuideCrop, photoWidth: Int, photoHeight: Int, pixelRect: CGRect) {
+        guideFrame = Rect(crop.guideFrame)
+        previewFrame = Rect(crop.previewFrame)
+        self.photoWidth = photoWidth
+        self.photoHeight = photoHeight
+        self.pixelRect = Rect(pixelRect)
     }
 }

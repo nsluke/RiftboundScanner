@@ -9,6 +9,8 @@ nonisolated protocol ScanStoring: Sendable {
     /// Stores the images, then appends the record to the batch.
     func append(_ record: ScanRecord, photo: Data, rectified: Data?) async throws
     func update(_ record: ScanRecord) async throws
+    /// Replaces several of one batch's records in a single write.
+    func update(_ records: [ScanRecord]) async throws
     func deleteBatch(_ id: ScanBatch.ID) async throws
     func batchDirectory(for id: ScanBatch.ID) -> URL
     func photoURL(for record: ScanRecord) -> URL
@@ -98,6 +100,16 @@ actor FileScanStore: ScanStoring {
         guard let position = records.firstIndex(where: { $0.id == record.id }) else { throw ScanStoreError.recordMissing(record.id) }
         records[position] = record
         try write(records, to: record.batchID)
+    }
+
+    func update(_ changes: [ScanRecord]) throws {
+        guard let batchID = changes.first?.batchID else { return }
+        var records = try records(in: batchID)
+        for change in changes where change.batchID == batchID {
+            guard let position = records.firstIndex(where: { $0.id == change.id }) else { throw ScanStoreError.recordMissing(change.id) }
+            records[position] = change
+        }
+        try write(records, to: batchID)
     }
 
     func deleteBatch(_ id: ScanBatch.ID) throws {

@@ -6,10 +6,11 @@ struct ScannerView: View {
     let model: ScannerModel
     let session: AVCaptureSession
     let directory: CardDirectory
+    /// Builds the start-run sheet's model, pre-filled from the last run.
+    let makeStartRun: () -> StartRunModel
 
     @Environment(\.openURL) private var openURL
-    @State private var isNamingBatch = false
-    @State private var newBatchLabel = ""
+    @State private var isStartingRun = false
     @State private var previewFrame: CGRect = .zero
     @State private var guideFrame: CGRect = .zero
 
@@ -48,16 +49,10 @@ struct ScannerView: View {
         } message: { problem in
             Text(problem.message)
         }
-        .alert("New batch", isPresented: $isNamingBatch) {
-            TextField("Label, e.g. desk lamp", text: $newBatchLabel)
-            Button("Start") {
-                let label = newBatchLabel
-                newBatchLabel = ""
-                Task { await model.beginNewBatch(label: label) }
+        .sheet(isPresented: $isStartingRun) {
+            StartRunSheet(model: makeStartRun()) { setup in
+                await model.beginNewBatch(setup)
             }
-            Button("Cancel", role: .cancel) { newBatchLabel = "" }
-        } message: {
-            Text("Batches group scans so different lighting or setups can be compared.")
         }
         .sensoryFeedback(.success, trigger: model.savedVerdictCount)
         .sensoryFeedback(.success, trigger: model.acceptedCount)
@@ -99,17 +94,28 @@ struct ScannerView: View {
             HStack {
                 Menu {
                     Button {
-                        isNamingBatch = true
+                        isStartingRun = true
                     } label: {
-                        Label("New batch…", systemImage: "plus")
+                        Label("Start run…", systemImage: "plus")
                     }
                 } label: {
-                    Label(model.batch?.displayName ?? String(localized: "Batch"), systemImage: "tray.full")
-                        .lineLimit(1)
+                    Label {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(model.batch?.displayName ?? String(localized: "Batch"))
+                                .lineLimit(1)
+                            if let batch = model.batch {
+                                Text(batchSubtitle(batch))
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "tray.full")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .tint(.white)
-                .accessibilityLabel("Batch \(model.batch?.displayName ?? "")")
+                .accessibilityLabel("Batch \(model.batch?.displayName ?? ""), \(model.batch.map(batchSubtitle) ?? "")")
                 .accessibilityHint("Opens batch options")
 
                 Spacer()
@@ -236,6 +242,17 @@ struct ScannerView: View {
         .foregroundStyle(.white)
         .padding(8)
         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Purpose and product in a few words: "Collection · OGN box".
+    private func batchSubtitle(_ batch: ScanBatch) -> String {
+        let purpose = batch.purpose == .collection ? String(localized: "Collection") : String(localized: "Calibration")
+        switch batch.product {
+        case .sealedBox(let set): return String(localized: "\(purpose) · \(set.rawValue) box")
+        case .loose: return String(localized: "\(purpose) · loose cards")
+        case .other(let name): return "\(purpose) · \(name)"
+        case nil: return purpose
+        }
     }
 
     private func progressText(_ progress: ScannerModel.AutoScanProgress) -> Text {

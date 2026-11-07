@@ -128,6 +128,10 @@ final class ScannerModel {
     var guideCrop: GuideCrop?
 
     let feeder: any FeederControlling
+    /// The bundled vault, for the printings a scan could be ledgered as.
+    let vault: CardVault
+    /// Every printing the index knows, for telling visible siblings from invisible ones.
+    let directory: CardDirectory
     private let camera: any CameraOperating
     private let identifier: any CardIdentifying
     private let store: any ScanStoring
@@ -137,6 +141,8 @@ final class ScannerModel {
     /// The confident tier as currently installed; read at each use so a
     /// policy downloaded mid-session applies to the next run.
     private let confidenceRule: @Sendable () -> ConfidenceRule
+    /// Catches a card fed twice in one run (ADR-002, decision 16).
+    private let duplicateGuard: DuplicateGuard
     /// How long a fed card gets to come to rest before the photo.
     private let settleDelay: Duration
     private let clock = ContinuousClock()
@@ -146,20 +152,26 @@ final class ScannerModel {
         feeder: any FeederControlling,
         identifier: any CardIdentifying,
         store: any ScanStoring,
+        vault: CardVault,
+        directory: CardDirectory,
         makeBatch: @escaping @Sendable (ScanBatch.Setup) -> ScanBatch,
         now: @escaping @Sendable () -> Date,
         makeID: @escaping @Sendable () -> UUID,
         confidenceRule: @escaping @Sendable () -> ConfidenceRule = { .default },
+        duplicateGuard: DuplicateGuard = .standard,
         settleDelay: Duration = .milliseconds(350)
     ) {
         self.camera = camera
         self.feeder = feeder
         self.identifier = identifier
         self.store = store
+        self.vault = vault
+        self.directory = directory
         self.makeBatch = makeBatch
         self.now = now
         self.makeID = makeID
         self.confidenceRule = confidenceRule
+        self.duplicateGuard = duplicateGuard
         self.settleDelay = settleDelay
     }
 
@@ -173,6 +185,24 @@ final class ScannerModel {
     /// "Spot-check 10" draws from.
     var spotCheckCandidates: [ScanRecord.ID] {
         runRecords.filter { $0.lastDecision?.source == .autoAccepted }.map(\.id)
+    }
+
+    /// The five-tier reading of a pending scan in the current batch under the
+    /// installed rule; `nil` once decided or without a batch.
+    func tier(of record: ScanRecord) -> ScanTier? {
+        guard let batch else { return nil }
+        return record.tier(under: confidenceRule(), in: batch, vault: vault, directory: directory)
+    }
+
+    /// This run's scans counted per tier, plus how many are held for audit
+    /// and how many are already decided; what the run-complete strip shows.
+    var runTierCounts: TierCounts {
+        TierCounts(records: batch == nil ? [] : runRecords, rule: confidenceRule(), batch: batch, vault: vault, directory: directory)
+    }
+
+    /// The hint the recogniser gets for this batch: a sealed box names its set.
+    var recognitionHints: RecognitionHints {
+        RecognitionHints(expectedSet: batch?.product?.expectedSet)
     }
 
     var pendingScan: PendingScan? {
@@ -278,6 +308,8 @@ final class ScannerModel {
         let capturedAt: Date
         let jpeg: Data
         var crop: CropDebug? = nil
+        /// What the batch already knows about the card (ADR-002, decision 14).
+        var hints: RecognitionHints = .none
     }
 
     /// What identification adds to a captured photo.
@@ -304,7 +336,7 @@ final class ScannerModel {
             image = decoded.cropping(to: pixelRect) ?? decoded
         }
         let jpeg = try await PhotoDecoder.encodeJPEG(image, quality: 0.85)
-        let captured = CapturedPhoto(id: ScanRecord.ID(rawValue: makeID()), batchID: batch.id, capturedAt: now(), jpeg: jpeg, crop: cropDebug)
+        let captured = CapturedPhoto(id: ScanRecord.ID(rawValue: makeID()), batchID: batch.id, capturedAt: now(), jpeg: jpeg, crop: cropDebug, hints: recognitionHints)
         return (captured, image)
     }
 
@@ -319,7 +351,7 @@ final class ScannerModel {
             photo = try await PhotoDecoder.decode(captured.jpeg, maxPixelSize: 4096)
         }
         let started = clock.now
-        let identified = try await identifier.identify(photo)
+        let identified = try await identifier.identify(photo, hints: captured.hints)
         let result = identified.result
         let elapsed = clock.now - started
         let rectifiedData = try await PhotoDecoder.encodeJPEG(result.rectifiedCard, quality: 0.8)
@@ -381,17 +413,18 @@ final class ScannerModel {
     }
 
     /// Records an `autoAccepted` correct decision for each of this run's
-    /// confident scans that is still pending on disk and not held for audit.
-    /// The batch is re-read first, so a scan someone judged on another screen
-    /// since the run is left alone; the uncertain ones and the audit sample
-    /// stay pending for the review queue (ADR-002, decision 9).
+    /// confident-tier scans that is still pending on disk and not held for
+    /// audit. The batch is re-read first, so a scan someone judged on another
+    /// screen since the run is left alone; the other tiers (needs a look,
+    /// pick printing, possible duplicate, unknown) and the audit sample stay
+    /// pending for the review queue (ADR-002, decisions 9, 13 and 16).
     func acceptConfidentScans() async {
         guard let batch else { return }
         let rule = confidenceRule()
         do {
             let onDisk = try await store.records(in: batch.id)
             let runIDs = Set(runRecords.map(\.id))
-            let eligible = onDisk.filter { runIDs.contains($0.id) && $0.isAcceptable(under: rule) }
+            let eligible = onDisk.filter { runIDs.contains($0.id) && $0.isAcceptable(under: rule, in: batch, vault: vault, directory: directory) }
             guard !eligible.isEmpty else { return }
             var accepted: [ScanRecord.ID: ScanRecord] = [:]
             for record in eligible {
@@ -467,9 +500,12 @@ final class ScannerModel {
         for await captured in queue {
             do {
                 let identified = try await identify(captured)
-                try await store.append(identified.record, photo: captured.jpeg, rectified: identified.rectifiedData)
-                records.append(identified.record)
-                runRecords.append(identified.record)
+                // A card fed twice is caught here, against this run's latest
+                // scans, before anything is saved (ADR-002, decision 16).
+                let record = duplicateGuard.marking(identified.record, among: runRecords)
+                try await store.append(record, photo: captured.jpeg, rectified: identified.rectifiedData)
+                records.append(record)
+                runRecords.append(record)
                 advanceProgress { $0.identified += 1 }
             } catch {
                 feedTask?.cancel()

@@ -15,10 +15,13 @@ struct DecisionStoreTests {
             feeder: feeder,
             identifier: StubIdentifier(outcome: .success(Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx], codeReading: Fixtures.viCodeReading))),
             store: store,
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
             makeBatch: { _ in batch },
             now: { Fixtures.epoch },
             // Never an audit sample: these tests are about the store, not the policy.
             makeID: Fixtures.unsampledIDs,
+            duplicateGuard: .off,
             settleDelay: .zero
         )
     }

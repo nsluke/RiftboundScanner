@@ -29,6 +29,10 @@ nonisolated struct AppDependencies: Sendable {
     /// the learning sync (A8) installs a downloaded policy and the server's
     /// audit count.
     let confidenceRule: @Sendable () -> ConfidenceRule
+    /// The last start-run sheet's choice, remembered for the next run.
+    let runSetup: any RunSetupStoring
+    /// Cards added by hand, under `paths.sync/manual.json`.
+    let manualItems: ManualItemStore
     /// Built on the main actor by the root view (the feeder pattern): the
     /// engine is main-actor state and cannot be constructed inside `live()`.
     let makeSyncEngine: @MainActor @Sendable () -> SyncEngine
@@ -96,6 +100,7 @@ nonisolated struct AppDependencies: Sendable {
             now: now
         )
         let outbox = Outbox(fileURL: paths.sync.appending(path: "outbox.json"))
+        let manualItems = ManualItemStore(fileURL: paths.sync.appending(path: "manual.json"))
         // The sizes assets are shrunk to; a policy value here, not a literal
         // in the uploader (ADR-002, principle 4).
         let assetEncoding = AssetEncodingPolicy()
@@ -131,10 +136,13 @@ nonisolated struct AppDependencies: Sendable {
             deckCache: FileDeckCacheStore(url: paths.catalog.appending(path: "decks.json")),
             appVersion: appVersion,
             confidenceRule: { .default },
+            runSetup: DefaultsRunSetupStore(defaults: .standard),
+            manualItems: manualItems,
             makeSyncEngine: {
                 SyncEngine(
                     store: store,
                     outbox: outbox,
+                    manual: manualItems,
                     client: client,
                     endpoints: endpoints,
                     paths: pathSource,

@@ -27,6 +27,15 @@ struct FixMatchView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    if let explanation = model.explanation {
+                        Label(explanation, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.amber)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
+                            .accessibilityLabel("Server: \(explanation)")
+                    }
                     codeEntry
                     resolved
                     otherCandidates

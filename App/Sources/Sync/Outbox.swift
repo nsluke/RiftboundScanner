@@ -1,13 +1,46 @@
 import Foundation
 
-/// A ledger item waiting to be sent, with the scan and batch it came from so
-/// the answer can be routed back without parsing the reference.
+/// A ledger item waiting to be sent, with where it came from so the answer
+/// can be routed back without parsing the reference: a scan's decision, whose
+/// state lives in its batch's `sync.json`, or a manual add, whose state lives
+/// in `manual.json`.
 nonisolated struct OutboxEntry: Hashable, Sendable, Codable, Identifiable {
-    let batchID: ScanBatch.ID
-    let scanID: ScanRecord.ID
+    enum Origin: Hashable, Sendable, Codable {
+        case scan(batch: ScanBatch.ID, scan: ScanRecord.ID)
+        case manual
+    }
+
+    let origin: Origin
     let item: LedgerSyncItem
 
+    init(origin: Origin, item: LedgerSyncItem) {
+        self.origin = origin
+        self.item = item
+    }
+
+    init(batchID: ScanBatch.ID, scanID: ScanRecord.ID, item: LedgerSyncItem) {
+        self.init(origin: .scan(batch: batchID, scan: scanID), item: item)
+    }
+
+    init(manual item: LedgerSyncItem) {
+        self.init(origin: .manual, item: item)
+    }
+
     var id: String { item.clientRef }
+
+    /// The batch a scan's item belongs to; `nil` for a manual add.
+    var batchID: ScanBatch.ID? {
+        if case .scan(let batch, _) = origin { return batch }
+        return nil
+    }
+
+    /// The scan an item belongs to; `nil` for a manual add.
+    var scanID: ScanRecord.ID? {
+        if case .scan(_, let scan) = origin { return scan }
+        return nil
+    }
+
+    var isManual: Bool { origin == .manual }
 }
 
 /// The ledger items owed to the server, in the order they should go
@@ -80,6 +113,31 @@ actor Outbox {
     func removeAll(where shouldRemove: @Sendable (OutboxEntry) -> Bool) throws {
         try store(entries.filter { !shouldRemove($0) })
     }
+
+    /// Makes the manual entries exactly `items`, keeping the position of any
+    /// already queued and appending the rest, like `replace(itemsFor:)` for scans.
+    func replaceManual(with items: [LedgerSyncItem]) throws {
+        let wanted = Dictionary(items.map { ($0.clientRef, $0) }, uniquingKeysWith: { first, _ in first })
+        var kept: [OutboxEntry] = []
+        var seen: Set<String> = []
+        for entry in entries {
+            guard entry.isManual else {
+                kept.append(entry)
+                continue
+            }
+            if let item = wanted[entry.item.clientRef] {
+                kept.append(OutboxEntry(manual: item))
+                seen.insert(item.clientRef)
+            }
+        }
+        for item in items where !seen.contains(item.clientRef) {
+            kept.append(OutboxEntry(manual: item))
+        }
+        try store(kept)
+    }
+
+    /// How many manual adds are waiting.
+    var manualCount: Int { entries.count(where: \.isManual) }
 
     private func store(_ updated: [OutboxEntry]) throws {
         guard updated != entries else { return }

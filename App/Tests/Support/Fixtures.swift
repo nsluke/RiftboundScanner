@@ -60,7 +60,19 @@ nonisolated enum Fixtures {
         ScanAnalysis(result, at: epoch)
     }
 
-    static func result(cards: [Card], codeReading: CodeReading? = nil) -> RecognitionResult {
+    /// A query descriptor unlike `descriptor` (feature-print cosine 0), for a
+    /// second card that must not look like a duplicate of the first.
+    static let otherDescriptor = OrientedDescriptor(
+        descriptor: CardDescriptor(
+            wholeDifferenceHash: ImageHash(bits: 0x1234_5678_9ABC_DEF0),
+            wholePerceptualHash: ImageHash(bits: 0x0FED_CBA9_8765_4321),
+            artDifferenceHash: ImageHash(bits: 0x0000_FFFF_0000_FFFF),
+            featurePrint: FeaturePrint(elements: [0, 1, 0])
+        ),
+        orientation: .upright
+    )
+
+    static func result(cards: [Card], codeReading: CodeReading? = nil, descriptor: OrientedDescriptor = descriptor) -> RecognitionResult {
         let matches = cards.enumerated().map { offset, card in
             Match(
                 card: card,

@@ -35,8 +35,26 @@ nonisolated struct StubIdentifier: CardIdentifying {
         self.outcome = outcome.map { IdentifiedCard(result: $0, engine: Fixtures.engineStamp) }
     }
 
-    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
+    func identify(_ photo: CGImage, hints: RecognitionHints) async throws -> IdentifiedCard {
         try outcome.get()
+    }
+}
+
+/// Hands out canned results in turn (the last one repeats) and records the
+/// hints each call came with, so a test can see what the run told the recogniser.
+actor SequenceIdentifier: CardIdentifying {
+    private let results: [IdentifiedCard]
+    private(set) var hints: [RecognitionHints] = []
+    private var served = 0
+
+    init(results: [RecognitionResult]) {
+        self.results = results.map { IdentifiedCard(result: $0, engine: Fixtures.engineStamp) }
+    }
+
+    func identify(_ photo: CGImage, hints: RecognitionHints) async throws -> IdentifiedCard {
+        self.hints.append(hints)
+        defer { served += 1 }
+        return results[min(served, results.count - 1)]
     }
 }
 
@@ -128,7 +146,7 @@ actor GatedIdentifier: CardIdentifying {
 
     var waitingCount: Int { waiting.count }
 
-    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
+    func identify(_ photo: CGImage, hints: RecognitionHints) async throws -> IdentifiedCard {
         started += 1
         if releases > 0 {
             releases -= 1

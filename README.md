@@ -293,8 +293,8 @@ or `calibration`), an optional `product` and `defaultFinish`, and a
 decodes with a synthesised seq-1 `legacy` decision per judged scan, `legacy`
 capture quality and no analysis, and a v1 `batch.json` is a `calibration`
 batch with `legacy` training quality, so nothing recorded before the ledger
-existed is ever ledgered or learned from. Until the start-run sheet exists,
-batches started in the app are `calibration` too.
+existed is ever ledgered or learned from. The implicit first batch is
+`calibration` too; a `collection` batch starts only from the start-run sheet.
 
 **The confident tier** (ADR-002, decision 9) is `ScanConfidence` under a
 `ConfidenceRule` built from the installed `LearningPolicy.confidence` and the
@@ -320,6 +320,46 @@ the server's 95 % Wilson lower bound from `GET /api/learning/stats`
 `human_labels`, `sittings`, `exemplars`, …) as "Precision ≥ 98.1 % (95 %)",
 healthy while the bound is at least 97 % and no wrong audit is unresolved.
 
+**Starting and reviewing a run** (ADR-002 §6, decisions 3, 13, 14 and 16).
+The batch menu's "Start run…" sheet (`StartRunSheet`) asks for a label, the
+purpose (Collection or Calibration), the product (a sealed box with its set,
+loose cards, or something named) and the default finish, shows the engine
+line, and remembers everything but the label in `UserDefaults`
+(`DefaultsRunSetupStore`, key `scanner.lastRunSetup`) so the next box takes
+one tap. A sealed-box batch hands the recogniser
+`RecognitionHints(expectedSet:)` on every identify. The run-complete strip
+sorts this run's pending scans into five tiers (`ScanTier`, `App/Sources/Scans/ScanTier.swift`):
+*Confident* (literal exact code, score over the bar, printing settled),
+*Needs a look* (any `UncertaintyReason` but the variant), *Pick printing*
+(the code's variant disagreed, or, in a collection batch that is not a sealed
+box, a vault sibling the recogniser cannot see such as a promo is possible),
+*Possible duplicate* and *Unknown* (no candidate). "Accept N confident · M
+held for audit" accepts the confident tier alone; the review queue runs the
+other tiers in capture order, then the possible duplicates, then the audit
+rows. `DuplicateGuard` runs at identify time against the run's last five
+scans: a feature-print cosine of at least 0.985 to a scan with the same top
+`ArtGroup` sets `analysis.duplicateOf`, and the queue asks "Same card as the
+previous scan? Keep both / Drop"; Drop writes `rejected(duplicateCapture)`,
+which owes the ledger nothing. The queue pre-selects the inherited finish
+(`effectiveFinish`, else the batch default for a both-finish printing) and
+shows a Normal/Foil toggle only when `FinishPolicy` says `prompt` or
+`unknown`; `PrintingPickerView` offers `CardVault.siblings(of:)` as chips with
+the recognised printing (or the log's `effectivePrintingCode`) pre-selected,
+promo siblings behind "Other printings…" for a sealed box. A decision writes
+`Override.set` only for a value the user changed, so re-confirming a promo
+scan in a spot-check leaves the promo effective; choosing a chip the index
+also knows (an alternate art) is a correction to that card, choosing one it
+cannot see (`OGN-066-P`) keeps `confirmedCardID` on the recognised card and
+sets `ledgerPrintingCode`, which `LedgerDeltaBuilder` sends as the `card_key`.
+The fix sheet explains the server's `unknown_card` and `duplicate_mismatch`
+outcomes for a scan the overview flagged. Collection -> "Add card" queues a
+`manual:<uuid>` ledger item for any vault printing (`AddCardSheet`,
+`ManualItemStore`, see the sync section). `sh Scripts/check-review-accessibility.sh`
+checks that every one of these views names its controls for VoiceOver; the
+manual check is to turn VoiceOver on and swipe through the review screen of a
+possible duplicate: the badge, the duplicate row, each printing chip (with
+"selected"), each finish and Keep both / Drop are all announced.
+
 The project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 from `App/project.yml`; the card index is bundled from `cache/index.json`, so
 build it first. From the repository root:
@@ -337,11 +377,13 @@ xcrun devicectl device install app --device <device udid> \
 coding incl. the v1 and v2 fixtures, the file store, decisions through the
 store, the confident tier with the 024/014 veto fixture and crafted audit ids,
 the scanner model with stubbed camera and recogniser, the review queue's audit
-and spot-check rows, the server client against a stubbed `URLProtocol`,
-endpoint discovery with an injected clock, the ledger delta builder, the
-syncing store and the sync engine against a scripted server with a
-hand-advanced clock) run on a simulator;
-`sh Scripts/check-verdict-writers.sh` is the matching CI grep:
+and spot-check rows, the five scan tiers, the duplicate guard, the inherited
+finish and printing overrides, the start-run memory, the manual add, the
+server client against a stubbed `URLProtocol`, endpoint discovery with an
+injected clock, the ledger delta builder, the syncing store and the sync
+engine against a scripted server with a hand-advanced clock) run on a
+simulator; `sh Scripts/check-verdict-writers.sh` and
+`sh Scripts/check-review-accessibility.sh` are the matching CI greps:
 
 ```bash
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerApp \
@@ -387,6 +429,14 @@ and 4). Durable truth on the phone is `Documents/Scans/<batch>/scans.json`
 (what the server has acknowledged); `Sync/outbox.json` is a cache rebuilt
 from the two and can be deleted at any time.
 
+- `ManualItemStore` keeps cards added by hand in `Sync/manual.json`, one
+  `ManualItem` per add (`manual:<uuid>`, `card_key`, `finish`, `quantity`,
+  `condition`, `LedgerItemState`); reconcile puts every unacknowledged one
+  into the outbox after the scans' items, and the server's answer is written
+  back to `manual.json`, with `unknown_card` re-queued when the catalog
+  version changes. Each `OutboxEntry` carries its origin (a scan's batch and
+  id, or `manual`); an outbox written before this format decodes as empty and
+  is rebuilt.
 - `SyncingScanStore` is the live `ScanStoring`: it wraps `FileScanStore`,
   writes `scans.json` first and `sync.json` second, and fixes a batch's
   `purpose` once any scan in it has a decision (`ScanStoreError.purposeImmutable`).

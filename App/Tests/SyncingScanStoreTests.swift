@@ -225,10 +225,13 @@ struct SyncingScanStoreTests {
             feeder: feeder,
             identifier: StubIdentifier(outcome: .success(Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx], codeReading: Fixtures.viCodeReading))),
             store: store,
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
             makeBatch: { _ in batch },
             now: { Fixtures.epoch },
             // Never audit samples: every confident scan is accepted (ADR-002, decision 9).
             makeID: Fixtures.unsampledIDs,
+            duplicateGuard: .off,
             settleDelay: .zero
         )
         await model.start()

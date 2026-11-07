@@ -3,15 +3,22 @@ import RiftboundRecognizer
 
 /// Walks a batch's scans that need a person one at a time, writing each
 /// verdict as it is given with the source its row calls for: `human` for an
-/// uncertain scan, `audit` for a confident one the policy sampled, `spotCheck`
-/// for an accepted one re-checked on request. Loads the batch itself so it
-/// can be pushed from anywhere.
+/// uncertain scan, a printing to pick, a possible duplicate or an unknown
+/// card, `audit` for a confident one the policy sampled, `spotCheck` for an
+/// accepted one re-checked on request. Loads the batch itself so it can be
+/// pushed from anywhere.
+///
+/// Finish and printing are record-level state folded from the decision log
+/// (ADR-002, decision 3): the screen pre-selects what the log already says
+/// (or what `FinishPolicy` and the recognised printing imply) and a decision
+/// writes `.set` only when the user changed it, so an audit that agrees
+/// never flips an earlier choice.
 @Observable
 final class ReviewQueueModel {
     /// What the queue holds.
     enum Mode: Hashable {
-        /// The batch's pending scans: the uncertain ones in capture order,
-        /// then the ones held for audit.
+        /// The batch's pending scans: the ones that need a person in capture
+        /// order, then the possible duplicates, then the ones held for audit.
         case pending
         /// Up to `limit` of `candidates`, which must be accepted scans of this
         /// batch; the sampler picks which.
@@ -45,18 +52,34 @@ final class ReviewQueueModel {
 
     let batch: ScanBatch
     let directory: CardDirectory
+    let vault: CardVault
     let mode: Mode
     /// The confident tier the queue was opened under; fixed for its lifetime
     /// so a policy change cannot reshuffle rows mid-review.
     let rule: ConfidenceRule
     private(set) var queue: Loadable<[ScanRecord], ScanProblem> = .idle
     /// Index into the loaded queue of the scan on screen.
-    private(set) var position = 0
+    private(set) var position = 0 {
+        didSet { resetSelection() }
+    }
     private(set) var tally = Tally()
     private(set) var storageProblem: ScanProblem?
     /// The set most of the batch's scans belong to, for prefilling corrections.
     private(set) var dominantSet: SetCode?
+    /// The printing the ledger gets for the scan on screen; starts as the
+    /// inherited one and changes only when the user taps a chip.
+    var selectedPrinting: PrintingKey? {
+        didSet {
+            guard selectedPrinting != oldValue else { return }
+            selectedFinish = inheritedFinish
+        }
+    }
+    /// The finish the ledger gets for the scan on screen when the printing
+    /// comes in both; starts as the inherited one.
+    var selectedFinish: Finish?
 
+    /// Every record of the batch as loaded, for looking up what a duplicate repeats.
+    private var records: [ScanRecord] = []
     private let store: any ScanStoring
     private let sample: Sampler
 
@@ -64,6 +87,7 @@ final class ReviewQueueModel {
         batch: ScanBatch,
         store: any ScanStoring,
         directory: CardDirectory,
+        vault: CardVault,
         rule: ConfidenceRule = .default,
         mode: Mode = .pending,
         sample: @escaping Sampler = { Array($0.shuffled().prefix($1)) }
@@ -71,6 +95,7 @@ final class ReviewQueueModel {
         self.batch = batch
         self.store = store
         self.directory = directory
+        self.vault = vault
         self.rule = rule
         self.mode = mode
         self.sample = sample
@@ -94,6 +119,12 @@ final class ReviewQueueModel {
         return .reviewing(position: position + 1, of: records.count)
     }
 
+    /// The scan the one on screen appears to repeat, when it is a possible duplicate.
+    var duplicateOf: ScanRecord? {
+        guard let id = current?.analysis?.duplicateOf else { return nil }
+        return records.first { $0.id == id }
+    }
+
     func photoURL(for record: ScanRecord) -> URL {
         store.photoURL(for: record)
     }
@@ -101,22 +132,36 @@ final class ReviewQueueModel {
     func load() async {
         queue = .loading
         do {
-            let records = try await store.records(in: batch.id).sorted { $0.capturedAt < $1.capturedAt }
-            queue = .loaded(rows(in: records))
-            position = 0
+            let loaded = try await store.records(in: batch.id).sorted { $0.capturedAt < $1.capturedAt }
+            records = loaded
+            queue = .loaded(rows(in: loaded))
             tally = Tally()
-            dominantSet = Self.dominantSet(in: records)
+            dominantSet = Self.dominantSet(in: loaded)
+            position = 0
+            resetSelection()
         } catch {
             queue = .failed(.storage(String(describing: error)))
         }
     }
 
-    /// Uncertain scans first, then the audit sample (ADR-002 §6), or the
-    /// spot-check sample of accepted scans.
+    /// The scans that need a person in capture order, then the possible
+    /// duplicates, then the audit sample (ADR-002 §6), or the spot-check
+    /// sample of accepted scans.
     private func rows(in records: [ScanRecord]) -> [ScanRecord] {
         switch mode {
         case .pending:
-            return records.filter { $0.needsReview(under: rule) } + records.filter { $0.isHeldForAudit(under: rule) }
+            var needPerson: [ScanRecord] = []
+            var duplicates: [ScanRecord] = []
+            var audits: [ScanRecord] = []
+            for record in records {
+                switch record.tier(under: rule, in: batch, vault: vault, directory: directory) {
+                case .needsALook, .pickPrinting, .unknown: needPerson.append(record)
+                case .possibleDuplicate: duplicates.append(record)
+                case .confident: if record.isAuditSample(rate: rule.auditRate) { audits.append(record) }
+                case nil: break
+                }
+            }
+            return needPerson + duplicates + audits
         case .spotCheck(let candidates, let limit):
             let wanted = Set(candidates)
             let accepted = records.filter { wanted.contains($0.id) && $0.lastDecision?.source == .autoAccepted }
@@ -128,27 +173,100 @@ final class ReviewQueueModel {
     func kind(of record: ScanRecord) -> ReviewKind {
         switch mode {
         case .spotCheck: .spotCheck
-        case .pending: record.reviewKind(under: rule) ?? .audit
+        case .pending: record.reviewKind(under: rule, in: batch, vault: vault, directory: directory) ?? .audit
         }
+    }
+
+    // MARK: - Finish and printing
+
+    /// The chips for the scan on screen; `nil` without a top candidate.
+    var printingOptions: PrintingOptions? {
+        current?.printingOptions(in: batch, vault: vault, directory: directory)
+    }
+
+    /// The printing the log already settled on, else the recognised one.
+    var inheritedPrinting: PrintingKey? {
+        guard let current else { return nil }
+        return current.effectivePrintingCode ?? current.topCandidate.map { PrintingKey($0.card.code) }
+    }
+
+    /// How the selected printing gets its finish.
+    var finishResolution: FinishPolicy.Resolution {
+        FinishPolicy.resolve(card: (selectedPrinting ?? inheritedPrinting).flatMap { vault[$0] }, batchDefault: batch.defaultFinish ?? .normal)
+    }
+
+    /// The finish the ledger would derive with no new override: what the log
+    /// already set, else the policy's pre-selection for the selected printing.
+    var inheritedFinish: Finish? {
+        current?.effectiveFinish ?? finishResolution.preselectedFinish
+    }
+
+    /// Whether the Normal/Foil control shows: only when the printing comes in
+    /// both (or the vault cannot say).
+    var asksForFinish: Bool { finishResolution.asksUser }
+
+    /// `.set` only when the user changed the finish of a printing that asks.
+    var finishOverride: Override<Finish> {
+        guard asksForFinish, let selectedFinish, selectedFinish != inheritedFinish else { return .inherit }
+        return .set(selectedFinish)
+    }
+
+    /// `.set` only when the user picked a printing other than the inherited one.
+    var printingOverride: Override<PrintingKey> {
+        guard let selectedPrinting, selectedPrinting != inheritedPrinting else { return .inherit }
+        return .set(selectedPrinting)
+    }
+
+    private func resetSelection() {
+        selectedPrinting = inheritedPrinting
+        selectedFinish = inheritedFinish
     }
 
     // MARK: - Verdicts
 
+    /// Confirms the scan as the printing and finish on screen. A chip naming
+    /// a printing the index also knows (an alternate art the code could not
+    /// settle) is a correction to that card; a chip the recogniser cannot see
+    /// (a promo) keeps `confirmedCardID` on the recognised card and sets the
+    /// ledger printing (ADR-002, decision 13).
     func confirm() async {
-        await decide(.correct) { $0.confirmed += 1 }
+        guard let current else { return }
+        let recognized = current.topCandidate.map { PrintingKey($0.card.code) }
+        if let selectedPrinting, selectedPrinting != recognized,
+           let sibling = directory.card(forKey: selectedPrinting), sibling.id != current.topCandidate?.card.id {
+            let printing: Override<PrintingKey> = current.effectivePrintingCode == nil ? .inherit : .set(selectedPrinting)
+            await decide(.corrected(sibling.id), finish: finishOverride, printing: printing) { $0.corrected += 1 }
+        } else {
+            await decide(.correct, finish: finishOverride, printing: printingOverride) { $0.confirmed += 1 }
+        }
     }
 
+    /// A different card altogether. The finish and printing chips were for
+    /// the recognised card, so they are not carried over; an earlier
+    /// printing override is replaced by the new card's own key so the fold
+    /// cannot keep ledgering the old printing.
     func correct(to card: Card.ID) async {
         guard let current else { return }
         if card == current.topCandidate?.card.id {
             await confirm()
-        } else {
-            await decide(.corrected(card)) { $0.corrected += 1 }
+            return
         }
+        let printing: Override<PrintingKey> = current.effectivePrintingCode == nil ? .inherit : (PrintingKey(cardID: card).map { .set($0) } ?? .inherit)
+        await decide(.corrected(card), finish: .inherit, printing: printing) { $0.corrected += 1 }
     }
 
     func reject(_ reason: RejectionReason) async {
-        await decide(.rejected(reason)) { $0.rejected += 1 }
+        await decide(.rejected(reason), finish: .inherit, printing: .inherit) { $0.rejected += 1 }
+    }
+
+    /// "Keep both": the possible duplicate is a second copy after all.
+    func keepBoth() async {
+        await confirm()
+    }
+
+    /// "Drop": the feeder fed this card twice; the earlier scan stands.
+    func drop() async {
+        await reject(.duplicateCapture)
     }
 
     /// Leaves the scan as it is and moves on; a pending one stays in the
@@ -165,14 +283,15 @@ final class ReviewQueueModel {
 
     /// Every verdict is appended by the store, with the source the row calls
     /// for: `human`, `audit` or `spotCheck` (ADR-002, decision 6).
-    private func decide(_ verdict: Verdict, counting: (inout Tally) -> Void) async {
+    private func decide(_ verdict: Verdict, finish: Override<Finish>, printing: Override<PrintingKey>, counting: (inout Tally) -> Void) async {
         guard let record = current else { return }
         do {
-            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: kind(of: record).source))
-            if var records = queue.value, records.indices.contains(position) {
-                records[position] = decided
-                queue = .loaded(records)
+            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: kind(of: record).source, finish: finish, ledgerPrintingCode: printing))
+            if var rows = queue.value, rows.indices.contains(position) {
+                rows[position] = decided
+                queue = .loaded(rows)
             }
+            records = records.map { $0.id == decided.id ? decided : $0 }
             counting(&tally)
             position += 1
         } catch {

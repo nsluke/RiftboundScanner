@@ -6,6 +6,8 @@ import SwiftUI
 struct ReviewQueueView: View {
     @State private var model: ReviewQueueModel
     @Environment(\.dismiss) private var dismiss
+    /// For the fix sheet's explanation of what the server said about a scan.
+    @Environment(SyncEngine.self) private var sync: SyncEngine?
     @State private var isFixing = false
     @State private var dragOffset: CGFloat = 0
     @State private var decidedCount = 0
@@ -64,7 +66,7 @@ struct ReviewQueueView: View {
         .sheet(isPresented: $isFixing) {
             if let record = model.current {
                 FixMatchView(
-                    model: FixMatchModel(record: record, directory: model.directory, preferredSet: model.dominantSet),
+                    model: FixMatchModel(record: record, directory: model.directory, preferredSet: model.dominantSet, serverStatus: serverStatus(for: record)),
                     photoURL: model.photoURL(for: record),
                     onChoose: { card in
                         isFixing = false
@@ -98,14 +100,94 @@ struct ReviewQueueView: View {
                     .offset(x: dragOffset)
                     .gesture(swipe)
                 details(record)
-                verdictButtons
-                Text("Swipe right to confirm, left to fix.")
+                if let duplicate = model.duplicateOf, model.currentKind == .possibleDuplicate {
+                    duplicateRow(duplicate)
+                }
+                if let options = model.printingOptions, options.hasAlternatives, record.topCandidate != nil {
+                    PrintingPickerView(options: options, selection: $model.selectedPrinting)
+                }
+                if model.asksForFinish, record.topCandidate != nil {
+                    FinishToggle(selection: $model.selectedFinish, inherited: model.inheritedFinish)
+                }
+                if model.currentKind == .possibleDuplicate {
+                    duplicateButtons
+                } else {
+                    verdictButtons
+                }
+                Text(model.currentKind == .possibleDuplicate ? "Swipe right to keep both, left to fix." : "Swipe right to confirm, left to fix.")
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
             }
             .padding()
         }
         .animation(.snappy, value: dragOffset)
+    }
+
+    /// The earlier scan this one seems to repeat, so the two can be compared.
+    private func duplicateRow(_ duplicate: ScanRecord) -> some View {
+        HStack(spacing: 12) {
+            ThumbnailImage(url: model.photoURL(for: duplicate), maxPixelSize: 300)
+                .frame(width: 44, height: 61)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Same card as the previous scan?")
+                    .font(.subheadline.weight(.semibold))
+                Text("Fed at \(duplicate.capturedAt.formatted(date: .omitted, time: .standard)) · \(duplicate.topCandidate?.card.displayName ?? String(localized: "no match"))")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Keep both (a second copy) or Drop (the feeder fed it twice).
+    private var duplicateButtons: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    Task { await model.keepBoth() }
+                } label: {
+                    Label("Keep both", systemImage: "plus.square.on.square")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.blue)
+                .foregroundStyle(Theme.ground)
+                .disabled(model.current?.topCandidate == nil)
+                .accessibilityHint("Confirms this scan as a second copy of the card")
+
+                Button {
+                    Task { await model.drop() }
+                } label: {
+                    Label("Drop", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.amber)
+                .accessibilityHint("Rejects this scan as a duplicate capture; the earlier scan stands")
+            }
+            .controlSize(.large)
+
+            HStack {
+                Button("Wrong card") { isFixing = true }
+                Spacer()
+                Button("Skip for now") { model.skip() }
+            }
+            .font(.subheadline)
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, 4)
+        }
+    }
+
+    /// What the server last said about this scan's ledger item, for the fix sheet.
+    private func serverStatus(for record: ScanRecord) -> TerminalStatus? {
+        guard let attention = sync?.summary(for: model.batch.id)?.attention.first(where: { $0.scanID == record.id }) else { return nil }
+        if case .ledgerItem(let status, _) = attention.kind { return status }
+        return nil
     }
 
     private func progressSegments(position: Int, total: Int) -> some View {
@@ -183,7 +265,23 @@ struct ReviewQueueView: View {
                 .background(Theme.blue.opacity(0.18), in: Capsule())
                 .foregroundStyle(Theme.blue)
                 .accessibilityLabel("Spot-check of an accepted scan")
+        case .pickPrinting:
+            tierBadge(.pickPrinting, systemImage: "rectangle.on.rectangle", accessibility: "Pick printing: the card is known, the printing is not settled")
+        case .possibleDuplicate:
+            tierBadge(.possibleDuplicate, systemImage: "doc.on.doc", accessibility: "Possible duplicate: looks like the card fed just before it")
+        case .unknown:
+            tierBadge(.unknown, systemImage: "questionmark.square.dashed", accessibility: "Unknown: nothing in the index resembled this photo")
         }
+    }
+
+    private func tierBadge(_ tier: ScanTier, systemImage: String, accessibility: String) -> some View {
+        Label(tier.label, systemImage: systemImage)
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(RunCompleteStrip.color(for: tier).opacity(0.18), in: Capsule())
+            .foregroundStyle(RunCompleteStrip.color(for: tier))
+            .accessibilityLabel(accessibility)
     }
 
     private func details(_ record: ScanRecord) -> some View {
@@ -208,6 +306,20 @@ struct ReviewQueueView: View {
                 Label("Accepted without a look on \(record.verdictAt?.formatted(date: .omitted, time: .shortened) ?? "this run"). Is it the right card?", systemImage: "eye")
                     .font(.footnote)
                     .foregroundStyle(Theme.blue)
+            case .pickPrinting:
+                Label(record.confidence(under: model.rule).reason == .variantOnly
+                      ? "The code matches except for the variant. Pick the printing in the corner."
+                      : "This art comes in printings the recogniser cannot tell apart. Pick the one in your hand.", systemImage: "rectangle.on.rectangle")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.amber)
+            case .possibleDuplicate:
+                Label("This photo looks like the card fed just before it. Keep both if it is a second copy; drop it if the feeder fed the same card twice.", systemImage: "doc.on.doc")
+                    .font(.footnote)
+                    .foregroundStyle(RunCompleteStrip.color(for: .possibleDuplicate))
+            case .unknown:
+                Label("Nothing in the index resembled this photo. Name the card, or reject it.", systemImage: "questionmark.square.dashed")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.amber)
             case nil:
                 EmptyView()
             }
@@ -261,7 +373,7 @@ struct ReviewQueueView: View {
                 dragOffset = 0
                 if value.translation.width > 80 {
                     if model.current?.topCandidate != nil {
-                        Task { await model.confirm() }
+                        Task { await model.confirm() }  // keep both, for a duplicate
                     }
                 } else if value.translation.width < -80 {
                     isFixing = true

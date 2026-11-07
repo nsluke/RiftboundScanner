@@ -16,10 +16,14 @@ struct AutoScanTests {
             feeder: feeder,
             identifier: identifier,
             store: store,
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
             makeBatch: Fixtures.makeBatch,
             now: { Fixtures.epoch },
             makeID: makeID,
             confidenceRule: confidenceRule,
+            // One canned result for every card: these runs are not about duplicates.
+            duplicateGuard: .off,
             settleDelay: .zero
         )
     }

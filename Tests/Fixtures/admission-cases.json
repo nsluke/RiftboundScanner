@@ -615,6 +615,207 @@
    }
   },
   {
+   "name": "code-alternative-margin-0.70-vs-0.65-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.7
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.65
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-alternative-margin-0.85-vs-0.80-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.85,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.85
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-alternative-margin-0.70-vs-0.6501-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.7
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.6501
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "alternativeMargin"
+   }
+  },
+  {
+   "name": "edge-alternative-margin-0.70-vs-0.65005-rounds-0.65-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.7
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.65005
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-alternative-margin-0.70-vs-0.65015-rounds-0.6502-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.7
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.65015
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "alternativeMargin"
+   }
+  },
+  {
    "name": "code-alternative-in-same-art-group-ignored",
    "candidate": {
     "scanID": "5CA00000-0000-4000-8000-000000000001",

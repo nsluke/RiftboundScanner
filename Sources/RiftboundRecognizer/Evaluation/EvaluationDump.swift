@@ -121,6 +121,24 @@ public struct EvaluationDump: Sendable, Codable {
         self.cases = cases
     }
 
+    /// This dump with only the cases whose files are in `files`.
+    public func restricted(to files: Set<String>) -> EvaluationDump {
+        EvaluationDump(
+            generatedAt: generatedAt, label: label, engine: engine, indexEntryCount: indexEntryCount, overlayVersion: overlayVersion,
+            overlayExemplars: overlayExemplars, excludedBatches: excludedBatches, policyVersion: policyVersion,
+            cases: cases.filter { files.contains($0.evaluationCase.file) }
+        )
+    }
+
+    /// Both dumps cut to the files they have in common, so a before/after
+    /// comparison tallies one population (a fold's dump covers one held-out
+    /// batch, a baseline everything; either may also have been run with a
+    /// `--limit` or `--group` the other was not).
+    public static func shared(_ lhs: EvaluationDump, _ rhs: EvaluationDump) -> (EvaluationDump, EvaluationDump) {
+        let files = Set(lhs.cases.map(\.evaluationCase.file)).intersection(rhs.cases.map(\.evaluationCase.file))
+        return (lhs.restricted(to: files), rhs.restricted(to: files))
+    }
+
     /// The raw and weighted tallies over every case.
     public func tally() -> EvaluationTally {
         var tally = EvaluationTally()
@@ -172,26 +190,48 @@ public struct AdmissionDump: Sendable, Codable {
     }
 
     /// Measurement-only relaxations of the gate's inputs. The legacy batches
-    /// carry `legacy` decisions in `legacy`-training batches, which the gate
-    /// refuses by rules 1 and 4; to measure what it would yield on their
-    /// standard captures, `build-overlay` can present legacy judgements as
-    /// human and override the batch training quality. An overlay built under
-    /// either assumption is a smoke-test artefact, never one to ship.
+    /// carry `legacy` decisions, an unstated (hence `legacy`) capture quality
+    /// and a `legacy` training override, which the gate refuses by rules 1
+    /// and 4; to measure what it would yield on their guide-cropped photos,
+    /// `build-overlay` can present legacy judgements as human, derive the
+    /// capture quality from the crop record and photo size (the app's rule,
+    /// applied after the fact) and override the batch training quality. An
+    /// overlay built under any assumption is a smoke-test artefact, never one
+    /// to ship, and the dump records which were in force.
     public struct Assumptions: Hashable, Sendable, Codable {
         public var acceptLegacyDecisions = false
         public var trainingQuality: AdmissionInput.CaptureQuality?
+        /// Use ``AnalysedScan/derivedCaptureQuality`` in place of the quality
+        /// the record states (or fails to state).
+        public var deriveCaptureQuality = false
 
-        public init(acceptLegacyDecisions: Bool = false, trainingQuality: AdmissionInput.CaptureQuality? = nil) {
+        public init(acceptLegacyDecisions: Bool = false, trainingQuality: AdmissionInput.CaptureQuality? = nil, deriveCaptureQuality: Bool = false) {
             self.acceptLegacyDecisions = acceptLegacyDecisions
             self.trainingQuality = trainingQuality
+            self.deriveCaptureQuality = deriveCaptureQuality
         }
 
         public static let none = Assumptions()
 
         public var isStrict: Bool { self == .none }
 
-        /// `input` as the gate will see it under these assumptions.
-        public func apply(to input: AdmissionInput) -> AdmissionInput {
+        private enum CodingKeys: String, CodingKey {
+            case acceptLegacyDecisions, trainingQuality, deriveCaptureQuality
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(
+                acceptLegacyDecisions: try container.decodeIfPresent(Bool.self, forKey: .acceptLegacyDecisions) ?? false,
+                trainingQuality: try container.decodeIfPresent(AdmissionInput.CaptureQuality.self, forKey: .trainingQuality),
+                deriveCaptureQuality: try container.decodeIfPresent(Bool.self, forKey: .deriveCaptureQuality) ?? false
+            )
+        }
+
+        /// The gate input of an analysed scan as the gate will see it under
+        /// these assumptions.
+        public func apply(to analysed: AnalysedScan) -> AdmissionInput {
+            let input = analysed.input
             guard !isStrict else { return input }
             return AdmissionInput(
                 scanID: input.scanID,
@@ -201,7 +241,7 @@ public struct AdmissionDump: Sendable, Codable {
                 cardID: input.cardID,
                 placement: input.placement,
                 calibrationHash: input.calibrationHash,
-                captureQuality: input.captureQuality,
+                captureQuality: deriveCaptureQuality ? analysed.derivedCaptureQuality ?? input.captureQuality : input.captureQuality,
                 trainingQuality: trainingQuality ?? input.trainingQuality,
                 code: input.code,
                 referenceSimilarity: input.referenceSimilarity,
@@ -213,6 +253,7 @@ public struct AdmissionDump: Sendable, Codable {
         public var description: String {
             var parts: [String] = []
             if acceptLegacyDecisions { parts.append("legacy decisions treated as human") }
+            if deriveCaptureQuality { parts.append("capture quality derived from crop and photo size") }
             if let trainingQuality { parts.append("training quality assumed \(trainingQuality.rawValue)") }
             return parts.isEmpty ? "strict (no assumptions)" : parts.joined(separator: ", ")
         }
@@ -240,7 +281,7 @@ public struct AdmissionDump: Sendable, Codable {
     /// The gate inputs of a fold in run order (every analysed scan outside the
     /// fold's held-out batches, under the dump's assumptions).
     public func inputs(for fold: Fold) -> [AdmissionInput] {
-        analyses.filter { !fold.excludedBatches.contains($0.input.batchID) }.map { assumptions.apply(to: $0.input) }
+        analyses.filter { !fold.excludedBatches.contains($0.input.batchID) }.map { assumptions.apply(to: $0) }
     }
 
     public static func read(from url: URL) throws -> AdmissionDump {

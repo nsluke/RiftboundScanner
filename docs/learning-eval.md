@@ -28,7 +28,7 @@ the Mac, the phone and the Pi.
 | `captureQuality`, `trainingQuality` (`standard`, `legacy`) | the record and its batch | rule 4 |
 | `code` (`source` edgeBand/fullImage, `origin` literal/alternative, `agreement` with the confirmed card), or absent | the analysis | rule 5 |
 | `referenceSimilarity` | fp cosine of the oriented descriptor to the confirmed card's reference, computed where the reference prints live (phone or Mac) | rules 5 and 8 |
-| `codeAlternatives[{code, origin, referenceSimilarity?}]` | the literal reading and every parser repair, each with the similarity of the card it names | rule 5 |
+| `codeAlternatives[{code, origin, referenceSimilarity?}]` | every code the reading could name (`CodeReading.alternatives`: the literal reading when the index knows it, then the parser's ranked digit repairs), each with the best reference similarity among the printings it names exactly | rule 5 |
 | `featurePrint` | the oriented descriptor | rules 5-8 |
 
 `ExistingExemplar` is `{scanID, artGroup, featurePrint, referenceSimilarity}`:
@@ -109,8 +109,16 @@ Both gates must compute the same number from the same bytes.
    binary value and can differ at decimal halves; the port must use the
    multiply form.)
 4. Similarities that arrive as inputs (`referenceSimilarity`, the
-   alternatives' similarities) are rounded the same way before comparison, as
-   are the means and differences the cap and margin rules compute.
+   alternatives' similarities) are rounded the same way before comparison,
+   and so is **every arithmetic result the gate compares**: the margin rule
+   rounds `reference - alternative` before testing it against 0.05, and the
+   cap rule rounds its mean similarities. This is not pedantry: in binary
+   doubles `0.70 - 0.65`, `0.85 - 0.80` and `0.95 - 0.90` are all
+   `0.04999...` while `0.80 - 0.75` is `0.05000...04`, so an unrounded
+   comparison admits or rejects an exact 0.05 margin by operand luck. The
+   fixture pins the rounded form (`code-alternative-margin-0.70-vs-0.65-admits`,
+   `...-0.85-vs-0.80-admits`, `...-0.70-vs-0.6501-rejected`); a port that
+   subtracts raw doubles fails it.
 
 A consequence worth knowing: a value within 0.00005 of a threshold lands on
 it. The fixture's similarity vectors pin this at every threshold, e.g.
@@ -131,10 +139,11 @@ Float32(0.84995) rounds to 0.8500 (admitted), Float32(0.61995) to 0.6199
 }
 ```
 
-58 cases cover every rule, every rejection reason, both tiers, the impostor
+63 cases cover every rule, every rejection reason, both tiers, the impostor
 and duplicate outcomes, the cap (a full group keeps its medoid; a low-variety
-candidate is turned away; five members admit a sixth) and ten threshold-edge
-cases; 15 vectors pin the contract at each threshold ± 0.00005. Feature
+candidate is turned away; five members admit a sixth), twelve threshold-edge
+cases and the rounded margin difference (section 2, point 4); 15 vectors pin
+the contract at each threshold ± 0.00005. Feature
 prints are 4-element Float32 vectors as base64 little-endian bytes, exactly
 as every other print in the package travels. `ExemplarAdmissionTests` runs
 every case through the Swift gate; S7's `tests/test_admission.py` runs the
@@ -156,7 +165,8 @@ as they stood) and reports every disagreement.
 ```bash
 swift run -c release riftscan import-scans scans --output evaluation/manifest.json
 swift run -c release riftscan build-overlay evaluation/manifest.json --leave-one-out \
-  --output evaluation/overlay.json --dump evaluation/admissions.json [--accept-legacy --training-quality standard]
+  --output evaluation/overlay.json --dump evaluation/admissions.json \
+  [--accept-legacy --derive-capture-quality --training-quality standard]
 swift run -c release riftscan evaluate evaluation/manifest.json --dump evaluation/baseline.json --label baseline
 swift run -c release riftscan evaluate evaluation/manifest.json --batch <held-out batch uuid> \
   --overlay evaluation/overlay-holdout-<prefix>.json --dump evaluation/fold-<prefix>.json --label fold-<prefix>
@@ -170,19 +180,33 @@ swift run -c release riftscan admission-report evaluation/admissions.json
   rejected, voided and `autoAccepted` scans are skipped and counted.
   `samplingWeight` is `1 / auditRate` (the policy's `confidence.auditRate`,
   0.3) for `audit` cases and 1 otherwise. Photos are loaded at 4096 px and
-  their size recorded; a record without a stated `captureQuality` gets
-  `standard` iff it has a `crop` and the photo is a portrait 63:88 image
-  1800-2200 px tall (the app's rule). The manifest records the platform.
+  their size recorded. Each case carries `captureQuality` **as the app
+  decodes the record** (what it states; `legacy` when it states nothing,
+  which is every v1 record, exactly as `ScanRecord` and
+  `Scripts/summarize-scans.py` read it) and, beside it,
+  `derivedCaptureQuality`: what the app's rule would have written had it
+  existed (`standard` iff the record has a `crop` and the photo is a
+  portrait 63:88 image 1800-2200 px tall). The second is a measurement aid
+  for `build-overlay --derive-capture-quality`, never what the gate sees on
+  the phone. The manifest records the platform.
 - **build-overlay** recognises every photo once with the bare index and
   builds each scan's `AdmissionInput` from the result (placement from the
-  Mac's detection, code source and agreement from the Mac's reading,
-  reference similarity and the literal alternative's similarity against the
-  index under the contract, the oriented feature print), then runs the gate
-  per fold and writes one `ExemplarIndex` (version 1, the Mac's calibration
-  print) per fold. It prints the exemplar count per fold and exits 1 when any
-  fold yields zero exemplars. `--dump` writes an `AdmissionDump`: every
-  analysed scan (input plus the best similarity to another art group's
-  reference) and each fold's records.
+  Mac's detection; code source, **origin** (`CodeReading.origin`, literal or
+  parser alternative) and agreement from the Mac's reading; one
+  `CodeAlternative` per code the reading could name (`CodeReading.alternatives`)
+  with the best reference similarity of the printings it names; the
+  confirmed card's reference similarity under the contract; the oriented
+  feature print), then runs the gate per fold and writes one `ExemplarIndex`
+  (version 1, the Mac's calibration print) per fold. It prints the exemplar
+  count per fold and exits 1 when any fold yields zero exemplars. `--dump`
+  writes an `AdmissionDump`: every analysed scan (input, the best similarity
+  to another art group's reference, the derivable capture quality) and each
+  fold's records. Three measurement-only assumptions exist for the pre-ledger
+  batches, each recorded in the dump and printed by `admission-report`:
+  `--accept-legacy` (legacy decisions treated as human), `--derive-capture-quality`
+  (the derivable capture quality in place of the recorded one) and
+  `--training-quality standard` (the batch override assumed standard). An
+  overlay built under any of them is a smoke-test artefact.
 - **evaluate** reports raw and weighted top-1/top-3, the confident tier's
   precision and coverage (decision 9's rule: literal exact code, score
   `>= 1.0`, no exemplar of another art group `>= 0.88` beating the top's own
@@ -196,23 +220,28 @@ swift run -c release riftscan admission-report evaluation/admissions.json
   scans of different art groups: p50/p95/p99/max and how many pairs reach the
   0.90 impostor rule), the reference floor's ROC and the outcomes by reason.
 
-On the Mac every code is treated as read literally: the parser's
-literal/alternative split (P2) is not yet in this build, so `codeNotLiteral`
-cannot fire here until it lands. The phone path records the origin.
+The Mac path and the phone path see the same code evidence: the reading's
+own `origin` decides `codeNotLiteral` (and the confident tier's `codeRepaired`),
+and the parser's digit alternatives feed the margin rule with the reference
+similarity of whatever printing each one names.
 
 ## 5. Results on the three pre-ledger batches (2026-11-07, macOS 26.6, M-series)
 
 Calibration print hash `c9008e0eafa62e6827a43aea9bd2f524` (the same as the
 index's; the Mac-to-phone cosine is still unmeasured, ADR open risk 1).
 113 cases: Testing/1CAED0F4 85, 6B23DFD9 14, New batch/BF7582A9 14, all
-`legacy` decisions in `calibration` batches with `legacy` training quality;
-28 standard captures (14 + 0 + 14). Weighted total 113.0 (no audit cases exist yet).
+`legacy` decisions in `calibration` batches with `legacy` training quality.
+No record states a `captureQuality`, so all 113 are `legacy` captures as the
+app, `summarize-scans.py` and `import-scans` read them; 28 of them (14 + 0 +
+14) have a crop record and a 1454 x 2030 photo, which is what
+`--derive-capture-quality` turns into `standard`. Weighted total 113.0 (no
+audit cases exist yet).
 
 ### Strict gate: zero exemplars, every fold fails
 
 Every one of the 113 decisions is `legacy` (a v1 verdict), so rule 1 refuses
-all of them before anything else is looked at, and rule 4 would refuse the
-85 `legacy` captures and the `legacy` training override regardless:
+all of them before anything else is looked at, and rule 4 would refuse every
+capture (none states a quality) and the `legacy` training override regardless:
 
 | Fold (held-out batch) | Scans gated | Exemplars | Outcomes |
 |---|---|---|---|
@@ -227,13 +256,20 @@ until an on-device re-identify (A11) rewrites the analysis; open risk: "the
 three legacy batches may seed very few exemplars") and the fold guard doing
 its job: there is nothing to evaluate an overlay against.
 
-### Relaxed gate (`--accept-legacy --training-quality standard`): what the gate would yield
+### Relaxed gate (`--accept-legacy --derive-capture-quality --training-quality standard`): what the gate would yield
 
 To measure what the gate would make of these photos if the same judgements
-had been made in the app today, `build-overlay` was run with the two
-measurement-only assumptions (legacy decisions treated as human, batch
-training quality assumed standard). Rule 1 and the batch override then pass;
-everything else is the real gate on the Mac's own recognition of each photo:
+had been made in the app today, `build-overlay` was run with the three
+measurement-only assumptions (legacy decisions treated as human, capture
+quality derived from the crop record and photo size, batch training quality
+assumed standard). Rule 1, the capture rule and the batch override then
+pass; everything else is the real gate on the Mac's own recognition of each
+photo. The derivation matters: with only `--accept-legacy --training-quality
+standard`, rule 4 refuses every detected scan (`captureQuality` 19 / 82 / 83
+per fold, after `placement` has taken 9 / 17 / 16) and all three folds yield
+0, which is exactly what A11's re-identify over the stored records would see
+on the phone (the records say `legacy`, and the app never re-derives). The
+figures below therefore describe the photos, not the records:
 
 | Fold (held-out batch) | Scans gated | Exemplars (groups) | Outcomes |
 |---|---|---|---|
@@ -241,17 +277,26 @@ everything else is the real gate on the Mac's own recognition of each photo:
 | holdout-6B23DFD9 | 99 | **18** (18) | admitted/code 18, rejected/captureQuality 64, rejected/placement 17 |
 | holdout-BF7582A9 | 99 | **9** (9) | admitted/code 9, rejected/captureQuality 74, rejected/placement 16 |
 
-Of the 113 scans, 28 are standard captures (14 in Testing, 14 in New batch,
-none in 6B23DFD9); on the Mac 92 are `detected` and 21 `wholeImage`, and 18
-are both standard and detected. All 18 carry an exact literal edge-band
-code, clear the 0.62 floor (reference similarities 0.672–0.868) and have no
-other-group alternative, so all 18 are admitted at tier `code` (9 VEN
-printings plus `sfd-104` from Testing, 9 VEN printings from New batch; one
-exemplar per group, no duplicates, no impostor blocks, no group near the cap).
-Nothing reached the art tier: every codeless scan in these batches is a
-legacy capture. Ten standard captures were turned away by rule 2 because the
-Mac assumed the whole image for them (the phone had done the same for 7 of
-New batch's 14).
+Of the 113 scans, 28 derive as standard captures (14 in Testing, 14 in New
+batch, none in 6B23DFD9); on the Mac 92 are `detected` and 21 `wholeImage`,
+and 18 are both standard and detected. All 18 carry an exact literal
+edge-band code and clear the 0.62 floor (reference similarities 0.672–0.868),
+so all 18 are admitted at tier `code` (9 VEN printings plus `sfd-104` from
+Testing, 9 VEN printings from New batch; one exemplar per group, no
+duplicates, no impostor blocks, no group near the cap). The margin rule now
+sees the parser's real alternatives (`CodeReading.alternatives`): 52 of the
+113 readings offer at least one code naming another art group with an
+indexed printing, 12 of the 18 admitted scans among them, and the smallest
+margin on an admitted scan is 0.109 (`ven-117` over the `VEN-127` repair),
+twice the 0.05 rule. Twelve scans in the batches would have failed the margin
+(down to −0.03: the alternative's printing resembles the photo more than the
+confirmed card does), but every one of them is a legacy capture or a
+whole-image placement, so rules 2 and 4 refuse them first. Every code in
+these batches was read literally (86 readings, 64 from an edge band), so
+`codeNotLiteral` had nothing to fire on. Nothing reached the art tier: every
+codeless scan in these batches is a legacy capture. Ten derivable-standard
+captures were turned away by rule 2 because the Mac assumed the whole image
+for them (the phone had done the same for 7 of New batch's 14).
 
 ### Baseline vs overlay, leave-one-batch-out
 
@@ -336,12 +381,17 @@ compared across the Mac and the phone). What this run established:
 
 - The strict gate yields **0** exemplars from the legacy batches; the smoke
   set seeds nothing until A11's re-identify produces fresh analyses with
-  human-sourced decisions, and even then only its 28 standard captures
-  (18 detected on the Mac) are candidates.
-- Relaxed, the gate admits exactly the 18 standard, detected, code-bearing
-  scans and nothing else; the thresholds never came into play on them (no
-  margin, impostor, duplicate or cap decision fired), so they remain the
-  ADR's a-priori values and the open risk about their basis stands.
+  human-sourced decisions, and even then rule 4 keeps every stored record out
+  (none states a `captureQuality`, and the app never re-derives one): the 28
+  derivable-standard captures (18 detected on the Mac) are candidates only
+  for photos re-taken through today's guide.
+- Relaxed, the gate admits exactly the 18 derivable-standard, detected,
+  code-bearing scans and nothing else. The margin rule was exercised on real
+  alternatives for the first time (12 of the 18 carry an other-group
+  alternative; the closest is 0.109 away) and never fired on an admissible
+  scan; no impostor, duplicate or cap decision fired either, so the
+  thresholds remain the ADR's a-priori values and the open risk about their
+  basis stands.
 - The impostor rule (0.90) has 0.10 of headroom on admissible captures and
   would have fired 27 times on legacy canvases, which rules 2 and 4 keep out.
 - An overlay built from another batch's cards cannot help a held-out batch
@@ -350,7 +400,11 @@ compared across the Mac and the phone). What this run established:
   shares art groups with its training folds: box 1.
 
 Dumps and overlays were written outside the repository (`evaluation/` is
-ignored); re-run the commands in section 4 to regenerate them. Runtime on an
+ignored); re-run the commands in section 4 to regenerate them. The whole
+pass was re-run after the OCR hygiene work (P2: ranked alternatives,
+literal/alternative origin) and the confidence rule (A7) landed, with the
+gate seeing the reading's real origin and alternatives; every number in this
+section is from that run and none moved. Runtime on an
 M-series Mac: about 1.5 s per photo, so a full leave-one-out pass (analysis
 plus three fold evaluations plus the baseline) is about eight minutes.
 
@@ -361,4 +415,10 @@ plus three fold evaluations plus the baseline) is about eight minutes.
   (`python3 -m http.server`-style, 58 requests): the 8 fixture cases whose
   expected outcome is `needsSecondWitness` agree, the other 50 differ, exit 1;
   against a closed port every request fails and the command exits 1.
-- The fold guard: the strict run above exits 1 naming all three folds.
+- The fold guard: the strict run above exits 1 naming all three folds, and
+  so does the `--accept-legacy --training-quality standard` run without
+  `--derive-capture-quality` (0 exemplars, every detected scan
+  `rejected/captureQuality`).
+- `import-scans` reports `standard captures 0 (+14 derivable from crop and
+  size)` for Testing and New batch, matching `summarize-scans.py`'s
+  `captures standard 0 / legacy 14` and the app's decode of the same files.

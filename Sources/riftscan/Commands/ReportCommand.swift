@@ -28,14 +28,17 @@ enum ReportCommand {
 
     /// Both dumps restricted to the files they share, side by side.
     static func compare(_ dump: EvaluationDump, against baseline: EvaluationDump, verbose: Bool) {
-        let files = Set(dump.cases.map(\.evaluationCase.file))
-        let shared = baseline.cases.filter { files.contains($0.evaluationCase.file) }
+        let (sharedBaseline, sharedDump) = EvaluationDump.shared(baseline, dump)
+        let shared = sharedBaseline.cases
         guard !shared.isEmpty else {
             Console.line("   (no cases in common with the baseline)")
             return
         }
-        let before = EvaluationDump(generatedAt: baseline.generatedAt, label: baseline.label, engine: baseline.engine, indexEntryCount: baseline.indexEntryCount, overlayVersion: baseline.overlayVersion, overlayExemplars: baseline.overlayExemplars, excludedBatches: baseline.excludedBatches, policyVersion: baseline.policyVersion, cases: shared).tally().overall
-        let after = dump.tally().overall
+        if sharedDump.cases.count != dump.cases.count {
+            Console.line("   (\(dump.cases.count - sharedDump.cases.count) of this dump's cases are not in the baseline and are left out of the comparison)")
+        }
+        let before = sharedBaseline.tally().overall
+        let after = sharedDump.tally().overall
         func delta(_ a: Double, _ b: Double) -> String {
             let d = (b - a) * 100
             return String(format: "%+.1f pt", d)
@@ -48,8 +51,8 @@ enum ReportCommand {
         let notLower = after.top1Rate >= before.top1Rate && after.confidentPrecision >= before.confidentPrecision
         Console.line("     shipping rule (top-1 and confident precision not lower than baseline): \(notLower ? "holds" : "FAILS")")
         if verbose {
-            let baselineByFile = Dictionary(uniqueKeysWithValues: shared.map { ($0.evaluationCase.file, $0) })
-            for result in dump.cases {
+            let baselineByFile = Dictionary(shared.map { ($0.evaluationCase.file, $0) }, uniquingKeysWith: { first, _ in first })
+            for result in sharedDump.cases {
                 guard let base = baselineByFile[result.evaluationCase.file], base.isCorrect != result.isCorrect else { continue }
                 Console.line("     \(result.isCorrect ? "FIXED " : "BROKE ") \(result.evaluationCase.file) expected \(result.evaluationCase.expected): \(base.ranked.first?.id.rawValue ?? "-") → \(result.ranked.first?.id.rawValue ?? "-")")
             }

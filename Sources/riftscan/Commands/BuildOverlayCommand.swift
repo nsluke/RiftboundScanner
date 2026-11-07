@@ -8,7 +8,7 @@ import RiftboundRecognizer
 /// evaluation against an empty overlay would measure nothing.
 enum BuildOverlayCommand {
     static func run(_ arguments: ArraySlice<String>) async throws {
-        let options = try CommandLineOptions(arguments, booleanFlags: ["leave-one-out", "verbose", "accept-legacy"])
+        let options = try CommandLineOptions(arguments, booleanFlags: ["leave-one-out", "verbose", "accept-legacy", "derive-capture-quality"])
         let manifestPath = try options.positional(0, named: "manifest")
         let index = try CardIndex.read(from: options.url("index", default: Defaults.indexPath))
         let policy = try options.string("policy").map { try LearningPolicy.read(from: URL(fileURLWithPath: $0)) } ?? .default
@@ -16,7 +16,7 @@ enum BuildOverlayCommand {
         let dumpURL = options.string("dump").map { URL(fileURLWithPath: $0) }
         let limit = try options.int("limit", default: Int.max)
         let excluded = try Overlays.batchIDs(options.string("exclude-batch"), option: "exclude-batch")
-        var assumptions = AdmissionDump.Assumptions(acceptLegacyDecisions: options.bool("accept-legacy"))
+        var assumptions = AdmissionDump.Assumptions(acceptLegacyDecisions: options.bool("accept-legacy"), deriveCaptureQuality: options.bool("derive-capture-quality"))
         if let quality = options.string("training-quality") {
             guard let value = AdmissionInput.CaptureQuality(rawValue: quality) else {
                 throw UsageError("--training-quality expects standard or legacy, got '\(quality)'")
@@ -31,7 +31,20 @@ enum BuildOverlayCommand {
             throw UsageError("build-overlay needs a manifest written by import-scans (cases carry scan and batch ids)")
         }
         let batches = try set.batches()
-        let scansByID = Dictionary(uniqueKeysWithValues: batches.values.flatMap(\.scans).map { ($0.id, $0) })
+        // A scan pulled into two batch folders would be keyed twice; name it
+        // rather than trap (the folder's id, not the record's own `batchID`,
+        // tells copies apart).
+        var scansByID: [UUID: ImportedScan] = [:]
+        var folderByScan: [UUID: ImportedBatch] = [:]
+        for batch in batches.values.sorted(by: { $0.startedAt < $1.startedAt }) {
+            for scan in batch.scans {
+                if let other = folderByScan[scan.id], other.id != batch.id {
+                    throw UsageError("scan \(scan.id.uuidString) appears in two batch folders (\(other.displayName) and \(batch.displayName)); remove the duplicate and re-run import-scans")
+                }
+                folderByScan[scan.id] = batch
+                scansByID[scan.id] = scan
+            }
+        }
 
         // Analyse every photo once, with the bare index.
         let featurePrinter = VisionFeaturePrintGenerator()
@@ -65,8 +78,8 @@ enum BuildOverlayCommand {
         Console.line()
         Console.line("\(Console.pad("Fold", 26))\(Console.pad("Inputs", 8))\(Console.pad("Exemplars", 11))\(Console.pad("Groups", 8))Outcomes")
         for holdout in holdouts {
-            let inputs = analyses.filter { !holdout.contains($0.input.batchID) }.map { assumptions.apply(to: $0.input) }
-            let batchByScan = Dictionary(uniqueKeysWithValues: inputs.map { ($0.scanID, $0.batchID) })
+            let inputs = analyses.filter { !holdout.contains($0.input.batchID) }.map { assumptions.apply(to: $0) }
+            let batchByScan = Dictionary(inputs.map { ($0.scanID, $0.batchID) }, uniquingKeysWith: { first, _ in first })
             let run = gate.run(inputs)
             let admittedAt = Date()
             let overlay = ExemplarIndex(version: 1, calibrationPrint: devicePrint, exemplars: try run.exemplars.map { exemplar in

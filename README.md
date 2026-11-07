@@ -209,17 +209,21 @@ swift run -c release riftscan gate-diff Tests/Fixtures/admission-cases.json --se
   latest decision was made by a person (`human`, `audit`, `spotCheck`, or the
   `legacy` decision a v1 verdict stands for), labels each with the decision's
   card, weights audit cases `1 / auditRate` (the policy's, 0.3) and the rest
-  1, loads each photo at 4096 px to record its size and settle its capture
-  quality, and writes a manifest stamped with the platform (`macOS`).
+  1, loads each photo at 4096 px to record its size, carries the capture
+  quality as the app decodes it (`legacy` when the record states none) beside
+  the quality a crop record and photo size would derive, and writes a
+  manifest stamped with the platform (`macOS`).
 - `build-overlay` runs the Mac recogniser once over every photo, builds the
-  gate's inputs (placement, code source and agreement, reference similarity
-  and code alternatives against the index, the oriented feature print) and
+  gate's inputs (placement, code source, origin and agreement, reference
+  similarity and every code alternative the reading offered against the
+  index, the oriented feature print) and
   runs the Swift gate per fold: `--exclude-batch` for one fold, or
   `--leave-one-out` for one fold per batch. It prints the exemplar count per
   fold and **fails (exit 1) when a fold yields zero exemplars**, after writing
-  everything. `--accept-legacy` and `--training-quality standard` are
-  measurement-only relaxations for the pre-ledger batches (recorded in the
-  dump; never ship an overlay built with them).
+  everything. `--accept-legacy`, `--derive-capture-quality` and
+  `--training-quality standard` are measurement-only relaxations for the
+  pre-ledger batches (recorded in the dump; never ship an overlay built with
+  them).
 - `evaluate` gained `--overlay`, `--policy`, `--exclude-batch` (drop a batch's
   exemplars from the overlay), `--batch` (only that batch's cases) and
   `--dump`; it reports raw and weighted top-1/top-3, the confident tier's

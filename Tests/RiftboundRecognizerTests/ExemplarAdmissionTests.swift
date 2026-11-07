@@ -120,6 +120,8 @@ struct ExemplarAdmissionTests {
         #expect(outcomes.contains { if case .duplicate = $0 { true } else { false } })
         #expect(outcomes.contains { $0.tier == .code } && outcomes.contains { $0.tier == .artCorroborated })
         #expect(Self.fixture.cases.filter { $0.name.hasPrefix("edge-") }.count >= 10, "threshold-edge vectors are part of the fixture")
+        let names = Set(Self.fixture.cases.map(\.name))
+        #expect(names.contains("code-alternative-margin-0.70-vs-0.65-admits") && names.contains("code-alternative-margin-0.70-vs-0.6501-rejected"), "the fixture pins the rounded margin difference, which a port comparing raw doubles fails")
     }
 
     @Test func fixtureRoundTripsThroughItsCodableShapes() throws {
@@ -150,6 +152,60 @@ struct ExemplarAdmissionTests {
         #expect(blocked == #"{"blockingScanID":"5CA00000-0000-4000-8000-000000000002","outcome":"blocked","similarity":0.93}"#)
         #expect(String(decoding: try encoder.encode(AdmissionOutcome.needsSecondWitness), as: UTF8.self) == #"{"outcome":"needsSecondWitness"}"#)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(AdmissionOutcome.self, from: Data(#"{"outcome":"maybe"}"#.utf8)) }
+    }
+
+    @Test func gateDiffInputsAreToldApartByShapeAndReportTheirOwnErrors() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("admission-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        guard case .fixture(let fixture) = try AdmissionFile.read(from: Fixtures.url("admission-cases.json")) else {
+            Issue.record("the shared fixture reads as a fixture")
+            return
+        }
+        #expect(fixture.cases.count == Self.fixture.cases.count)
+
+        // A fixture with one hand-edited bad outcome is still a fixture: the error names the outcome, not the dump format.
+        var object = try #require(try JSONSerialization.jsonObject(with: try Data(contentsOf: Fixtures.url("admission-cases.json"))) as? [String: Any])
+        var cases = try #require(object["cases"] as? [[String: Any]])
+        cases[0]["expected"] = ["outcome": "maybe"]
+        object["cases"] = cases
+        let malformed = folder.appendingPathComponent("malformed.json")
+        try JSONSerialization.data(withJSONObject: object).write(to: malformed)
+        let error = #expect(throws: DecodingError.self) { try AdmissionFile.read(from: malformed) }
+        #expect("\(try #require(error))".contains("maybe"), "the fixture's own decoding error surfaces")
+
+        // A dump is recognised by its keys and decoded with its date strategy.
+        let engine = EngineFingerprint(packageVersion: "test", calibrationHash: Self.calibration, platform: "test", osVersion: "0")
+        let dumpURL = folder.appendingPathComponent("admissions.json")
+        try AdmissionDump(generatedAt: Date(timeIntervalSince1970: 0), engine: engine, policy: Self.fixture.policy, analyses: [], folds: []).write(to: dumpURL)
+        guard case .dump(let dump) = try AdmissionFile.read(from: dumpURL) else {
+            Issue.record("a build-overlay dump reads as a dump")
+            return
+        }
+        #expect(dump.policy == Self.fixture.policy && dump.assumptions.isStrict)
+
+        // Anything else is refused by name.
+        let other = folder.appendingPathComponent("other.json")
+        try Data(#"{"hello": 1}"#.utf8).write(to: other)
+        #expect(throws: AdmissionFile.UnrecognisedShape.self) { try AdmissionFile.read(from: other) }
+    }
+
+    @Test func assumptionsSubstituteTheDerivedCaptureQualityOnlyWhenAsked() throws {
+        let legacy = Self.input(source: .legacy, quality: .legacy, training: .legacy)
+        let analysed = AnalysedScan(input: legacy, file: "x.jpg", group: "Testing", bestOtherReferenceSimilarity: 0.5, bestOtherArtGroup: nil, topCardID: nil, codeRead: nil, derivedCaptureQuality: .standard)
+        #expect(AdmissionDump.Assumptions.none.apply(to: analysed) == legacy, "strict: the input as the app would see it")
+        let derived = AdmissionDump.Assumptions(deriveCaptureQuality: true).apply(to: analysed)
+        #expect(derived.captureQuality == .standard && derived.decisionSource == .legacy && derived.trainingQuality == .legacy)
+        let relaxed = AdmissionDump.Assumptions(acceptLegacyDecisions: true, trainingQuality: .standard, deriveCaptureQuality: true).apply(to: analysed)
+        #expect(relaxed.decisionSource == .human && relaxed.captureQuality == .standard && relaxed.trainingQuality == .standard)
+        #expect(Self.gate.decide(derived) == .rejected(.decisionSource) && Self.gate.decide(relaxed).isAdmitted)
+        let unknown = AnalysedScan(input: legacy, file: "x.jpg", group: "Testing", bestOtherReferenceSimilarity: 0.5, bestOtherArtGroup: nil, topCardID: nil, codeRead: nil, derivedCaptureQuality: nil)
+        #expect(AdmissionDump.Assumptions(deriveCaptureQuality: true).apply(to: unknown).captureQuality == .legacy, "nothing derivable keeps the record's quality")
+        let encoded = try JSONEncoder().encode(AdmissionDump.Assumptions(acceptLegacyDecisions: true, deriveCaptureQuality: true))
+        #expect(try JSONDecoder().decode(AdmissionDump.Assumptions.self, from: encoded).deriveCaptureQuality)
+        let old = try JSONDecoder().decode(AdmissionDump.Assumptions.self, from: Data(#"{"acceptLegacyDecisions":true}"#.utf8))
+        #expect(old.acceptLegacyDecisions && !old.deriveCaptureQuality, "a dump written before the flag existed reads")
+        #expect(AdmissionDump.Assumptions(deriveCaptureQuality: true).description.contains("derived"))
     }
 
     // MARK: Acceptance clauses, spelled out
@@ -188,6 +244,26 @@ struct ExemplarAdmissionTests {
             AdmissionInput.CodeAlternative(code: TestRig.code("SFD-014a/221"), origin: .alternative, referenceSimilarity: 0.79),
         ])
         #expect(Self.gate.decide(sameGroup).isAdmitted, "a sibling printing of the same art is not an impostor")
+    }
+
+    @Test func theAlternativeMarginIsRoundedBeforeItMeetsTheThreshold() {
+        // In binary doubles 0.85 - 0.80, 0.70 - 0.65 and 0.95 - 0.90 are all
+        // 0.04999..., while 0.80 - 0.75 is 0.05000...04: an unrounded
+        // comparison admits by operand luck. The contract rounds the
+        // difference, so every exact 0.05 margin admits and 0.0499 does not.
+        func decide(reference: Double, other: Double) -> AdmissionOutcome {
+            Self.gate.decide(Self.input(card: "sfd-014-221", reference: reference, alternatives: [
+                AdmissionInput.CodeAlternative(code: TestRig.code("SFD-014/221"), origin: .literal, referenceSimilarity: reference),
+                AdmissionInput.CodeAlternative(code: TestRig.code("SFD-024/221"), origin: .alternative, referenceSimilarity: other),
+            ]))
+        }
+        for (reference, other) in [(0.85, 0.80), (0.70, 0.65), (0.95, 0.90), (0.73, 0.68), (0.80, 0.75)] {
+            #expect(reference - other < 0.05 || reference - other > 0.05, "\(reference) - \(other) is not exactly 0.05 in binary")
+            #expect(decide(reference: reference, other: other) == .admitted(tier: .code, corroborators: [], evicted: []), "\(reference) vs \(other) is a 0.05 margin")
+        }
+        #expect(decide(reference: 0.70, other: 0.6501) == .rejected(.alternativeMargin), "0.0499 is under the margin")
+        #expect(decide(reference: 0.70, other: 0.65005) == .admitted(tier: .code, corroborators: [], evicted: []), "0.65005 rounds (half to even) to 0.65")
+        #expect(decide(reference: 0.70, other: 0.65015) == .rejected(.alternativeMargin), "0.65015 rounds to 0.6502")
     }
 
     @Test func anAlternativeWonCodeIsRejected() {

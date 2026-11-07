@@ -39,14 +39,26 @@ struct ScanImportTests {
         #expect(wholeImage.placement == .wholeImage)
     }
 
-    @Test func derivesCaptureQualityFromCropAndPhotoSizeWhenUnstated() throws {
+    @Test func anUnstatedCaptureQualityIsLegacyAsTheAppDecodesIt() throws {
+        // The app's `ScanRecord` decode, `Scripts/summarize-scans.py` and this
+        // importer must agree on one `scans/` folder: a record that states no
+        // `captureQuality` is `legacy`, whatever its crop and photo size say.
+        let batch = try ScanImport.readBatch(at: Self.v1Root.appendingPathComponent("1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93"))
+        #expect(batch.scans.allSatisfy { $0.recordedCaptureQuality == nil && $0.captureQuality == .legacy })
+        let appSample = try Data(contentsOf: Fixtures.folder.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("App/Tests/Fixtures/scans-v1.json"))
+        let packageSample = try Data(contentsOf: Self.v1Root.appendingPathComponent("1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93/scans.json"))
+        #expect(try JSONSerialization.jsonObject(with: appSample) as? NSArray == JSONSerialization.jsonObject(with: packageSample) as? NSArray, "the package reads the same frozen v1 sample the app's tests decode")
+    }
+
+    @Test func derivesCaptureQualityFromCropAndPhotoSizeOnlyOnRequest() throws {
         let batch = try ScanImport.readBatch(at: Self.v1Root.appendingPathComponent("1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93"))
         let cropped = try #require(batch.scans.first { $0.hasCrop })
         let uncropped = try #require(batch.scans.first { !$0.hasCrop })
-        #expect(cropped.captureQuality(photoSize: Self.standardSize) == .standard)
-        #expect(cropped.captureQuality(photoSize: Self.legacySize) == .legacy, "a full-frame photo is not a guide crop")
-        #expect(cropped.captureQuality(photoSize: nil) == .legacy, "nothing to verify against")
-        #expect(uncropped.captureQuality(photoSize: Self.standardSize) == .legacy)
+        #expect(cropped.captureQuality == .legacy, "what the app decodes")
+        #expect(cropped.derivedCaptureQuality(photoSize: Self.standardSize) == .standard, "what the crop and size would derive")
+        #expect(cropped.derivedCaptureQuality(photoSize: Self.legacySize) == .legacy, "a full-frame photo is not a guide crop")
+        #expect(cropped.derivedCaptureQuality(photoSize: nil) == .legacy, "nothing to verify against")
+        #expect(uncropped.derivedCaptureQuality(photoSize: Self.standardSize) == .legacy)
         #expect(ImportedScan.isStandardSize(PixelSize(width: 1454, height: 2030)))
         #expect(ImportedScan.isStandardSize(PixelSize(width: 2030, height: 1454)) == false, "portrait only")
         #expect(ImportedScan.isStandardSize(PixelSize(width: 1536, height: 2048)) == false, "wrong aspect")
@@ -62,10 +74,11 @@ struct ScanImportTests {
         #expect(result.cases.allSatisfy { $0.batchID?.uuidString == "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93" })
         #expect(Set(result.cases.map(\.expected.rawValue)) == ["ven-031-166", "sfd-121-221", "unl-097-219", "ven-072-166"])
         let byScan = Dictionary(uniqueKeysWithValues: result.cases.map { ($0.scanID!.uuidString, $0) })
-        #expect(byScan["0EDBA322-499D-4B42-8CDC-BE2D263D3ECE"]?.captureQuality == .standard)
+        #expect(result.cases.allSatisfy { $0.captureQuality == .legacy }, "v1 records state no quality, so every case is legacy as the app sees it")
+        #expect(byScan["0EDBA322-499D-4B42-8CDC-BE2D263D3ECE"]?.derivedCaptureQuality == .standard, "a guide crop at 1454x2030 is derivable as standard")
         #expect(byScan["0EDBA322-499D-4B42-8CDC-BE2D263D3ECE"]?.imageSize == Self.standardSize)
-        #expect(byScan["62F63796-C35E-44AA-ABF3-6B65277BB7A8"]?.captureQuality == .legacy, "no crop")
-        #expect(byScan["AD08D71D-D130-426A-A195-272F5D2468C4"]?.captureQuality == .legacy && byScan["AD08D71D-D130-426A-A195-272F5D2468C4"]?.imageSize == nil, "unreadable photo")
+        #expect(byScan["62F63796-C35E-44AA-ABF3-6B65277BB7A8"]?.derivedCaptureQuality == .legacy, "no crop")
+        #expect(byScan["AD08D71D-D130-426A-A195-272F5D2468C4"]?.derivedCaptureQuality == .legacy && byScan["AD08D71D-D130-426A-A195-272F5D2468C4"]?.imageSize == nil, "unreadable photo")
         #expect(byScan["0EDBA322-499D-4B42-8CDC-BE2D263D3ECE"]?.file == "../scans-v1/1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93/photos/0EDBA322-499D-4B42-8CDC-BE2D263D3ECE.jpg")
         #expect(result.manifest.platform == RecognizerInfo.platform && result.manifest.auditRate == 0.3 && result.manifest.seed == nil)
         #expect(result.manifest.batchIDs.map(\.uuidString) == ["1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93"])
@@ -79,7 +92,7 @@ struct ScanImportTests {
         let byScan = Dictionary(uniqueKeysWithValues: result.cases.map { ($0.scanID!.uuidString, $0) })
         let human = try #require(byScan["A0000002-0000-4000-8000-000000000002"])
         #expect(human.decisionSource == .human && human.expected.rawValue == "ogn-002-298" && human.samplingWeight == 1)
-        #expect(human.captureQuality == .standard, "the stated quality wins")
+        #expect(human.captureQuality == .standard && human.derivedCaptureQuality == .standard, "the stated quality wins on both readings")
         let audit = try #require(byScan["A0000005-0000-4000-8000-000000000005"])
         #expect(audit.decisionSource == .audit && audit.expected.rawValue == "ogn-001-298")
         #expect(abs(audit.samplingWeight - 1 / 0.3) < 1e-9, "an audit case stands for the confident scans it was sampled from")
@@ -111,6 +124,28 @@ struct ScanImportTests {
         decoder.dateDecodingStrategy = .iso8601
         let synthetic = try decoder.decode(EvaluationManifest.self, from: legacy)
         #expect(synthetic.seed == 42 && synthetic.cases[0].samplingWeight == 1 && synthetic.cases[0].scanID == nil && synthetic.platform == nil)
+    }
+
+    @Test func refusesAScanIDThatAppearsInTwoBatchFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("scan-import-dupes-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = Self.v1Root.appendingPathComponent("1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93")
+        for name in ["A-first", "B-second"] {
+            let folder = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: source.appendingPathComponent("scans.json"), to: folder.appendingPathComponent("scans.json"))
+            try FileManager.default.copyItem(at: source.appendingPathComponent("batch.json"), to: folder.appendingPathComponent("batch.json"))
+        }
+        let error = #expect(throws: ScanImport.ImportError.self) {
+            try ScanImport.importCases(under: root, manifestFolder: root, auditRate: 0.3, imageSize: { _ in nil })
+        }
+        guard case .duplicateScan(let scanID, let batches) = try #require(error) else {
+            Issue.record("expected duplicateScan")
+            return
+        }
+        #expect(scanID.uuidString == "0EDBA322-499D-4B42-8CDC-BE2D263D3ECE" || batches == ["A-first", "B-second"])
+        #expect(batches == ["A-first", "B-second"], "names both folders")
+        #expect("\(ScanImport.ImportError.duplicateScan(scanID: scanID, batches: batches))".contains(scanID.uuidString))
     }
 
     @Test func relativePathsClimbToTheSharedRoot() {

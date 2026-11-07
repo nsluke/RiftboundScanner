@@ -30,11 +30,12 @@ extension LearningPolicy.ConfidencePolicy {
     /// descriptor evidence (its reference score or own exemplar similarity,
     /// whichever is higher) by ``exemplarDisagreementMargin``; the margin is
     /// compared after ``SimilarityContract`` rounding, so 0.90 against 0.80
-    /// is exactly the 0.10 margin.
-    public func verdict(for matches: [Match], codeReading: CodeReading?, codeOrigin: AdmissionInput.CodeEvidence.Origin) -> ConfidenceVerdict {
+    /// is exactly the 0.10 margin. Whether the code was read literally is the
+    /// reading's own ``CodeReading/origin``.
+    public func verdict(for matches: [Match], codeReading: CodeReading?) -> ConfidenceVerdict {
         guard let top = matches.first else { return .uncertain(.noMatch) }
-        guard codeReading != nil else { return .uncertain(.noCode) }
-        if requireLiteralCode, codeOrigin == .alternative {
+        guard let codeReading else { return .uncertain(.noCode) }
+        if requireLiteralCode, codeReading.origin == .alternative {
             return .uncertain(.codeRepaired)
         }
         guard top.codeAgreement == .exact else { return .uncertain(.codeDisagrees) }

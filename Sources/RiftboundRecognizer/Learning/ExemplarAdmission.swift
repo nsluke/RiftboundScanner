@@ -36,23 +36,20 @@ public struct AdmissionInput: Hashable, Sendable, Codable {
 
     /// Per-scan `captureQuality` and the batch's `trainingQuality` override
     /// share one vocabulary (rule 4).
-    public enum CaptureQuality: String, Hashable, Sendable, Codable {
+    public enum CaptureQuality: String, Hashable, Sendable, Codable, CaseIterable {
         case standard, legacy
     }
 
     /// The winning printed code as evidence: where it was read, whether it was
-    /// read literally or repaired by the parser, and how it relates to the
-    /// confirmed card. Absent when no code was read.
+    /// read literally or repaired by the parser (``CodeOrigin``, the
+    /// recogniser's own vocabulary), and how it relates to the confirmed card.
+    /// Absent when no code was read.
     public struct CodeEvidence: Hashable, Sendable, Codable {
-        public enum Origin: String, Hashable, Sendable, Codable {
-            case literal, alternative
-        }
-
         public let source: CodeSource
-        public let origin: Origin
+        public let origin: CodeOrigin
         public let agreement: CodeAgreement
 
-        public init(source: CodeSource, origin: Origin, agreement: CodeAgreement) {
+        public init(source: CodeSource, origin: CodeOrigin, agreement: CodeAgreement) {
             self.source = source
             self.origin = origin
             self.agreement = agreement
@@ -66,10 +63,10 @@ public struct AdmissionInput: Hashable, Sendable, Codable {
     /// indexed printing; such an entry cannot be the true card and is ignored.
     public struct CodeAlternative: Hashable, Sendable, Codable {
         public let code: PrintedCode
-        public let origin: CodeEvidence.Origin
+        public let origin: CodeOrigin
         public let referenceSimilarity: Double?
 
-        public init(code: PrintedCode, origin: CodeEvidence.Origin, referenceSimilarity: Double?) {
+        public init(code: PrintedCode, origin: CodeOrigin, referenceSimilarity: Double?) {
             self.code = code
             self.origin = origin
             self.referenceSimilarity = referenceSimilarity
@@ -331,7 +328,9 @@ extension AdmissionOutcome: Codable {
 /// The exemplar admission gate, version 2 (ADR-002, section 7, rules 1-8): a
 /// pure function of the candidate scan, the other scans offered as witnesses
 /// for the art tier, and the exemplars already admitted for the same
-/// calibration hash. Every similarity goes through ``SimilarityContract``.
+/// calibration hash. Every similarity goes through ``SimilarityContract``, and
+/// so does every number the gate derives from one before comparing it (the
+/// alternative margin's difference, the cap rule's mean similarities).
 ///
 /// Rules, in order: (1) the latest decision is human, audit or spot-check,
 /// confirms a card and snapshots its id; (2) the card was detected, not
@@ -398,7 +397,10 @@ public struct ExemplarAdmission: Hashable, Sendable {
             guard reference >= policy.referenceSimilarityFloor else { return .rejected(.referenceBelowFloor) }
             for alternative in candidate.codeAlternatives where alternative.artGroup != group {
                 guard let similarity = alternative.referenceSimilarity else { continue }
-                if reference - SimilarityContract.round(similarity) < policy.alternativeMargin {
+                // The margin is a difference of two rounded values, itself
+                // rounded (contract point 4): 0.70 - 0.65 in binary doubles is
+                // 0.04999..., which would refuse an exact 0.05 margin.
+                if SimilarityContract.round(reference - SimilarityContract.round(similarity)) < policy.alternativeMargin {
                     return .rejected(.alternativeMargin)
                 }
             }
@@ -550,7 +552,10 @@ public struct ExemplarAdmission: Hashable, Sendable {
             exemplars = step.exemplarsAfter
             records.append(Record(scanID: step.request.candidate.scanID, batchID: step.request.candidate.batchID, artGroup: step.request.candidate.artGroup, outcome: step.outcome))
         }
-        let order = Dictionary(uniqueKeysWithValues: inputs.enumerated().map { ($1.scanID, $0) })
+        // Two inputs with one scan id (a scan pulled into two batch folders)
+        // keep the first position rather than trapping; the importer refuses
+        // such duplicates before they reach the gate.
+        let order = Dictionary(inputs.enumerated().map { ($1.scanID, $0) }, uniquingKeysWith: { first, _ in first })
         return Run(records: records.sorted { (order[$0.scanID] ?? 0) < (order[$1.scanID] ?? 0) }, exemplars: exemplars)
     }
 

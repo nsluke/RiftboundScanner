@@ -6,9 +6,10 @@ import Foundation
 /// photo, weight it and feed the admission gate. Version 1 files (a bare
 /// `verdict`, no `purpose`) and version 2 files (ADR-002: a `decisions` log,
 /// `captureQuality`, `analysis`, `engine`) both read; a v1 judgement is a
-/// `legacy` decision, exactly as the app and `Scripts/summarize-scans.py`
-/// treat it. Everything the package cannot use (candidate cards, URLs) is
-/// skipped on decode.
+/// `legacy` decision and an unstated `captureQuality` is `legacy`, exactly as
+/// the app's `ScanRecord` decode and `Scripts/summarize-scans.py` treat them,
+/// so the three readers of one `scans/` folder agree. Everything the package
+/// cannot use (candidate cards, URLs) is skipped on decode.
 public enum ScanImport {
     public static let batchFileName = "batch.json"
     public static let scansFileName = "scans.json"
@@ -26,6 +27,21 @@ public enum ScanImport {
         public let unreadablePhotos: [String]
 
         public var cases: [EvaluationCase] { manifest.cases }
+    }
+
+    /// The folder cannot be imported as it stands.
+    public enum ImportError: Error, Hashable, CustomStringConvertible {
+        /// One scan id appears in two batch folders (a scan pulled twice, or a
+        /// record duplicated after a pull); the gate and the folds key by scan
+        /// id, so the importer refuses rather than letting one copy shadow the other.
+        case duplicateScan(scanID: UUID, batches: [String])
+
+        public var description: String {
+            switch self {
+            case .duplicateScan(let scanID, let batches):
+                "scan \(scanID.uuidString) appears in more than one batch folder (\(batches.joined(separator: ", "))); remove the duplicate before importing"
+            }
+        }
     }
 
     public enum SkipReason: String, Hashable, Sendable, CaseIterable {
@@ -73,9 +89,12 @@ public enum ScanImport {
     /// `spotCheck`, or the `legacy` decision a v1 verdict stands for) and
     /// confirms a card. Audit cases weigh `1 / auditRate`; the rest weigh 1.
     /// `file` paths are relative to `manifestFolder`. `imageSize` loads each
-    /// photo (the live one at 4096 px) to record its size and fix the capture
-    /// quality of records that do not state one; a `nil` result marks the photo
-    /// unreadable.
+    /// photo (the live one at 4096 px) to record its size; a `nil` result marks
+    /// the photo unreadable. Each case carries the record's capture quality as
+    /// the app decodes it (`legacy` when unstated) and, separately, the quality
+    /// the crop record and photo size would derive, for `build-overlay
+    /// --derive-capture-quality`. A scan id met in two batch folders throws
+    /// ``ImportError/duplicateScan(scanID:batches:)``.
     public static func importCases(
         under root: URL,
         manifestFolder: URL,
@@ -87,10 +106,15 @@ public enum ScanImport {
         var batches: [ImportedBatch] = []
         var skipped: [SkipReason: Int] = [:]
         var unreadable: [String] = []
+        var batchByScan: [UUID: String] = [:]
         for folder in try batchFolders(under: root) {
             let batch = try readBatch(at: folder)
             batches.append(batch)
             for scan in batch.scans {
+                if let other = batchByScan[scan.id] {
+                    throw ImportError.duplicateScan(scanID: scan.id, batches: [other, folder.lastPathComponent])
+                }
+                batchByScan[scan.id] = folder.lastPathComponent
                 guard let decision = scan.decision else {
                     skipped[.pending, default: 0] += 1
                     continue
@@ -116,7 +140,8 @@ public enum ScanImport {
                     scanID: scan.id,
                     batchID: batch.id,
                     decisionSource: decision.source,
-                    captureQuality: scan.captureQuality(photoSize: size),
+                    captureQuality: scan.captureQuality,
+                    derivedCaptureQuality: scan.derivedCaptureQuality(photoSize: size),
                     imageSize: size
                 ))
             }
@@ -213,7 +238,7 @@ public enum ScanImport {
 
             struct Alternative: Decodable {
                 let code: PrintedCode
-                let origin: AdmissionInput.CodeEvidence.Origin
+                let origin: CodeOrigin
                 let referenceSimilarity: Double?
             }
 
@@ -301,7 +326,8 @@ public struct ImportedScan: Hashable, Sendable, Identifiable {
     /// The latest decision; a v1 judged record yields a synthesised `legacy` one.
     public let decision: Decision?
     public let hasCrop: Bool
-    /// The quality the record states (v2); derived from the crop and photo size otherwise.
+    /// The quality the record states; `nil` for a v1 record, which the app and
+    /// this importer both read as `legacy` (see ``captureQuality``).
     public let recordedCaptureQuality: AdmissionInput.CaptureQuality?
     public let analysis: Analysis?
     public let calibrationHash: String?
@@ -349,16 +375,25 @@ public struct ImportedScan: Hashable, Sendable, Identifiable {
     /// The card the latest decision confirmed.
     public var confirmedCardID: Card.ID? { decision?.cardID }
 
+    /// The capture quality as the app decodes the record: what it states, else
+    /// `legacy` (every pre-v2 record). This is what the gate sees on the phone
+    /// and what the strict evaluation uses.
+    public var captureQuality: AdmissionInput.CaptureQuality { recordedCaptureQuality ?? .legacy }
+
     /// The long edge a guide crop produces at full resolution, within tolerance
     /// (the app's `CaptureQuality` rule).
     public static let standardLongEdge = 1800...2200
     /// How far the photo's aspect may sit from the card's 63 : 88.
     public static let aspectTolerance = 0.03
 
-    /// The record's stated quality, else `standard` iff the photo was a guide
-    /// crop (`crop` present) at the standard size, else `legacy`. Without a
-    /// photo size nothing can be verified, so an unstated quality is `legacy`.
-    public func captureQuality(photoSize: PixelSize?) -> AdmissionInput.CaptureQuality {
+    /// The quality the record would state had it been written by an app that
+    /// knew the rule: what it states when it does, else `standard` iff the
+    /// photo was a guide crop (`crop` present) at the standard size (the app's
+    /// `CaptureQuality(crop:photoSize:)` rule), else `legacy`. Without a photo
+    /// size nothing can be verified, so an unstated quality stays `legacy`.
+    /// A measurement assumption (`build-overlay --derive-capture-quality`),
+    /// never what the app or the strict gate uses.
+    public func derivedCaptureQuality(photoSize: PixelSize?) -> AdmissionInput.CaptureQuality {
         if let recordedCaptureQuality { return recordedCaptureQuality }
         guard hasCrop, let photoSize, Self.isStandardSize(photoSize) else { return .legacy }
         return .standard
@@ -392,10 +427,15 @@ public struct AnalysedScan: Hashable, Sendable, Codable, Identifiable {
     /// The recogniser's winner on the Mac, for the record.
     public let topCardID: Card.ID?
     public let codeRead: PrintedCode?
+    /// What the crop record and photo size say the capture quality would be
+    /// (``ImportedScan/derivedCaptureQuality(photoSize:)``); `input` carries
+    /// the quality as the app decodes it. `AdmissionDump.Assumptions`
+    /// substitutes this under `--derive-capture-quality`.
+    public let derivedCaptureQuality: AdmissionInput.CaptureQuality?
 
     public var id: UUID { input.scanID }
 
-    public init(input: AdmissionInput, file: String, group: String, bestOtherReferenceSimilarity: Double, bestOtherArtGroup: ArtGroup?, topCardID: Card.ID?, codeRead: PrintedCode?) {
+    public init(input: AdmissionInput, file: String, group: String, bestOtherReferenceSimilarity: Double, bestOtherArtGroup: ArtGroup?, topCardID: Card.ID?, codeRead: PrintedCode?, derivedCaptureQuality: AdmissionInput.CaptureQuality? = nil) {
         self.input = input
         self.file = file
         self.group = group
@@ -403,21 +443,24 @@ public struct AnalysedScan: Hashable, Sendable, Codable, Identifiable {
         self.bestOtherArtGroup = bestOtherArtGroup
         self.topCardID = topCardID
         self.codeRead = codeRead
+        self.derivedCaptureQuality = derivedCaptureQuality
     }
 
     /// Builds the gate input for `evaluationCase` from what the Mac recogniser
     /// made of its photo. Placement, code and descriptor come from `result`;
     /// the decision, capture quality and batch override from the imported
     /// record; reference similarities are measured against `index` under the
-    /// ``SimilarityContract``. The code is treated as read literally when the
-    /// reading does not say otherwise.
+    /// ``SimilarityContract``. The code's origin is the reading's own
+    /// (``CodeReading/origin``), and every code the reading could name
+    /// (``CodeReading/alternatives``: the literal reading when the index knows
+    /// it, then the parser's digit alternatives) becomes a `CodeAlternative`
+    /// with the best reference similarity among the printings it names exactly.
     public init(
         _ evaluationCase: EvaluationCase,
         scan: ImportedScan,
         batch: ImportedBatch,
         result: RecognitionResult,
-        index: CardIndex,
-        codeOrigin: AdmissionInput.CodeEvidence.Origin = .literal
+        index: CardIndex
     ) {
         let print = result.descriptor.descriptor.featurePrint
         let expectedGroup = ArtGroup(evaluationCase.expected)
@@ -434,15 +477,19 @@ public struct AnalysedScan: Hashable, Sendable, Codable, Identifiable {
         var alternatives: [AdmissionInput.CodeAlternative] = []
         var code: AdmissionInput.CodeEvidence?
         if let reading = result.codeReading {
-            let named = index.entries.filter { CodeAgreement(reading: reading.code, candidate: $0.card.code) == .exact }
-            alternatives.append(AdmissionInput.CodeAlternative(
-                code: reading.code,
-                origin: codeOrigin,
-                referenceSimilarity: named.compactMap { similarityByEntry[$0.id] }.max()
-            ))
+            // `alternatives` starts with `code`; it is the literal reading only
+            // when the reading itself is literal, every later entry is a repair.
+            for (offset, candidate) in reading.alternatives.enumerated() {
+                let named = index.entries.filter { CodeAgreement(reading: candidate, candidate: $0.card.code) == .exact }
+                alternatives.append(AdmissionInput.CodeAlternative(
+                    code: candidate,
+                    origin: offset == 0 ? reading.origin : .alternative,
+                    referenceSimilarity: named.compactMap { similarityByEntry[$0.id] }.max()
+                ))
+            }
             code = AdmissionInput.CodeEvidence(
                 source: reading.source,
-                origin: codeOrigin,
+                origin: reading.origin,
                 agreement: confirmed.map { CodeAgreement(reading: reading.code, candidate: $0.card.code) } ?? .unrelated
             )
         }
@@ -455,7 +502,7 @@ public struct AnalysedScan: Hashable, Sendable, Codable, Identifiable {
             cardID: decision?.cardID,
             placement: result.quad == nil ? .wholeImage : .detected,
             calibrationHash: result.engine.calibrationHash,
-            captureQuality: evaluationCase.captureQuality ?? scan.captureQuality(photoSize: evaluationCase.imageSize),
+            captureQuality: evaluationCase.captureQuality ?? scan.captureQuality,
             trainingQuality: batch.trainingQuality,
             code: code,
             referenceSimilarity: confirmed.flatMap { similarityByEntry[$0.id] } ?? 0,
@@ -468,5 +515,6 @@ public struct AnalysedScan: Hashable, Sendable, Codable, Identifiable {
         bestOtherArtGroup = bestOther.group
         topCardID = result.best?.id
         codeRead = result.codeReading?.code
+        derivedCaptureQuality = evaluationCase.derivedCaptureQuality ?? scan.derivedCaptureQuality(photoSize: evaluationCase.imageSize)
     }
 }

@@ -95,6 +95,26 @@ struct EvaluationTallyTests {
         #expect(SampleLabel.cardID(forFileName: "OGN-999-298.jpg", in: index) == nil)
     }
 
+    @Test func aComparisonTalliesOnlyTheCasesBothDumpsHold() {
+        let engine = EngineFingerprint(packageVersion: "test", calibrationHash: FeaturePrint(elements: [1, 0]).digest, platform: "test", osVersion: "0")
+        func result(_ file: String, correct: Bool) -> EvaluationDump.CaseResult {
+            let expected = id("a")
+            let ranked = [EvaluationDump.RankedEntry(id: correct ? expected : id("b"), score: 1, referenceScore: 0.8, fusedScore: 0.8, exemplarSimilarity: nil, codeAgreement: nil)]
+            return EvaluationDump.CaseResult(evaluationCase: EvaluationCase(file: file, expected: expected, group: "box"), ranked: ranked, codeRead: nil, codeSource: nil, codeConfidence: nil, placement: .detected, verdict: .uncertain(.noCode), seconds: 0)
+        }
+        func dump(_ label: String, _ results: [EvaluationDump.CaseResult]) -> EvaluationDump {
+            EvaluationDump(generatedAt: Date(timeIntervalSince1970: 0), label: label, engine: engine, indexEntryCount: 2, overlayVersion: 0, overlayExemplars: 0, excludedBatches: [], policyVersion: 1, cases: results)
+        }
+        // The baseline covers everything; the fold dump was run with a different --limit and holds a case the baseline lacks.
+        let baseline = dump("baseline", [result("a.jpg", correct: true), result("b.jpg", correct: false), result("c.jpg", correct: true)])
+        let fold = dump("fold", [result("a.jpg", correct: true), result("b.jpg", correct: true), result("z.jpg", correct: false)])
+        let (before, after) = EvaluationDump.shared(baseline, fold)
+        #expect(before.cases.map(\.evaluationCase.file) == ["a.jpg", "b.jpg"] && after.cases.map(\.evaluationCase.file) == ["a.jpg", "b.jpg"])
+        #expect(before.tally().overall.top1Rate == 0.5 && after.tally().overall.top1Rate == 1, "z.jpg, which the baseline never saw, does not drag the fold's rate down")
+        #expect(before.label == "baseline" && after.label == "fold" && after.engine == engine)
+        #expect(fold.restricted(to: []).cases.isEmpty && fold.restricted(to: ["z.jpg"]).cases.count == 1)
+    }
+
     private static let descriptor = CardDescriptor(
         wholeDifferenceHash: ImageHash(bits: 0), wholePerceptualHash: ImageHash(bits: 0), artDifferenceHash: ImageHash(bits: 0), featurePrint: FeaturePrint(elements: [1])
     )

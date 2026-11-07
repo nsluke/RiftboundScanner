@@ -20,7 +20,7 @@ struct Riftscan {
       import-scans [scans] [--output evaluation/manifest.json] [--policy policy.json] [--audit-rate 0.3] [--verbose]
       build-overlay <manifest.json> [--index cache/index.json] [--policy policy.json] [--output evaluation/overlay.json]
                [--exclude-batch UUID[,UUID] | --leave-one-out] [--dump evaluation/admissions.json]
-               [--accept-legacy] [--training-quality standard|legacy] [--limit N] [--verbose]
+               [--accept-legacy] [--derive-capture-quality] [--training-quality standard|legacy] [--limit N] [--verbose]
       report <dump.json>... [--baseline dump.json] [--verbose]
       admission-report <admissions.json> [--floor 0.62]
       gate-diff <admission-cases.json|admissions.json> [--server http://riftbound.lan] [--token T] [--fold NAME]

@@ -244,6 +244,27 @@ struct ScanRecordCodingTests {
         #expect(legacy == 71)
     }
 
+    @Test func captureQualityAndDecisionSourceAgreeWithThePackagesCopies() throws {
+        // ADR-002 section 4.2 keeps these as app value types; `AdmissionInput`
+        // carries copies with the same raw values and the evaluation tooling
+        // applies the same size rule. Drift here would make `riftscan` and the
+        // phone disagree about what the gate sees.
+        #expect(CaptureQuality.allCases.map(\.rawValue) == AdmissionInput.CaptureQuality.allCases.map(\.rawValue))
+        #expect(DecisionSource.allCases.map(\.rawValue) == AdmissionInput.DecisionSource.allCases.map(\.rawValue))
+        for source in DecisionSource.allCases {
+            #expect(source.isHuman == AdmissionInput.DecisionSource(rawValue: source.rawValue)?.isHuman, "\(source)")
+        }
+        #expect(CaptureQuality.standardLongEdge == ImportedScan.standardLongEdge && CaptureQuality.aspectTolerance == ImportedScan.aspectTolerance)
+        for (width, height) in [(1454, 2030), (1460, 2040), (1536, 2048), (2030, 1454), (727, 1015), (1800, 2514), (1575, 2200), (1290, 1800), (0, 0)] {
+            let size = PixelSize(width: width, height: height)
+            #expect(CaptureQuality.isStandardSize(size) == ImportedScan.isStandardSize(size), "\(width)x\(height)")
+        }
+        // A record that states no quality is `legacy` on both sides: the
+        // package's `ScanImportTests` read this same frozen sample.
+        let records = try Self.storeDecoder().decode([ScanRecord].self, from: try Fixtures.fixtureData("scans-v1", extension: "json"))
+        #expect(!records.isEmpty && records.allSatisfy { $0.captureQuality == .legacy })
+    }
+
     // MARK: - Version 1 files
 
     @Test func aV1BatchIsACalibrationSittingThatNeverTrains() throws {

@@ -21,7 +21,12 @@ public struct EvaluationCase: Hashable, Sendable, Codable {
     public let scanID: UUID?
     public let batchID: UUID?
     public let decisionSource: AdmissionInput.DecisionSource?
+    /// The record's capture quality as the app decodes it (`legacy` when the
+    /// record states none).
     public let captureQuality: AdmissionInput.CaptureQuality?
+    /// The quality the record's crop and the photo's size would derive under
+    /// the app's rule; what `build-overlay --derive-capture-quality` assumes.
+    public let derivedCaptureQuality: AdmissionInput.CaptureQuality?
     /// The photo's pixel size as the importer loaded it.
     public let imageSize: PixelSize?
 
@@ -35,6 +40,7 @@ public struct EvaluationCase: Hashable, Sendable, Codable {
         batchID: UUID? = nil,
         decisionSource: AdmissionInput.DecisionSource? = nil,
         captureQuality: AdmissionInput.CaptureQuality? = nil,
+        derivedCaptureQuality: AdmissionInput.CaptureQuality? = nil,
         imageSize: PixelSize? = nil
     ) {
         self.file = file
@@ -46,11 +52,12 @@ public struct EvaluationCase: Hashable, Sendable, Codable {
         self.batchID = batchID
         self.decisionSource = decisionSource
         self.captureQuality = captureQuality
+        self.derivedCaptureQuality = derivedCaptureQuality
         self.imageSize = imageSize
     }
 
     private enum CodingKeys: String, CodingKey {
-        case file, expected, group, parameters, samplingWeight, scanID, batchID, decisionSource, captureQuality, imageSize
+        case file, expected, group, parameters, samplingWeight, scanID, batchID, decisionSource, captureQuality, derivedCaptureQuality, imageSize
     }
 
     public init(from decoder: any Decoder) throws {
@@ -65,6 +72,7 @@ public struct EvaluationCase: Hashable, Sendable, Codable {
             batchID: try container.decodeIfPresent(UUID.self, forKey: .batchID),
             decisionSource: try container.decodeIfPresent(AdmissionInput.DecisionSource.self, forKey: .decisionSource),
             captureQuality: try container.decodeIfPresent(AdmissionInput.CaptureQuality.self, forKey: .captureQuality),
+            derivedCaptureQuality: try container.decodeIfPresent(AdmissionInput.CaptureQuality.self, forKey: .derivedCaptureQuality),
             imageSize: try container.decodeIfPresent(PixelSize.self, forKey: .imageSize)
         )
     }
@@ -82,6 +90,7 @@ public struct EvaluationCase: Hashable, Sendable, Codable {
         try container.encodeIfPresent(batchID, forKey: .batchID)
         try container.encodeIfPresent(decisionSource, forKey: .decisionSource)
         try container.encodeIfPresent(captureQuality, forKey: .captureQuality)
+        try container.encodeIfPresent(derivedCaptureQuality, forKey: .derivedCaptureQuality)
         try container.encodeIfPresent(imageSize, forKey: .imageSize)
     }
 }

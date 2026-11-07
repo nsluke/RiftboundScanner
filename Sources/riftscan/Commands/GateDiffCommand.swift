@@ -57,13 +57,13 @@ enum GateDiffCommand {
 
     /// The named requests a file holds: fixture cases, or a dump's folds replayed.
     static func requests(at url: URL, fold: String?) throws -> [(name: String, request: AdmissionRequest)] {
-        let data = try Data(contentsOf: url)
-        if let fixture = try? JSONDecoder().decode(AdmissionFixture.self, from: data) {
+        let dump: AdmissionDump
+        switch try AdmissionFile.read(from: url) {
+        case .fixture(let fixture):
             return fixture.cases.map { ($0.name, fixture.request(for: $0)) }
+        case .dump(let read):
+            dump = read
         }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let dump = try decoder.decode(AdmissionDump.self, from: data)
         let gate = ExemplarAdmission(policy: dump.policy, calibrationHash: dump.engine.calibrationHash)
         var requests: [(String, AdmissionRequest)] = []
         for current in dump.folds where fold == nil || current.name == fold {

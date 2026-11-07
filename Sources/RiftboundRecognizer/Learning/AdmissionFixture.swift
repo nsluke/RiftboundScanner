@@ -93,3 +93,36 @@ public struct AdmissionFixture: Sendable, Codable {
         AdmissionRequest(calibrationHash: calibrationHash, policy: policy, candidate: fixtureCase.candidate, witnesses: fixtureCase.witnesses, existing: fixtureCase.existing)
     }
 }
+
+/// A file `riftscan gate-diff` can replay: the shared fixture or a
+/// `build-overlay --dump`. The two are told apart by their top-level keys
+/// rather than by trying one decoder after the other, so a malformed fixture
+/// (a hand-edited case with a bad outcome key, say) reports its own decoding
+/// error instead of an unrelated one about the dump format.
+public enum AdmissionFile {
+    case fixture(AdmissionFixture)
+    case dump(AdmissionDump)
+
+    public struct UnrecognisedShape: Error, CustomStringConvertible {
+        public let url: URL
+        public let keys: [String]
+
+        public var description: String {
+            "\(url.path) is neither an admission fixture (cases, similarityVectors) nor an admission dump (analyses, folds); top-level keys: \(keys.sorted().joined(separator: ", "))"
+        }
+    }
+
+    public static func read(from url: URL) throws -> AdmissionFile {
+        let data = try Data(contentsOf: url)
+        let keys = Set(((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?.keys.map { $0 } ?? [])
+        if keys.isSuperset(of: ["cases", "similarityVectors"]) {
+            return .fixture(try JSONDecoder().decode(AdmissionFixture.self, from: data))
+        }
+        if keys.isSuperset(of: ["analyses", "folds"]) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return .dump(try decoder.decode(AdmissionDump.self, from: data))
+        }
+        throw UnrecognisedShape(url: url, keys: Array(keys))
+    }
+}

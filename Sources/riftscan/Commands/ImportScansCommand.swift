@@ -22,11 +22,13 @@ enum ImportScansCommand {
             let imported = result.cases.filter { $0.batchID == batch.id }
             let bySource = Dictionary(grouping: imported, by: { $0.decisionSource?.rawValue ?? "?" }).mapValues(\.count).sorted { $0.key < $1.key }
             let standard = imported.filter { $0.captureQuality == .standard }.count
-            Console.line("\(Console.pad(batch.displayName, 12)) \(String(batch.id.uuidString.prefix(8)))  scans \(batch.scans.count)  cases \(imported.count)  standard captures \(standard)  purpose \(batch.purpose)  training \(batch.trainingQuality.rawValue)  \(bySource.map { "\($0.key) \($0.value)" }.joined(separator: " "))")
+            let derivable = imported.filter { $0.captureQuality != .standard && $0.derivedCaptureQuality == .standard }.count
+            Console.line("\(Console.pad(batch.displayName, 12)) \(String(batch.id.uuidString.prefix(8)))  scans \(batch.scans.count)  cases \(imported.count)  standard captures \(standard)\(derivable > 0 ? " (+\(derivable) derivable from crop and size)" : "")  purpose \(batch.purpose)  training \(batch.trainingQuality.rawValue)  \(bySource.map { "\($0.key) \($0.value)" }.joined(separator: " "))")
             if options.bool("verbose") {
                 for evaluationCase in imported {
                     let size = evaluationCase.imageSize.map { "\($0.width)×\($0.height)" } ?? "unreadable"
-                    Console.line("    \(evaluationCase.file)  \(evaluationCase.expected)  weight \(String(format: "%.3f", evaluationCase.samplingWeight))  \(evaluationCase.captureQuality?.rawValue ?? "-")  \(size)")
+                    let derived = evaluationCase.derivedCaptureQuality.map { $0 == evaluationCase.captureQuality ? "" : " (derivable \($0.rawValue))" } ?? ""
+                    Console.line("    \(evaluationCase.file)  \(evaluationCase.expected)  weight \(String(format: "%.3f", evaluationCase.samplingWeight))  \(evaluationCase.captureQuality?.rawValue ?? "-")\(derived)  \(size)")
                 }
             }
         }

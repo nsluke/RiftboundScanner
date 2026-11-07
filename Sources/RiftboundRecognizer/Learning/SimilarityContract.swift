@@ -17,7 +17,11 @@ import Foundation
 ///    with the multiply-then-round form at decimal halves, so the port must use
 ///    the multiply form.)
 /// 4. Similarities that arrive as inputs (reference similarities computed on
-///    the phone) go through the same rounding before they are compared.
+///    the phone) go through the same rounding before they are compared, and
+///    so does every arithmetic result the gate compares: the alternative
+///    margin's difference and the cap rule's mean similarities are rounded
+///    with ``round(_:)`` before they meet a threshold. (0.70 - 0.65 is
+///    0.04999... in binary doubles; rounded it is the 0.05 the rule means.)
 ///
 /// Rounding to four decimals also means a value within 0.00005 of a threshold
 /// lands on it: the fixture carries vectors at each threshold ± 0.00005 so a

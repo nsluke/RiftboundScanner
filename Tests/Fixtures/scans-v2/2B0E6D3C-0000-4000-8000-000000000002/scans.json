@@ -1,0 +1,1084 @@
+[
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [
+        {
+          "code": "OGN-001/298",
+          "origin": "literal"
+        }
+      ],
+      "codeSource": "edgeBand",
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.93,
+        "orientation": "upright",
+        "score": 1.43
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.61,
+        "orientation": "upright",
+        "score": 0.61
+      }
+    ],
+    "captureQuality": "standard",
+    "capturedAt": "2026-11-08T15:00:00Z",
+    "codeReading": {
+      "code": "OGN-001/298",
+      "confidence": 0.93,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "OGN \u2022 001/298"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [
+      {
+        "cardID": "ogn-001-298",
+        "decidedAt": "2026-11-08T15:05:00Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000001-0000-4000-8000-000000000001",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 1,
+        "source": "autoAccepted",
+        "verdict": {
+          "kind": "correct"
+        }
+      }
+    ],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000001-0000-4000-8000-000000000001",
+    "photoFileName": "photos/A0000001-0000-4000-8000-000000000001.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000001-0000-4000-8000-000000000001.jpg",
+    "verdict": {
+      "kind": "correct"
+    },
+    "verdictAt": "2026-11-08T15:05:00Z"
+  },
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [],
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.58,
+        "orientation": "upright",
+        "score": 0.88
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.57,
+        "orientation": "upright",
+        "score": 0.57
+      }
+    ],
+    "captureQuality": "standard",
+    "capturedAt": "2026-11-08T15:00:10Z",
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [
+      {
+        "cardID": "ogn-002-298",
+        "decidedAt": "2026-11-08T15:06:00Z",
+        "finish": {
+          "value": "foil"
+        },
+        "id": "D0000002-0000-4000-8000-000000000002",
+        "ledgerPrintingCode": {
+          "value": "OGN-002-P"
+        },
+        "seq": 1,
+        "source": "human",
+        "verdict": {
+          "cardID": "ogn-002-298",
+          "kind": "corrected"
+        }
+      }
+    ],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000002-0000-4000-8000-000000000002",
+    "photoFileName": "photos/A0000002-0000-4000-8000-000000000002.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000002-0000-4000-8000-000000000002.jpg",
+    "verdict": {
+      "cardID": "ogn-002-298",
+      "kind": "corrected"
+    },
+    "verdictAt": "2026-11-08T15:06:00Z"
+  },
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [
+        {
+          "code": "OGN-001/298",
+          "origin": "literal"
+        }
+      ],
+      "codeSource": "edgeBand",
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.9,
+        "orientation": "upright",
+        "score": 1.4
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.6,
+        "orientation": "upright",
+        "score": 0.6
+      }
+    ],
+    "captureQuality": "standard",
+    "capturedAt": "2026-11-08T15:00:20Z",
+    "codeReading": {
+      "code": "OGN-001/298",
+      "confidence": 0.93,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "OGN \u2022 001/298"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [
+      {
+        "cardID": "ogn-001-298",
+        "decidedAt": "2026-11-08T15:07:00Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000003-0000-4000-8000-000000000003",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 1,
+        "source": "human",
+        "verdict": {
+          "kind": "correct"
+        }
+      },
+      {
+        "decidedAt": "2026-11-08T16:00:00Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000003-0000-4000-8000-000000000004",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 2,
+        "source": "human",
+        "verdict": {
+          "kind": "voided"
+        }
+      }
+    ],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000003-0000-4000-8000-000000000003",
+    "photoFileName": "photos/A0000003-0000-4000-8000-000000000003.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000003-0000-4000-8000-000000000003.jpg",
+    "verdict": {
+      "kind": "voided"
+    },
+    "verdictAt": "2026-11-08T16:00:00Z"
+  },
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [
+        {
+          "code": "OGN-001/298",
+          "origin": "literal"
+        },
+        {
+          "code": "OGN-002/298",
+          "origin": "alternative"
+        }
+      ],
+      "codeSource": "fullImage",
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "duplicateOf": "A0000003-0000-4000-8000-000000000003",
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.7,
+        "orientation": "upright",
+        "score": 1.2
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.62,
+        "orientation": "upright",
+        "score": 0.62
+      }
+    ],
+    "captureQuality": "legacy",
+    "capturedAt": "2026-11-08T15:00:30Z",
+    "codeReading": {
+      "code": "OGN-001/298",
+      "confidence": 0.93,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "OGN \u2022 001/298"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000004-0000-4000-8000-000000000004",
+    "photoFileName": "photos/A0000004-0000-4000-8000-000000000004.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000004-0000-4000-8000-000000000004.jpg",
+    "verdict": {
+      "kind": "pending"
+    }
+  },
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [
+        {
+          "code": "OGN-001/298",
+          "origin": "literal"
+        }
+      ],
+      "codeSource": "edgeBand",
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.93,
+        "orientation": "upright",
+        "score": 1.43
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.61,
+        "orientation": "upright",
+        "score": 0.61
+      }
+    ],
+    "captureQuality": "standard",
+    "capturedAt": "2026-11-08T15:04:00Z",
+    "codeReading": {
+      "code": "OGN-001/298",
+      "confidence": 0.93,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "OGN \u2022 001/298"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [
+      {
+        "cardID": "ogn-001-298",
+        "decidedAt": "2026-11-08T15:06:00Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000005-0000-4000-8000-000000000005",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 1,
+        "source": "audit",
+        "verdict": {
+          "kind": "correct"
+        }
+      }
+    ],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000005-0000-4000-8000-000000000005",
+    "photoFileName": "photos/A0000005-0000-4000-8000-000000000005.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000005-0000-4000-8000-000000000005.jpg",
+    "verdict": {
+      "kind": "correct"
+    },
+    "verdictAt": "2026-11-08T15:06:00Z"
+  },
+  {
+    "analysis": {
+      "analyzedAt": "2026-11-08T15:00:01Z",
+      "codeAlternatives": [
+        {
+          "code": "OGN-001/298",
+          "origin": "literal"
+        }
+      ],
+      "codeSource": "edgeBand",
+      "descriptor": {
+        "descriptor": {
+          "artDifferenceHash": {
+            "bits": 18446462598732840960
+          },
+          "featurePrint": "AACAPwAAAAAAAAAA",
+          "wholeDifferenceHash": {
+            "bits": 1085102592571150095
+          },
+          "wholePerceptualHash": {
+            "bits": 17361641481138401520
+          }
+        },
+        "orientation": "upright"
+      },
+      "quad": {
+        "bottomLeft": [
+          0,
+          0
+        ],
+        "bottomRight": [
+          1454,
+          0
+        ],
+        "topLeft": [
+          0,
+          2030
+        ],
+        "topRight": [
+          1454,
+          2030
+        ]
+      },
+      "shortlist": [
+        {
+          "cardID": "ogn-001-298",
+          "codeAgreement": "exact",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.93,
+          "orientation": "upright",
+          "referenceScore": 0.93,
+          "score": 1.43
+        },
+        {
+          "cardID": "ogn-002-298",
+          "components": {
+            "artDifferenceHash": 0.9,
+            "featurePrint": 0.9,
+            "wholeDifferenceHash": 0.9,
+            "wholePerceptualHash": 0.9
+          },
+          "fusedScore": 0.61,
+          "orientation": "upright",
+          "referenceScore": 0.61,
+          "score": 0.61
+        }
+      ]
+    },
+    "batchID": "2B0E6D3C-0000-4000-8000-000000000002",
+    "candidates": [
+      {
+        "card": {
+          "code": "OGN-001/298",
+          "displayName": "Vi, Piltover Enforcer",
+          "id": "ogn-001-298",
+          "imageURL": "https://example.invalid/ogn-001-298.png",
+          "kind": "Unit",
+          "name": "Vi, Piltover Enforcer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.93,
+        "orientation": "upright",
+        "score": 1.43
+      },
+      {
+        "card": {
+          "code": "OGN-002/298",
+          "displayName": "Jinx, Loose Cannon",
+          "id": "ogn-002-298",
+          "imageURL": "https://example.invalid/ogn-002-298.png",
+          "kind": "Unit",
+          "name": "Jinx, Loose Cannon",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.61,
+        "orientation": "upright",
+        "score": 0.61
+      }
+    ],
+    "captureQuality": "standard",
+    "capturedAt": "2026-11-08T15:04:30Z",
+    "codeReading": {
+      "code": "OGN-001/298",
+      "confidence": 0.93,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "OGN \u2022 001/298"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 220,
+        "width": 157.5,
+        "x": 78.75,
+        "y": 110
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1001
+      },
+      "previewFrame": {
+        "height": 440,
+        "width": 315,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "decisions": [
+      {
+        "cardID": "ogn-001-298",
+        "decidedAt": "2026-11-08T15:05:30Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000006-0000-4000-8000-000000000006",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 1,
+        "source": "autoAccepted",
+        "verdict": {
+          "kind": "correct"
+        }
+      },
+      {
+        "cardID": "ogn-002-298",
+        "decidedAt": "2026-11-08T15:07:00Z",
+        "finish": {
+          "inherit": true
+        },
+        "id": "D0000007-0000-4000-8000-000000000007",
+        "ledgerPrintingCode": {
+          "inherit": true
+        },
+        "seq": 2,
+        "source": "spotCheck",
+        "verdict": {
+          "cardID": "ogn-002-298",
+          "kind": "corrected"
+        }
+      }
+    ],
+    "engine": {
+      "calibrationHash": "c9008e0eafa62e6827a43aea9bd2f524",
+      "osVersion": "26.6.1",
+      "packageVersion": "0.2.0",
+      "platform": "iOS"
+    },
+    "id": "A0000006-0000-4000-8000-000000000006",
+    "photoFileName": "photos/A0000006-0000-4000-8000-000000000006.jpg",
+    "placement": {
+      "confidence": 0.97,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.71,
+    "rectifiedFileName": "rectified/A0000006-0000-4000-8000-000000000006.jpg",
+    "verdict": {
+      "cardID": "ogn-002-298",
+      "kind": "corrected"
+    },
+    "verdictAt": "2026-11-08T15:07:00Z"
+  }
+]

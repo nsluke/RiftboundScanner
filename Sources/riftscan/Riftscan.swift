@@ -11,8 +11,20 @@ struct Riftscan {
       build-index [--cards data/cards.json] [--images cache/images] [--output cache/index.json] [--concurrency N]
       synth [--cards data/cards.json] [--images cache/images] [--output synthetic] [--count 100] [--seed 42]
             [--severities mild,moderate,harsh]
-      evaluate <folder> [--index cache/index.json] [--group mild|moderate|harsh|samples] [--expect-set UNL] [--limit N] [--verbose]
+      evaluate <folder|manifest.json> [--index cache/index.json] [--overlay overlay.json] [--policy policy.json]
+               [--exclude-batch UUID[,UUID]] [--batch UUID[,UUID]] [--group NAME] [--expect-set UNL] [--limit N]
+               [--dump out.json] [--label NAME] [--verbose]
       check-revision [--index cache/index.json] [--json] [--no-vector]
+
+    Learning evaluation (docs/learning-eval.md):
+      import-scans [scans] [--output evaluation/manifest.json] [--policy policy.json] [--audit-rate 0.3] [--verbose]
+      build-overlay <manifest.json> [--index cache/index.json] [--policy policy.json] [--output evaluation/overlay.json]
+               [--exclude-batch UUID[,UUID] | --leave-one-out] [--dump evaluation/admissions.json]
+               [--accept-legacy] [--derive-capture-quality] [--training-quality standard|legacy] [--limit N] [--verbose]
+      report <dump.json>... [--baseline dump.json] [--verbose]
+      admission-report <admissions.json> [--floor 0.62]
+      gate-diff <admission-cases.json|admissions.json> [--server http://riftbound.lan] [--token T] [--fold NAME]
+               [--limit N] [--verbose]
 
     Paths are relative to the current directory; run from the repository root.
     """
@@ -30,6 +42,11 @@ struct Riftscan {
             case "synth": try SynthCommand.run(arguments.dropFirst())
             case "evaluate": try await EvaluateCommand.run(arguments.dropFirst())
             case "check-revision": try await CheckRevisionCommand.run(arguments.dropFirst())
+            case "import-scans": try ImportScansCommand.run(arguments.dropFirst())
+            case "build-overlay": try await BuildOverlayCommand.run(arguments.dropFirst())
+            case "report": try ReportCommand.run(arguments.dropFirst())
+            case "admission-report": try AdmissionReportCommand.run(arguments.dropFirst())
+            case "gate-diff": try await GateDiffCommand.run(arguments.dropFirst())
             case "help", "--help", "-h": Console.line(usage)
             default: throw UsageError("unknown command '\(command)'\n\n\(usage)")
             }

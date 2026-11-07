@@ -52,6 +52,12 @@ struct CommandLineOptions {
         return value
     }
 
+    func double(_ name: String, default fallback: Double) throws(UsageError) -> Double {
+        guard let text = values[name] else { return fallback }
+        guard let value = Double(text) else { throw UsageError("--\(name) expects a number, got '\(text)'") }
+        return value
+    }
+
     func uint64(_ name: String, default fallback: UInt64) throws(UsageError) -> UInt64 {
         guard let text = values[name] else { return fallback }
         guard let value = UInt64(text) else { throw UsageError("--\(name) expects an unsigned integer, got '\(text)'") }
@@ -68,4 +74,8 @@ enum Defaults {
     static let imagesPath = "cache/images"
     static let indexPath = "cache/index.json"
     static let syntheticPath = "synthetic"
+    static let scansPath = "scans"
+    static let manifestPath = "evaluation/manifest.json"
+    static let overlayPath = "evaluation/overlay.json"
+    static let serverURL = "http://riftbound.lan"
 }

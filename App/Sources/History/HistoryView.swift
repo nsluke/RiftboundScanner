@@ -4,6 +4,8 @@ struct HistoryView: View {
     let model: HistoryModel
     let store: any ScanStoring
     let directory: CardDirectory
+    /// For the review queue's printing chips.
+    let vault: CardVault
     let index: IndexSummary
     /// The installed confident tier, for the review queue pushed from here.
     let rule: @Sendable () -> ConfidenceRule
@@ -70,7 +72,7 @@ struct HistoryView: View {
         .navigationDestination(for: ScanBatch.self) { batch in
             BatchOverviewView(model: BatchDetailModel(batch: batch, store: store, directory: directory), directory: directory)
         }
-        .reviewDestinations(store: store, directory: directory, rule: rule)
+        .reviewDestinations(store: store, directory: directory, vault: vault, rule: rule)
         .task { await model.load() }
         .refreshable { await model.load() }
         .confirmationDialog("Delete this batch and its photos?", isPresented: isConfirmingDelete, presenting: batchToDelete) { batch in

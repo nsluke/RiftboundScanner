@@ -19,6 +19,8 @@ struct ScannerModelTests {
             feeder: feeder,
             identifier: identifier,
             store: store,
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
             makeBatch: Fixtures.makeBatch,
             now: { Fixtures.epoch },
             makeID: { recordID }
@@ -154,5 +156,56 @@ struct ScannerModelTests {
             await model.capture()
         }
         #expect(weakModel == nil, "ScannerModel leaked; check task and closure captures")
+    }
+}
+
+/// What the run tells the recogniser (ADR-002, decision 14).
+@Suite("Scanner model hints")
+struct ScannerModelHintTests {
+    private func makeModel(identifier: SequenceIdentifier) -> ScannerModel {
+        ScannerModel(
+            camera: StubCamera(),
+            feeder: StubFeeder(script: [.fed]),
+            identifier: identifier,
+            store: InMemoryScanStore(),
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
+            makeBatch: Fixtures.makeBatch,
+            now: { Fixtures.epoch },
+            makeID: Fixtures.unsampledIDs,
+            settleDelay: .zero
+        )
+    }
+
+    @Test func aSealedBoxBatchPassesItsSetAsTheExpectedSet() async throws {
+        let identifier = SequenceIdentifier(results: [Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx])])
+        let model = makeModel(identifier: identifier)
+        await model.start()
+        await model.beginNewBatch(ScanBatch.Setup(label: "box", purpose: .collection, product: .sealedBox(set: SetCode(rawValue: "OGN")!), defaultFinish: .normal))
+        #expect(model.recognitionHints == RecognitionHints(expectedSet: SetCode(rawValue: "OGN")!))
+
+        await model.capture()
+        #expect(await identifier.hints == [RecognitionHints(expectedSet: SetCode(rawValue: "OGN")!)], "the single-shot path hints too")
+        model.retake()
+
+        model.connectFeeder()
+        model.startAutoScan()
+        await model.autoScanTask?.value
+        #expect(await identifier.hints.count == 2)
+        #expect(await identifier.hints.last == RecognitionHints(expectedSet: SetCode(rawValue: "OGN")!), "and so does the feeder run")
+    }
+
+    @Test func aLoosePileOrACalibrationBatchHintsNothing() async throws {
+        let identifier = SequenceIdentifier(results: [Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx])])
+        let model = makeModel(identifier: identifier)
+        await model.start()
+        #expect(model.batch?.purpose == .calibration)
+        #expect(model.recognitionHints == .none)
+        await model.capture()
+        model.retake()
+        await model.beginNewBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
+        #expect(model.recognitionHints == .none)
+        await model.capture()
+        #expect(await identifier.hints == [.none, .none])
     }
 }

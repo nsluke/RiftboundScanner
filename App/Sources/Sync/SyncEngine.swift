@@ -120,6 +120,9 @@ final class SyncEngine {
     private(set) var summaries: [ScanBatch.ID: BatchSyncSummary] = [:]
     /// The server's `catalog_version` at the last successful resolution.
     private(set) var catalogVersion: String?
+    /// Every manual add and where it stands, newest first; the Add card
+    /// sheet shows them.
+    private(set) var manualItems: [ManualItem] = []
     /// Bumps each time the server applied an item: holdings changed.
     private(set) var ledgerGeneration = 0
     /// Completed flushes, for tests.
@@ -130,6 +133,8 @@ final class SyncEngine {
 
     private let store: SyncingScanStore
     private let outbox: Outbox
+    /// Cards added by hand; their items ride the same outbox (ADR-002, decision 13).
+    private let manual: ManualItemStore
     private let client: any CollectionServing
     private let endpoints: any EndpointResolving
     private let paths: any NetworkPathObserving
@@ -152,6 +157,7 @@ final class SyncEngine {
     init(
         store: SyncingScanStore,
         outbox: Outbox,
+        manual: ManualItemStore,
         client: any CollectionServing,
         endpoints: any EndpointResolving,
         paths: any NetworkPathObserving,
@@ -165,6 +171,7 @@ final class SyncEngine {
     ) {
         self.store = store
         self.outbox = outbox
+        self.manual = manual
         self.client = client
         self.endpoints = endpoints
         self.paths = paths
@@ -387,10 +394,18 @@ final class SyncEngine {
                     state[record.id] = current
                 }
             }
-            try await outbox.removeAll { $0.batchID == batch.id && !liveScans.contains($0.scanID) }
+            try await outbox.removeAll { entry in
+                guard let batchID = entry.batchID, let scanID = entry.scanID else { return false }
+                return batchID == batch.id && !liveScans.contains(scanID)
+            }
             reconciledStamps[batch.id] = stamp
         }
-        try await outbox.removeAll { !liveBatches.contains($0.batchID) }
+        try await outbox.removeAll { entry in
+            guard let batchID = entry.batchID else { return false }
+            return !liveBatches.contains(batchID)
+        }
+        // Manual adds the server has not answered ride along, after the scans'.
+        try await outbox.replaceManual(with: await manual.pending().map(\.ledgerItem))
         queuedItems = await outbox.count
         return snapshot
     }
@@ -436,6 +451,12 @@ final class SyncEngine {
             if changed {
                 let scans = updated.scans
                 try await store.updateSyncState(for: batch.id) { $0.scans = scans }
+                requeued = true
+            }
+        }
+        for item in await manual.allItems() {
+            if case .terminal(.unknownCard(let seen)) = item.state, seen != version {
+                try await manual.set(.queued, for: item.clientRef)
                 requeued = true
             }
         }
@@ -487,10 +508,17 @@ final class SyncEngine {
     /// goes out, so a lost answer is never mistaken for an item never sent.
     private func markSent(_ page: [OutboxEntry]) async throws {
         for (batchID, entries) in Dictionary(grouping: page, by: \.batchID) {
+            guard let batchID else {
+                for entry in entries {
+                    try await manual.set(.sent, for: entry.id)
+                }
+                continue
+            }
             try await store.updateSyncState(for: batchID) { state in
                 for entry in entries {
-                    switch state[entry.scanID].items[entry.id] {
-                    case nil, .queued, .sent: state[entry.scanID].items[entry.id] = .sent
+                    guard let scanID = entry.scanID else { continue }
+                    switch state[scanID].items[entry.id] {
+                    case nil, .queued, .sent: state[scanID].items[entry.id] = .sent
                     case .applied, .terminal: break
                     }
                 }
@@ -533,7 +561,13 @@ final class SyncEngine {
     /// else in `sync.json`, and drops the items from the outbox.
     private func acknowledge(_ outcomes: [(entry: OutboxEntry, state: LedgerItemState)]) async throws {
         for (batchID, changes) in Dictionary(grouping: outcomes, by: \.entry.batchID) {
-            let changes = changes.map { ($0.entry.scanID, $0.entry.id, $0.state) }
+            guard let batchID else {
+                for change in changes {
+                    try await manual.set(change.state, for: change.entry.id)
+                }
+                continue
+            }
+            let changes = changes.compactMap { change in change.entry.scanID.map { ($0, change.entry.id, change.state) } }
             try await store.updateSyncState(for: batchID) { state in
                 for (scanID, ref, itemState) in changes {
                     state[scanID].items[ref] = itemState
@@ -660,6 +694,7 @@ final class SyncEngine {
     // MARK: - Summaries
 
     func refreshSummaries() async {
+        manualItems = await manual.allItems().sorted { $0.createdAt > $1.createdAt }
         guard let batches = try? await store.batches() else { return }
         var updated: [ScanBatch.ID: BatchSyncSummary] = [:]
         for batch in batches {

@@ -18,7 +18,7 @@ struct ReviewQueueModelTests {
         for record in records {
             try await store.append(record, photo: Data(), rectified: nil)
         }
-        let model = ReviewQueueModel(batch: batch, store: store, directory: Fixtures.directory, rule: rule, mode: mode, sample: sample)
+        let model = ReviewQueueModel(batch: batch, store: store, directory: Fixtures.directory, vault: Fixtures.vault, rule: rule, mode: mode, sample: sample)
         await model.load()
         return model
     }
@@ -188,5 +188,205 @@ struct ReviewQueueModelTests {
         #expect(model.current?.id == record.id)
         model.dismissStorageProblem()
         #expect(model.storageProblem == nil)
+    }
+}
+
+/// Finish and printing are inherited from the decision log and written as
+/// `.set` only on change (ADR-002, decisions 3 and 13); the five tiers order
+/// the queue (ADR-002 §6).
+@Suite("Review queue finish and printing")
+struct ReviewQueueOverrideTests {
+    private let store = InMemoryScanStore()
+    private let promo = PrintingKey(rawValue: "OGN-002-P")
+
+    private func makeModel(batch: ScanBatch, records: [ScanRecord], mode: ReviewQueueModel.Mode = .pending) async throws -> ReviewQueueModel {
+        await store.save(batch)
+        for record in records {
+            try await store.append(record, photo: Data(), rectified: nil)
+        }
+        let model = ReviewQueueModel(batch: batch, store: store, directory: Fixtures.directory, vault: Fixtures.vault, mode: mode) { Array($0.prefix($1)) }
+        await model.load()
+        return model
+    }
+
+    private func items(_ record: ScanRecord, batch: ScanBatch) -> [LedgerSyncItem] {
+        LedgerDeltaBuilder.items(record: record, previousState: ScanSyncState(), batch: batch, vault: Fixtures.vault)
+    }
+
+    private func cardKey(of item: LedgerSyncItem?) -> String? {
+        if case .delta(let delta)? = item { return delta.cardKey }
+        return nil
+    }
+
+    private func finish(of item: LedgerSyncItem?) -> Finish? {
+        if case .delta(let delta)? = item { return delta.finish }
+        return nil
+    }
+
+    /// Vi (OGN-001) comes in both finishes: the toggle shows with the batch
+    /// default pre-selected; confirming untouched writes `.inherit`, toggling
+    /// writes `.set(.foil)`.
+    @Test func aBothFinishCardRecordsSetFoilOnlyWhenToggled() async throws {
+        let batch = Fixtures.batch(purpose: .collection, defaultFinish: .normal)
+        let untouched = Fixtures.record(batch: batch.id, capturedAt: Fixtures.epoch, codeRead: false)
+        let toggled = Fixtures.record(batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(1), codeRead: false)
+        let model = try await makeModel(batch: batch, records: [untouched, toggled])
+
+        #expect(model.asksForFinish)
+        #expect(model.finishResolution == .prompt(default: .normal))
+        #expect(model.inheritedFinish == .normal)
+        #expect(model.selectedFinish == .normal, "pre-selected from the batch default")
+        #expect(model.finishOverride == .inherit)
+        await model.confirm()
+
+        #expect(model.current?.id == toggled.id)
+        #expect(model.selectedFinish == .normal, "the selection resets per scan")
+        model.selectedFinish = .foil
+        #expect(model.finishOverride == .set(.foil))
+        await model.confirm()
+
+        let stored = await store.records(in: batch.id)
+        let first = try #require(stored.first { $0.id == untouched.id })
+        #expect(first.decisions.map(\.finish) == [.inherit])
+        #expect(first.effectiveFinish == nil)
+        #expect(finish(of: items(first, batch: batch).first) == .normal, "the batch default, derived the same way on both sides")
+        let second = try #require(stored.first { $0.id == toggled.id })
+        #expect(second.decisions.map(\.finish) == [.set(.foil)])
+        #expect(second.effectiveFinish == .foil)
+        #expect(finish(of: items(second, batch: batch).first) == .foil)
+    }
+
+    /// The fixture vault's RAD-R01 is normal-only: no toggle, no override.
+    @Test func aSingleFinishPrintingNeverAsksAndNeverWritesAFinish() async throws {
+        let batch = Fixtures.batch(purpose: .collection, defaultFinish: .foil)
+        let rune = Fixtures.record(batch: batch.id, candidates: [Fixtures.radRune], codeRead: false)
+        let model = try await makeModel(batch: batch, records: [rune])
+        #expect(model.finishResolution == .forced(.normal))
+        #expect(model.asksForFinish == false)
+        model.selectedFinish = .foil
+        #expect(model.finishOverride == .inherit, "a forced finish ignores the control")
+        await model.confirm()
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.decisions.first?.finish == .inherit)
+        #expect(finish(of: items(stored, batch: batch).first) == .normal)
+    }
+
+    /// Jinx is recognised as OGN-002; the promo OGN-002-P looks the same. In a
+    /// loose pile the scan is "Pick printing"; choosing the promo sets the
+    /// ledger printing while the confirmed card stays the base.
+    @Test func choosingAPromoSetsTheLedgerPrintingAndKeepsTheConfirmedCard() async throws {
+        let batch = Fixtures.makeBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
+        let jinx = Fixtures.record(batch: batch.id, candidates: [Fixtures.jinx, Fixtures.vi])
+        let model = try await makeModel(batch: batch, records: [jinx])
+
+        #expect(model.currentKind == .pickPrinting)
+        let options = try #require(model.printingOptions)
+        #expect(options.shown.map(\.code) == ["OGN-002", "OGN-002-P"])
+        #expect(model.selectedPrinting == PrintingKey(rawValue: "OGN-002"), "pre-selected: the recognised printing")
+        #expect(model.printingOverride == .inherit)
+
+        model.selectedPrinting = promo
+        #expect(model.printingOverride == .set(promo))
+        #expect(model.finishResolution == .prompt(default: .normal), "the fixture promo lists both finishes, so the toggle stays")
+        #expect(model.selectedFinish == .normal, "re-derived for the chosen printing")
+        await model.confirm()
+
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.verdict == .correct)
+        #expect(stored.confirmedCardID == Fixtures.jinx.id, "the visual class is the label")
+        #expect(stored.decisions.map(\.source) == [.human])
+        #expect(stored.decisions.first?.ledgerPrintingCode == .set(promo))
+        #expect(stored.effectivePrintingCode == promo)
+        let sent = items(stored, batch: batch)
+        #expect(sent.count == 1)
+        #expect(cardKey(of: sent.first) == "OGN-002-P")
+    }
+
+    /// Re-confirming a scan whose log already chose the promo leaves the
+    /// promo effective: the chip is pre-selected and the new decision inherits.
+    @Test func reConfirmingAPromoScanLeavesThePromoEffective() async throws {
+        let batch = Fixtures.makeBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
+        let accepted = Fixtures.record(
+            id: Fixtures.uuid(firstByte: Fixtures.unsampledByte),
+            batch: batch.id,
+            decisions: [Fixtures.decision(.correct, cardID: Fixtures.jinx.id, source: .autoAccepted, ledgerPrintingCode: .set(promo))],
+            candidates: [Fixtures.jinx, Fixtures.vi]
+        )
+        let model = try await makeModel(batch: batch, records: [accepted], mode: .spotCheck(candidates: [accepted.id], limit: 1))
+
+        #expect(model.currentKind == .spotCheck)
+        #expect(model.inheritedPrinting == promo)
+        #expect(model.selectedPrinting == promo, "the chip row pre-selects what the log settled on")
+        #expect(model.printingOverride == .inherit)
+        await model.confirm()
+
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.decisions.map(\.source) == [.autoAccepted, .spotCheck])
+        #expect(stored.decisions.last?.ledgerPrintingCode == .inherit)
+        #expect(stored.effectivePrintingCode == promo)
+        let sent = items(stored, batch: batch)
+        #expect(sent.count == 1, "an agreeing re-confirm owes no new item")
+        #expect(cardKey(of: sent.first) == "OGN-002-P")
+    }
+
+    /// A chip the index also knows (the alternate art) is a correction to that
+    /// card, not a ledger override: the two are told apart by the code.
+    @Test func choosingAVisibleSiblingCorrectsToThatCard() async throws {
+        let batch = Fixtures.batch(purpose: .collection, defaultFinish: .normal)
+        let variant = Fixtures.record(batch: batch.id, codeAgreement: .variantDiffers)
+        let model = try await makeModel(batch: batch, records: [variant])
+        #expect(model.currentKind == .pickPrinting)
+        #expect(model.printingOptions?.shown.map(\.code) == ["OGN-001", "OGN-001a"])
+        model.selectedPrinting = PrintingKey(rawValue: "OGN-001a")
+        #expect(model.finishResolution == .forced(.foil), "the showcase printing is foil only")
+        #expect(model.asksForFinish == false)
+        await model.confirm()
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.verdict == .corrected(Fixtures.viAlt.id))
+        #expect(stored.confirmedCardID == Fixtures.viAlt.id)
+        #expect(stored.decisions.first?.ledgerPrintingCode == .inherit)
+        #expect(cardKey(of: items(stored, batch: batch).first) == "OGN-001a")
+        #expect(finish(of: items(stored, batch: batch).first) == .foil)
+        #expect(model.tally == .init(confirmed: 0, corrected: 1, rejected: 0, skipped: 0))
+    }
+
+    /// Correcting to another card drops the chips' choices; an earlier
+    /// printing override is replaced by the new card's own key so the fold
+    /// cannot keep ledgering the old printing.
+    @Test func correctingToAnotherCardReplacesAnOldPrintingOverride() async throws {
+        let batch = Fixtures.makeBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
+        let accepted = Fixtures.record(
+            id: Fixtures.uuid(firstByte: Fixtures.unsampledByte),
+            batch: batch.id,
+            decisions: [Fixtures.decision(.correct, cardID: Fixtures.jinx.id, source: .autoAccepted, ledgerPrintingCode: .set(promo))],
+            candidates: [Fixtures.jinx, Fixtures.vi]
+        )
+        let model = try await makeModel(batch: batch, records: [accepted], mode: .spotCheck(candidates: [accepted.id], limit: 1))
+        await model.correct(to: Fixtures.vi.id)
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.verdict == .corrected(Fixtures.vi.id))
+        #expect(stored.decisions.last?.ledgerPrintingCode == .set(PrintingKey(rawValue: "OGN-001")))
+        #expect(stored.effectivePrintingCode == PrintingKey(rawValue: "OGN-001"))
+        #expect(cardKey(of: items(stored, batch: batch).last) == "OGN-001")
+    }
+
+    @Test func rowsRunUncertainThenDuplicatesThenAudits() async throws {
+        let batch = Fixtures.makeBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
+        let held = Fixtures.record(id: Fixtures.uuid(firstByte: 0), batch: batch.id, capturedAt: Fixtures.epoch)
+        let earlier = Fixtures.record(id: Fixtures.uuid(firstByte: Fixtures.unsampledByte), batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(1))
+        let duplicate = DuplicateGuard.standard.marking(
+            Fixtures.record(id: Fixtures.uuid(firstByte: Fixtures.unsampledByte), batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(2), analysis: Fixtures.analysis(for: Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx]))),
+            among: [Fixtures.record(batch: batch.id, analysis: Fixtures.analysis(for: Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx])))]
+        )
+        let unknown = Fixtures.record(batch: batch.id, candidates: [], capturedAt: Fixtures.epoch.addingTimeInterval(3))
+        let pick = Fixtures.record(batch: batch.id, candidates: [Fixtures.jinx], capturedAt: Fixtures.epoch.addingTimeInterval(4))
+        let uncertain = Fixtures.record(batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(5), codeRead: false)
+        let model = try await makeModel(batch: batch, records: [held, earlier, duplicate, unknown, pick, uncertain])
+
+        let rows = try #require(model.queue.value)
+        #expect(rows.map(\.id) == [unknown.id, pick.id, uncertain.id, duplicate.id, held.id])
+        let kinds: [ReviewKind] = rows.map { model.kind(of: $0) }
+        #expect(kinds == [.unknown, .pickPrinting, .uncertain(.noCodeRead), .possibleDuplicate, .audit])
+        #expect(earlier.isAcceptable(under: .default, in: batch, vault: Fixtures.vault, directory: Fixtures.directory), "Vi has no invisible sibling, so it stays confident even in a loose pile")
     }
 }

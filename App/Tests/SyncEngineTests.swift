@@ -77,6 +77,7 @@ struct SyncEngineTests {
         let inner: InMemoryScanStore
         let store: SyncingScanStore
         let outbox: Outbox
+        let manual: ManualItemStore
         let client: StubCollectionClient
         let endpoints: FixedEndpoints
         let paths: ScriptedPaths
@@ -99,19 +100,21 @@ struct SyncEngineTests {
             wrapped = wrapping?(inner) ?? inner
             store = SyncingScanStore(inner: wrapped, directory: directory, now: { Fixtures.epoch })
             outbox = Outbox(fileURL: directory.appending(path: "outbox.json"))
+            manual = ManualItemStore(fileURL: directory.appending(path: "manual.json"))
             client = StubCollectionClient()
             endpoints = FixedEndpoints(.available(.lan, health: health))
             paths = ScriptedPaths(.wifi)
             clock = TestClock()
             batch = Fixtures.batch(purpose: purpose, defaultFinish: .normal)
-            engine = World.makeEngine(store: store, outbox: outbox, client: client, endpoints: endpoints, paths: paths, clock: clock, policy: policy)
+            engine = World.makeEngine(store: store, outbox: outbox, manual: manual, client: client, endpoints: endpoints, paths: paths, clock: clock, policy: policy)
             try await store.save(batch)
         }
 
-        static func makeEngine(store: SyncingScanStore, outbox: Outbox, client: StubCollectionClient, endpoints: FixedEndpoints, paths: ScriptedPaths, clock: TestClock, policy: SyncEngine.Policy = SyncEngine.Policy()) -> SyncEngine {
+        static func makeEngine(store: SyncingScanStore, outbox: Outbox, manual: ManualItemStore, client: StubCollectionClient, endpoints: FixedEndpoints, paths: ScriptedPaths, clock: TestClock, policy: SyncEngine.Policy = SyncEngine.Policy()) -> SyncEngine {
             SyncEngine(
                 store: store,
                 outbox: outbox,
+                manual: manual,
                 client: client,
                 endpoints: endpoints,
                 paths: paths,
@@ -136,12 +139,13 @@ struct SyncEngineTests {
             wrapped = other.wrapped
             store = SyncingScanStore(inner: other.wrapped, directory: other.directory, now: { Fixtures.epoch })
             outbox = Outbox(fileURL: other.directory.appending(path: "outbox.json"))
+            manual = ManualItemStore(fileURL: other.directory.appending(path: "manual.json"))
             client = other.client
             endpoints = other.endpoints
             paths = other.paths
             clock = other.clock
             batch = other.batch
-            engine = World.makeEngine(store: store, outbox: outbox, client: client, endpoints: endpoints, paths: paths, clock: clock)
+            engine = World.makeEngine(store: store, outbox: outbox, manual: manual, client: client, endpoints: endpoints, paths: paths, clock: clock)
         }
 
         @discardableResult

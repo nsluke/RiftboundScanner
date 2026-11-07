@@ -344,12 +344,15 @@ nonisolated enum RejectionReason: String, Hashable, Sendable, Codable, CaseItera
     case notACard
     case cardNotInCatalog
     case unreadable
+    /// The feeder fed the same card twice; the earlier scan stands (ADR-002, decision 16).
+    case duplicateCapture
 
     var label: String {
         switch self {
         case .notACard: String(localized: "Not a card")
         case .cardNotInCatalog: String(localized: "Card not in catalog")
         case .unreadable: String(localized: "Can't tell")
+        case .duplicateCapture: String(localized: "Duplicate capture")
         }
     }
 }

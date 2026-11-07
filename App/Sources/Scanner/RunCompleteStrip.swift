@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// What a finished feed-and-scan run leaves on the Scan tab: this run's scans
-/// at a glance, split into the ones the recogniser is sure of, the ones the
-/// policy holds for audit and the ones that need a look, with the next step
-/// for each (ADR-002 §6).
+/// at a glance in five tiers (Confident / Needs a look / Pick printing /
+/// Possible duplicate / Unknown), how many confident ones the policy holds
+/// for audit, and the next step for each (ADR-002 §6).
 struct RunCompleteStrip: View {
     let model: ScannerModel
     let progress: ScannerModel.AutoScanProgress
@@ -11,13 +11,7 @@ struct RunCompleteStrip: View {
 
     private var rule: ConfidenceRule { model.rule }
     private var records: [ScanRecord] { model.runRecords }
-    private var uncertain: [ScanRecord] { records.filter { $0.needsReview(under: rule) } }
-    /// Confident and not sampled: what the accept button accepts.
-    private var confident: [ScanRecord] { records.filter { $0.isAcceptable(under: rule) } }
-    private var heldForAudit: [ScanRecord] { records.filter { $0.isHeldForAudit(under: rule) } }
-    private var accepted: Int { records.filter { $0.verdict != .pending }.count }
-    /// Pending rows the review queue will show: uncertain first, then audits.
-    private var toReview: Int { uncertain.count + heldForAudit.count }
+    private var counts: TierCounts { model.runTierCounts }
     private var spotCheckCandidates: [ScanRecord.ID] { model.spotCheckCandidates }
 
     var body: some View {
@@ -71,7 +65,7 @@ struct RunCompleteStrip: View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(records) { record in
-                    ScanThumbnail(record: record, url: model.photoURL(for: record), width: 44, rule: rule)
+                    ScanThumbnail(record: record, url: model.photoURL(for: record), width: 44, rule: rule, tier: model.tier(of: record))
                 }
             }
         }
@@ -79,46 +73,83 @@ struct RunCompleteStrip: View {
         .accessibilityLabel("\(records.count) scans from this run")
     }
 
+    /// One dot per tier that has scans, in tier order, plus the audit hold.
     private var legend: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Theme.blue).frame(width: 8, height: 8)
-            Text("\(confident.count + accepted) confident, code read")
-            if !heldForAudit.isEmpty {
-                Text("·").foregroundStyle(Theme.muted)
-                Image(systemName: "checkmark.shield").font(.caption2).foregroundStyle(Theme.blue)
-                Text("\(heldForAudit.count) held for audit")
-            }
-            Text("·").foregroundStyle(Theme.muted)
-            Circle().fill(Theme.amber).frame(width: 8, height: 8)
-            Text("\(uncertain.count) need a look")
+        let counts = counts
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { legendItems(counts) }
+            VStack(alignment: .leading, spacing: 4) { legendItems(counts) }
         }
         .font(.footnote)
         .lineLimit(1)
         .minimumScaleFactor(0.8)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(legendAccessibilityText(counts))
     }
 
-    private var reviewLabel: String {
-        switch (uncertain.count, heldForAudit.count) {
-        case (0, let audits): String(localized: "Review \(audits) held for audit")
-        case (let needLook, 0): String(localized: "Review \(needLook) uncertain")
-        case (let needLook, let audits): String(localized: "Review \(needLook) uncertain · \(audits) for audit")
+    @ViewBuilder
+    private func legendItems(_ counts: TierCounts) -> some View {
+        let shown = ScanTier.allCases.filter { counts[$0] > 0 || $0 == .confident }
+        ForEach(Array(shown.enumerated()), id: \.element) { offset, tier in
+            if offset > 0 {
+                Text("·").foregroundStyle(Theme.muted)
+            }
+            HStack(spacing: 4) {
+                Circle().fill(Self.color(for: tier)).frame(width: 8, height: 8)
+                Text("\(tier == .confident ? counts[.confident] + counts.decided : counts[tier]) \(tier.label.lowercased())")
+            }
+        }
+        if counts.heldForAudit > 0 {
+            Text("·").foregroundStyle(Theme.muted)
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.shield").font(.caption2).foregroundStyle(Theme.blue)
+                Text("\(counts.heldForAudit) held for audit")
+            }
         }
     }
 
+    private func legendAccessibilityText(_ counts: TierCounts) -> String {
+        var parts = ScanTier.allCases.filter { counts[$0] > 0 || $0 == .confident }.map { tier in
+            "\(tier == .confident ? counts[.confident] + counts.decided : counts[tier]) \(tier.label.lowercased())"
+        }
+        if counts.heldForAudit > 0 { parts.append(String(localized: "\(counts.heldForAudit) held for audit")) }
+        return parts.joined(separator: ", ")
+    }
+
+    static func color(for tier: ScanTier) -> Color {
+        switch tier {
+        case .confident: Theme.blue
+        case .needsALook, .pickPrinting, .unknown: Theme.amber
+        case .possibleDuplicate: Color(red: 0xE0 / 255, green: 0x8A / 255, blue: 0x5C / 255)
+        }
+    }
+
+    private var reviewLabel: String {
+        let counts = counts
+        var parts: [String] = []
+        let needLook = counts[.needsALook] + counts[.unknown]
+        if needLook > 0 { parts.append(String(localized: "\(needLook) uncertain")) }
+        if counts[.pickPrinting] > 0 { parts.append(String(localized: "\(counts[.pickPrinting]) printings")) }
+        if counts[.possibleDuplicate] > 0 { parts.append(String(localized: "\(counts[.possibleDuplicate]) duplicates")) }
+        if counts.heldForAudit > 0 { parts.append(String(localized: "\(counts.heldForAudit) for audit")) }
+        return String(localized: "Review \(parts.joined(separator: " · "))")
+    }
+
     private var acceptLabel: String {
-        switch (heldForAudit.count, toReview) {
-        case (0, 0): String(localized: "Accept the \(confident.count) confident")
-        case (0, _): String(localized: "Accept the \(confident.count) confident, finish later")
-        case (let audits, _): String(localized: "Accept \(confident.count) confident · \(audits) held for audit")
+        let counts = counts
+        switch (counts.heldForAudit, counts.toReview) {
+        case (0, 0): return String(localized: "Accept the \(counts.acceptable) confident")
+        case (0, _): return String(localized: "Accept the \(counts.acceptable) confident, finish later")
+        case (let audits, _): return String(localized: "Accept \(counts.acceptable) confident · \(audits) held for audit")
         }
     }
 
     @ViewBuilder
     private var actions: some View {
         if let batch = model.batch {
+            let counts = counts
             VStack(spacing: 8) {
-                if toReview > 0 {
+                if counts.toReview > 0 {
                     NavigationLink(value: ReviewRoute.queue(batch)) {
                         Text(reviewLabel)
                             .frame(maxWidth: .infinity)
@@ -126,8 +157,9 @@ struct RunCompleteStrip: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.amber)
                     .foregroundStyle(Theme.ground)
+                    .accessibilityHint("Opens the review queue for this batch")
                 }
-                if !confident.isEmpty {
+                if counts.acceptable > 0 {
                     Button {
                         Task { await model.acceptConfidentScans() }
                     } label: {
@@ -136,11 +168,11 @@ struct RunCompleteStrip: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(Theme.blue)
-                    .accessibilityHint(heldForAudit.isEmpty
+                    .accessibilityHint(counts.heldForAudit == 0
                         ? "Marks the confident scans correct without reviewing them"
                         : "Marks the confident scans correct without reviewing them; the ones held for audit stay in the review queue")
                 }
-                if confident.isEmpty, !spotCheckCandidates.isEmpty {
+                if counts.acceptable == 0, !spotCheckCandidates.isEmpty {
                     NavigationLink(value: ReviewRoute.spotCheck(batch, candidates: spotCheckCandidates, limit: ScannerModel.spotCheckLimit)) {
                         Label("Spot-check \(min(spotCheckCandidates.count, ScannerModel.spotCheckLimit))", systemImage: "eye")
                             .frame(maxWidth: .infinity)
@@ -149,7 +181,7 @@ struct RunCompleteStrip: View {
                     .tint(Theme.blue)
                     .accessibilityHint("Re-checks a sample of the scans that were accepted without a look")
                 }
-                if toReview == 0, confident.isEmpty, spotCheckCandidates.isEmpty {
+                if counts.toReview == 0, counts.acceptable == 0, spotCheckCandidates.isEmpty {
                     Text("Everything in this run has a verdict.")
                         .font(.footnote)
                         .foregroundStyle(Theme.muted)
@@ -169,6 +201,9 @@ struct ScanThumbnail: View {
     var showsReason = false
     /// The confident tier to draw under; History draws under the defaults.
     var rule: ConfidenceRule = .default
+    /// The five-tier reading when the caller knows the batch; without it the
+    /// thumbnail falls back to confidence alone.
+    var tier: ScanTier? = nil
 
     private var height: CGFloat { width * 88 / 63 }
     private var confidence: ScanConfidence { record.confidence(under: rule) }
@@ -194,9 +229,11 @@ struct ScanThumbnail: View {
 
     private var edgeColor: Color {
         switch record.verdict {
-        case .pending: confidence.isConfident ? Theme.blue : Theme.amber
-        case .correct, .corrected: Theme.blue
-        case .rejected, .voided: Theme.muted
+        case .pending:
+            if let tier { return RunCompleteStrip.color(for: tier) }
+            return confidence.isConfident ? Theme.blue : Theme.amber
+        case .correct, .corrected: return Theme.blue
+        case .rejected, .voided: return Theme.muted
         }
     }
 
@@ -210,7 +247,14 @@ struct ScanThumbnail: View {
                 .frame(width: 16, height: 16)
                 .background(Theme.blue, in: Circle())
                 .offset(x: 4, y: -4)
-        case .pending where !confidence.isConfident:
+        case .pending where tier == .possibleDuplicate:
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Theme.ground)
+                .frame(width: 16, height: 16)
+                .background(RunCompleteStrip.color(for: .possibleDuplicate), in: Circle())
+                .offset(x: 4, y: -4)
+        case .pending where !confidence.isConfident || tier?.needsAPerson == true:
             Text("?")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(Theme.ground)
@@ -240,6 +284,9 @@ struct ScanThumbnail: View {
         let name = record.topCandidate?.card.displayName ?? String(localized: "No match")
         switch record.verdict {
         case .pending:
+            if let tier, tier != .confident, tier != .needsALook {
+                return "\(name), \(tier.label.lowercased())"
+            }
             if let reason = confidence.reason {
                 return String(localized: "\(name), needs a look: \(reason.label)")
             }

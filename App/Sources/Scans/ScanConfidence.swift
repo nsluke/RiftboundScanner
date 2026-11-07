@@ -159,17 +159,23 @@ nonisolated enum ReviewKind: Hashable, Sendable {
     case audit
     /// Already accepted, re-checked on request; a `spotCheck` label.
     case spotCheck
+    /// The card is known but the printing is not settled (`ScanTier.pickPrinting`); a `human` label.
+    case pickPrinting
+    /// Looks like the card fed just before it (`ScanTier.possibleDuplicate`); a `human` label.
+    case possibleDuplicate
+    /// Nothing in the index resembled the photo (`ScanTier.unknown`); a `human` label.
+    case unknown
 
     var source: DecisionSource {
         switch self {
-        case .uncertain: .human
+        case .uncertain, .pickPrinting, .possibleDuplicate, .unknown: .human
         case .audit: .audit
         case .spotCheck: .spotCheck
         }
     }
 }
 
-extension ScanRecord {
+nonisolated extension ScanRecord {
     func confidence(under rule: ConfidenceRule) -> ScanConfidence {
         ScanConfidence(self, rule: rule)
     }

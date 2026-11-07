@@ -24,6 +24,8 @@ struct RootView: View {
             feeder: dependencies.makeFeeder(),
             identifier: dependencies.identifier,
             store: dependencies.store,
+            vault: dependencies.vault,
+            directory: dependencies.directory,
             makeBatch: dependencies.makeBatch,
             now: dependencies.now,
             makeID: dependencies.makeID,
@@ -58,14 +60,23 @@ struct RootView: View {
         TabView(selection: $tab) {
             Tab("Scan", systemImage: "camera.viewfinder", value: RootTab.scan) {
                 NavigationStack {
-                    ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory)
-                        .toolbarVisibility(.hidden, for: .navigationBar)
-                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, rule: dependencies.confidenceRule)
+                    ScannerView(
+                        model: scanner,
+                        session: dependencies.camera.session,
+                        directory: dependencies.directory,
+                        makeStartRun: {
+                            StartRunModel(memory: dependencies.runSetup, sets: dependencies.directory.sets, index: dependencies.index, appVersion: dependencies.appVersion)
+                        }
+                    )
+                    .toolbarVisibility(.hidden, for: .navigationBar)
+                    .reviewDestinations(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Collection", systemImage: "square.grid.2x2", value: RootTab.collection) {
                 NavigationStack {
-                    CollectionView(model: collection)
+                    CollectionView(model: collection) {
+                        AddCardModel(vault: dependencies.vault, store: dependencies.manualItems, now: dependencies.now, makeID: dependencies.makeID)
+                    }
                 }
                 .environment(\.deckDependencies, deckDependencies)
             }
@@ -76,7 +87,7 @@ struct RootView: View {
             }
             Tab("History", systemImage: "list.bullet.rectangle", value: RootTab.history) {
                 NavigationStack {
-                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, index: dependencies.index, rule: dependencies.confidenceRule)
+                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, index: dependencies.index, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Settings", systemImage: "gearshape", value: RootTab.settings) {

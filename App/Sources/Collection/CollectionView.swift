@@ -6,12 +6,15 @@ import SwiftUI
 /// connected, the bundled catalog with zero counts and a Connect action.
 struct CollectionView: View {
     let model: CollectionModel
+    /// Builds the Add card sheet's model (ADR-002, decision 13).
+    let makeAddCard: () -> AddCardModel
 
     enum Layout: Hashable { case grid, list }
 
     @Environment(SyncEngine.self) private var sync: SyncEngine?
     @State private var layout: Layout = .grid
     @State private var isFiltering = false
+    @State private var isAddingCard = false
     @State private var selected: CollectionEntry?
 
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
@@ -34,6 +37,12 @@ struct CollectionView: View {
         .searchable(text: filterBinding.query, prompt: "Name, code or tag")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    isAddingCard = true
+                } label: {
+                    Label("Add card", systemImage: "plus")
+                }
+                .accessibilityHint("Adds a card by hand, for printings the scanner cannot see")
                 sortMenu
                 Button {
                     isFiltering = true
@@ -45,6 +54,9 @@ struct CollectionView: View {
         }
         .sheet(isPresented: $isFiltering) {
             CollectionFilterSheet(model: model)
+        }
+        .sheet(isPresented: $isAddingCard) {
+            AddCardSheet(model: makeAddCard()) { _ in }
         }
         .sheet(item: $selected) { entry in
             CardDetailView(entry: entry, pricesAsOf: model.pricesAsOf)

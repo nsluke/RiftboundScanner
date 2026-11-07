@@ -15,16 +15,25 @@ nonisolated struct IdentifiedCard: Sendable {
 }
 
 /// Identifies the card in a photo. The live implementation wraps the package's
-/// recogniser; tests inject a stub with canned results.
+/// recogniser; tests inject a stub with canned results. `hints` carries what
+/// the run already knows (a sealed box's set), which biases the ranking and
+/// restrains OCR repairs without vetoing what the card says (ADR-002, decision 14).
 nonisolated protocol CardIdentifying: Sendable {
-    func identify(_ photo: CGImage) async throws -> IdentifiedCard
+    func identify(_ photo: CGImage, hints: RecognitionHints) async throws -> IdentifiedCard
+}
+
+nonisolated extension CardIdentifying {
+    /// Identification with no prior knowledge.
+    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
+        try await identify(photo, hints: .none)
+    }
 }
 
 nonisolated struct LiveCardIdentifier: CardIdentifying {
     let recognizer: CardRecognizer
 
-    func identify(_ photo: CGImage) async throws -> IdentifiedCard {
-        let result = try await recognizer.identify(photo)
+    func identify(_ photo: CGImage, hints: RecognitionHints) async throws -> IdentifiedCard {
+        let result = try await recognizer.identify(photo, hints: hints)
         return IdentifiedCard(result: result, engine: EngineStamp(result.engine))
     }
 }

@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Reference art from the catalog's CDN URL, for this personal test build only;
-/// a distributed app must source art through Riot's API.
+/// a distributed app must source art through Riot's API. `nil` (a printing
+/// the server knows and this build's bundle does not) shows the placeholder.
 struct CardArtView: View {
-    let url: URL
+    let url: URL?
     var size = CGSize(width: 50, height: 70)
 
     var body: some View {

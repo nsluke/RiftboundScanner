@@ -1,12 +1,15 @@
 import SwiftUI
 
-/// The user's cards, or the whole catalog with owned counts, as a grid or a
-/// list with search, filters, sorting and market prices.
+/// The user's cards as the server's ledger has them, or the whole catalog
+/// with owned counts, as a grid or a list with search, filters, sorting and
+/// market prices. Offline it shows the last snapshot with a notice; never
+/// connected, the bundled catalog with zero counts and a Connect action.
 struct CollectionView: View {
     let model: CollectionModel
 
     enum Layout: Hashable { case grid, list }
 
+    @Environment(SyncEngine.self) private var sync: SyncEngine?
     @State private var layout: Layout = .grid
     @State private var isFiltering = false
     @State private var selected: CollectionEntry?
@@ -15,20 +18,11 @@ struct CollectionView: View {
 
     var body: some View {
         Group {
-            switch model.owned {
+            switch model.holdings {
             case .idle, .loading:
                 ProgressView().tint(Theme.text)
-            case .failed(let problem):
-                ContentUnavailableView {
-                    Label("Couldn't load your collection", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(problem.message)
-                } actions: {
-                    Button("Try again") { Task { await model.load() } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.amber)
-                }
-            case .loaded:
+                    .accessibilityLabel("Loading your collection")
+            case .loaded, .failed:
                 content
             }
         }
@@ -56,7 +50,12 @@ struct CollectionView: View {
             CardDetailView(entry: entry, pricesAsOf: model.pricesAsOf)
         }
         .task { await model.load() }
-        .refreshable { await model.refreshPrices() }
+        .refreshable { await model.refresh() }
+        // The ledger moved on the server, the outbox changed, or the server's
+        // catalog version did: the sync engine knows first.
+        .onChange(of: sync?.ledgerGeneration) { _, _ in Task { await model.refreshHoldings() } }
+        .onChange(of: sync?.queuedItems) { _, _ in Task { await model.refreshPending() } }
+        .onChange(of: sync?.catalogVersion) { _, version in Task { await model.noteServerCatalogVersion(version ?? nil) } }
     }
 
     // MARK: - Content
@@ -65,8 +64,13 @@ struct CollectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 header
+                ForEach(model.notices) { notice in
+                    NoticeBanner(notice: notice)
+                }
                 scopePicker
-                if model.shown.isEmpty {
+                if model.isDisconnected, model.filter.ownedOnly {
+                    disconnectedState
+                } else if model.shown.isEmpty {
                     emptyState
                 } else {
                     switch layout {
@@ -86,6 +90,9 @@ struct CollectionView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(model.filter.ownedOnly ? "\(totals.cards) cards · \(totals.printings) printings" : "\(totals.printings) printings · \(totals.cards) owned")
                     .font(.subheadline.weight(.medium))
+                if model.pendingTotal != 0 {
+                    PendingChip(count: model.pendingTotal)
+                }
                 Spacer()
                 Text(totals.value, format: .currency(code: "USD").precision(.fractionLength(0)))
                     .font(.title3.weight(.semibold))
@@ -108,22 +115,28 @@ struct CollectionView: View {
 
     @ViewBuilder
     private var pricesStatus: some View {
+        let snapshotLine = String(localized: "Snapshot prices from \(model.vault.asOf.formatted(date: .abbreviated, time: .omitted))")
         switch model.prices {
         case .loading:
             Label("Updating prices…", systemImage: "arrow.triangle.2.circlepath")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
         case .loaded(let sheet):
-            Text("TCGplayer market as of \(sheet.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+            Text("TCGplayer market as of \(sheet.asOf.formatted(date: .abbreviated, time: .omitted))")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
+        case .failed(.notFound):
+            Text("\(snapshotLine) · the server has no prices yet")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+                .lineLimit(2)
         case .failed(let error):
-            Label("Snapshot prices from \(model.vault.asOf.formatted(date: .abbreviated, time: .omitted)) · \(error.message)", systemImage: "wifi.exclamationmark")
+            Label("\(snapshotLine) · \(error.message)", systemImage: "wifi.exclamationmark")
                 .font(.caption)
                 .foregroundStyle(Theme.amber)
                 .lineLimit(2)
         case .idle:
-            Text("Snapshot prices from \(model.vault.asOf.formatted(date: .abbreviated, time: .omitted))")
+            Text(snapshotLine)
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
         }
@@ -142,10 +155,29 @@ struct CollectionView: View {
             Label(model.filter.ownedOnly && model.ownedTotals.cards == 0 ? "No cards yet" : "Nothing matches", systemImage: "square.grid.2x2")
         } description: {
             Text(model.filter.ownedOnly && model.ownedTotals.cards == 0
-                 ? "Cards you confirm after scanning appear here."
+                 ? "Cards you confirm after scanning appear here once your server has them."
                  : "Try fewer filters or a different search.")
         }
         .padding(.top, 40)
+    }
+
+    /// Never connected: the server has not answered yet and nothing is
+    /// cached. All cards still browses the bundled catalog.
+    @ViewBuilder
+    private var disconnectedState: some View {
+        if case .failed(let error) = model.holdings {
+            ContentUnavailableView {
+                Label("Not connected to your server", systemImage: "externaldrive.badge.wifi")
+            } description: {
+                Text("\(error.message) Your collection lives on the server; the catalog is here to browse meanwhile.")
+            } actions: {
+                Button("Connect") { Task { await model.connect() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.amber)
+                    .accessibilityHint("Looks for your collection server again")
+            }
+            .padding(.top, 40)
+        }
     }
 
     private var grid: some View {
@@ -193,7 +225,49 @@ struct CollectionView: View {
     }
 }
 
-/// A card in the grid: art, name, code, rarity colour, price and owned count.
+/// The offline and catalog notices, one line each, readable as one element.
+struct NoticeBanner: View {
+    let notice: CollectionNotice
+
+    var body: some View {
+        Label {
+            Text(notice.message)
+                .font(.footnote)
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch notice {
+        case .offline: "wifi.exclamationmark"
+        case .catalogNewerThanBundle: "arrow.down.doc"
+        }
+    }
+}
+
+/// "+N pending": what this phone still owes the ledger for a printing.
+struct PendingChip: View {
+    let count: Int
+
+    var body: some View {
+        Text(count > 0 ? "+\(count) pending" : "\(count) pending")
+            .font(.caption2.weight(.semibold).monospacedDigit())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Theme.amber.opacity(0.2), in: Capsule())
+            .foregroundStyle(Theme.amber)
+            .accessibilityLabel(count > 0 ? "\(count) pending sync" : "\(-count) pending removal")
+    }
+}
+
+/// A card in the grid: art, name, code, rarity colour, price, owned count
+/// and the pending chip.
 struct CollectionCardCell: View {
     let entry: CollectionEntry
 
@@ -204,14 +278,20 @@ struct CollectionCardCell: View {
             }
             .aspectRatio(5 / 7, contentMode: .fit)
             .overlay(alignment: .topTrailing) {
-                if entry.quantity > 0 {
-                    Text("×\(entry.quantity)")
-                        .font(.caption2.weight(.bold).monospacedDigit())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.ground.opacity(0.85), in: Capsule())
-                        .padding(4)
+                VStack(alignment: .trailing, spacing: 2) {
+                    if entry.quantity > 0 {
+                        Text("×\(entry.quantity)")
+                            .font(.caption2.weight(.bold).monospacedDigit())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.ground.opacity(0.85), in: Capsule())
+                    }
+                    if entry.pending != 0 {
+                        PendingChip(count: entry.pending)
+                            .background(Theme.ground.opacity(0.85), in: Capsule())
+                    }
                 }
+                .padding(4)
             }
             .overlay(alignment: .leading) {
                 Rectangle().fill(Theme.rarity(entry.vault.rarity)).frame(width: 3)
@@ -236,6 +316,8 @@ struct CollectionCardCell: View {
     private var accessibilityText: String {
         var parts = [entry.vault.name, entry.vault.code, entry.vault.rarity]
         if entry.quantity > 0 { parts.append(String(localized: "\(entry.quantity) owned")) }
+        if entry.pending > 0 { parts.append(String(localized: "\(entry.pending) pending sync")) }
+        if entry.pending < 0 { parts.append(String(localized: "\(-entry.pending) pending removal")) }
         if let price = entry.bestPrice { parts.append(price.formatted(.currency(code: "USD"))) }
         return parts.joined(separator: ", ")
     }
@@ -262,8 +344,13 @@ struct CollectionRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 PriceText(entry: entry).font(.body.weight(.medium))
-                if entry.quantity > 0 {
-                    Text("×\(entry.quantity)").font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                HStack(spacing: 4) {
+                    if entry.quantity > 0 {
+                        Text("×\(entry.quantity)").font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
+                    }
+                    if entry.pending != 0 {
+                        PendingChip(count: entry.pending)
+                    }
                 }
             }
         }

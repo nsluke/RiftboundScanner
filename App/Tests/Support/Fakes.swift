@@ -148,11 +148,18 @@ actor GatedIdentifier: CardIdentifying {
 }
 
 
-nonisolated struct StubPriceSource: PriceQuoting {
-    var outcome: Result<PriceSheet, PriceSourceError> = .success(PriceSheet(fetchedAt: Fixtures.epoch, byProduct: [:]))
+/// Pending ledger deltas a test sets by hand, standing in for the outbox.
+actor StubPendingLedger: PendingLedgerProviding {
+    private(set) var deltas: [PendingDelta]
 
-    func quotes(maxAge: Duration) async throws -> PriceSheet {
-        try outcome.get()
+    init(_ deltas: [PendingDelta] = []) {
+        self.deltas = deltas
+    }
+
+    func pendingDeltas() -> [PendingDelta] { deltas }
+
+    func set(_ deltas: [PendingDelta]) {
+        self.deltas = deltas
     }
 }
 

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// One printing in full: art, stats, rules, tags, both market prices, how many
-/// the user owns, and links out to the marketplaces.
+/// the user owns of each finish (the server's count) with what this phone
+/// still owes the ledger, and links out to the marketplaces.
 struct CardDetailView: View {
     let entry: CollectionEntry
     let pricesAsOf: Date
@@ -76,6 +77,7 @@ struct CardDetailView: View {
                 if entry.vault.promo { badge("Promo", Theme.amber) }
                 if entry.vault.banned { badge("Banned", .red) }
                 if entry.quantity > 0 { badge("\(entry.quantity) owned", Theme.blue) }
+                if entry.pending != 0 { PendingChip(count: entry.pending) }
             }
         }
         .accessibilityElement(children: .combine)
@@ -156,14 +158,17 @@ struct CardDetailView: View {
                 GridRow {
                     Text("Finish").foregroundStyle(Theme.muted)
                     Text("Each").foregroundStyle(Theme.muted)
-                    Text("Owned value").foregroundStyle(Theme.muted)
+                    Text("Owned").foregroundStyle(Theme.muted)
+                    Text("Value").foregroundStyle(Theme.muted)
                 }
                 .font(.caption)
-                if entry.vault.hasNormal {
-                    priceRow("Normal", entry.normalPrice)
+                // Every finish the server counts shows, even one the vault
+                // says the printing lacks: a ledger row is a fact.
+                if entry.vault.hasNormal || entry.owned.normal > 0 {
+                    priceRow("Normal", entry.normalPrice, owned: entry.owned.normal)
                 }
-                if entry.vault.hasFoil {
-                    priceRow("Foil", entry.foilPrice)
+                if entry.vault.hasFoil || entry.owned.foil > 0 {
+                    priceRow("Foil", entry.foilPrice, owned: entry.owned.foil)
                 }
             }
             .padding(12)
@@ -172,12 +177,15 @@ struct CardDetailView: View {
         }
     }
 
-    private func priceRow(_ finish: String, _ price: Double?) -> some View {
+    private func priceRow(_ finish: String, _ price: Double?, owned: Int) -> some View {
         GridRow {
             Text(finish)
             Text(price.map { $0.formatted(.currency(code: "USD")) } ?? "—")
-            Text(price.map { ($0 * Double(entry.quantity)).formatted(.currency(code: "USD")) } ?? "—")
-                .foregroundStyle(entry.quantity > 0 ? Theme.amber : Theme.muted)
+            Text("\(owned)")
+                .foregroundStyle(owned > 0 ? Theme.text : Theme.muted)
+                .accessibilityLabel("\(owned) owned")
+            Text(price.map { ($0 * Double(owned)).formatted(.currency(code: "USD")) } ?? "—")
+                .foregroundStyle(owned > 0 ? Theme.amber : Theme.muted)
         }
         .font(.body.monospacedDigit())
         .accessibilityElement(children: .combine)

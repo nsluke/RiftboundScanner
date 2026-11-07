@@ -1,0 +1,630 @@
+[
+  {
+    "batchID": "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93",
+    "candidates": [
+      {
+        "card": {
+          "code": "VEN-031/166",
+          "displayName": "Twilight Shroud",
+          "id": "ven-031-166",
+          "imageURL": "https://example.invalid/ven-031-166.png",
+          "kind": "Spell",
+          "name": "Twilight Shroud",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Vendetta"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.7595658540725708,
+        "orientation": "upright",
+        "score": 1.2595658540725707
+      },
+      {
+        "card": {
+          "code": "OGN-095/298",
+          "displayName": "Stupefy",
+          "id": "ogn-095-298",
+          "imageURL": "https://example.invalid/ogn-095-298.png",
+          "kind": "Spell",
+          "name": "Stupefy",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6590517342090606,
+        "orientation": "upright",
+        "score": 0.2590517342090606
+      },
+      {
+        "card": {
+          "code": "VEN-071/166",
+          "displayName": "Fretful Feline",
+          "id": "ven-071-166",
+          "imageURL": "https://example.invalid/ven-071-166.png",
+          "kind": "Unit",
+          "name": "Fretful Feline",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Vendetta"
+        },
+        "codeAgreement": "numberDiffers",
+        "descriptorScore": 0.6578876972198486,
+        "orientation": "upright",
+        "score": 0.2578876972198486
+      },
+      {
+        "card": {
+          "code": "OGN-094/298",
+          "displayName": "Sprite Call",
+          "id": "ogn-094-298",
+          "imageURL": "https://example.invalid/ogn-094-298.png",
+          "kind": "Spell",
+          "name": "Sprite Call",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6504166841506958,
+        "orientation": "upright",
+        "score": 0.25041668415069573
+      },
+      {
+        "card": {
+          "code": "UNL-038/219",
+          "displayName": "Skyward Strike",
+          "id": "unl-038-219",
+          "imageURL": "https://example.invalid/unl-038-219.png",
+          "kind": "Spell",
+          "name": "Skyward Strike",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Unleashed"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6503177404403686,
+        "orientation": "upright",
+        "score": 0.2503177404403686
+      }
+    ],
+    "capturedAt": "2026-11-05T19:32:53Z",
+    "codeReading": {
+      "code": "VEN-031/166",
+      "confidence": 1,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "VEN \u2022 031/166 \u2022 EN"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 282.1587301587301,
+        "width": 402,
+        "x": 0,
+        "y": 307.2539682539683
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 2892,
+        "x": 66,
+        "y": 1122
+      },
+      "previewFrame": {
+        "height": 729,
+        "width": 402,
+        "x": 0,
+        "y": 62
+      }
+    },
+    "id": "0EDBA322-499D-4B42-8CDC-BE2D263D3ECE",
+    "photoFileName": "photos/0EDBA322-499D-4B42-8CDC-BE2D263D3ECE.jpg",
+    "placement": {
+      "confidence": 1,
+      "kind": "detected"
+    },
+    "processingSeconds": 1.034470042,
+    "rectifiedFileName": "rectified/0EDBA322-499D-4B42-8CDC-BE2D263D3ECE.jpg",
+    "verdict": {
+      "kind": "correct"
+    },
+    "verdictAt": "2026-11-05T19:38:19Z"
+  },
+  {
+    "batchID": "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93",
+    "candidates": [
+      {
+        "card": {
+          "code": "VEN-163/166",
+          "displayName": "Risen Altar",
+          "id": "ven-163-166",
+          "imageURL": "https://example.invalid/ven-163-166.png",
+          "kind": "Battlefield",
+          "name": "Risen Altar",
+          "orientation": "landscape",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Vendetta"
+        },
+        "descriptorScore": 0.6641885876655579,
+        "orientation": "upright",
+        "score": 0.6641885876655579
+      },
+      {
+        "card": {
+          "code": "OGN-175/298",
+          "displayName": "Shipyard Skulker",
+          "id": "ogn-175-298",
+          "imageURL": "https://example.invalid/ogn-175-298.png",
+          "kind": "Unit",
+          "name": "Shipyard Skulker",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.6625214457511901,
+        "orientation": "upsideDown",
+        "score": 0.6625214457511901
+      },
+      {
+        "card": {
+          "code": "SFD-177/221",
+          "displayName": "Azir - Sovereign",
+          "id": "sfd-177-221",
+          "imageURL": "https://example.invalid/sfd-177-221.png",
+          "kind": "Unit",
+          "name": "Azir",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Epic",
+          "setName": "Spiritforged"
+        },
+        "descriptorScore": 0.6609885096549987,
+        "orientation": "upsideDown",
+        "score": 0.6609885096549987
+      },
+      {
+        "card": {
+          "code": "RAD-159/167",
+          "displayName": "Black Rose Sanctum",
+          "id": "rad-159-167",
+          "imageURL": "https://example.invalid/rad-159-167.png",
+          "kind": "Battlefield",
+          "name": "Black Rose Sanctum",
+          "orientation": "landscape",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Radiance"
+        },
+        "descriptorScore": 0.6566919565200805,
+        "orientation": "upsideDown",
+        "score": 0.6566919565200805
+      },
+      {
+        "card": {
+          "code": "OGN-142/298",
+          "displayName": "Mountain Drake",
+          "id": "ogn-142-298",
+          "imageURL": "https://example.invalid/ogn-142-298.png",
+          "kind": "Unit",
+          "name": "Mountain Drake",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Origins"
+        },
+        "descriptorScore": 0.652751874923706,
+        "orientation": "upsideDown",
+        "score": 0.652751874923706
+      }
+    ],
+    "capturedAt": "2026-11-05T19:06:56Z",
+    "id": "62F63796-C35E-44AA-ABF3-6B65277BB7A8",
+    "photoFileName": "photos/62F63796-C35E-44AA-ABF3-6B65277BB7A8.jpg",
+    "placement": {
+      "confidence": 0.75146484375,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.457438042,
+    "rectifiedFileName": "rectified/62F63796-C35E-44AA-ABF3-6B65277BB7A8.jpg",
+    "verdict": {
+      "cardID": "sfd-121-221",
+      "kind": "corrected"
+    },
+    "verdictAt": "2026-11-05T19:09:11Z"
+  },
+  {
+    "batchID": "1CAED0F4-69FA-4D3D-AC6F-3D45ED54BF93",
+    "candidates": [
+      {
+        "card": {
+          "code": "VEN-032/166",
+          "displayName": "Frostcoat Mother",
+          "id": "ven-032-166",
+          "imageURL": "https://example.invalid/ven-032-166.png",
+          "kind": "Unit",
+          "name": "Frostcoat Mother",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Vendetta"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.7404546558856964,
+        "orientation": "upright",
+        "score": 1.2404546558856964
+      },
+      {
+        "card": {
+          "code": "VEN-094/166",
+          "displayName": "Mask Mother",
+          "id": "ven-094-166",
+          "imageURL": "https://example.invalid/ven-094-166.png",
+          "kind": "Unit",
+          "name": "Mask Mother",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Vendetta"
+        },
+        "codeAgreement": "numberDiffers",
+        "descriptorScore": 0.6446577429771423,
+        "orientation": "upright",
+        "score": 0.24465774297714227
+      },
+      {
+        "card": {
+          "code": "RAD-036/167",
+          "displayName": "Storm Raptor",
+          "id": "rad-036-167",
+          "imageURL": "https://example.invalid/rad-036-167.png",
+          "kind": "Unit",
+          "name": "Storm Raptor",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Radiance"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6218670725822449,
+        "orientation": "upright",
+        "score": 0.22186707258224492
+      },
+      {
+        "card": {
+          "code": "UNL-066/219",
+          "displayName": "Moonlight Affliction",
+          "id": "unl-066-219",
+          "imageURL": "https://example.invalid/unl-066-219.png",
+          "kind": "Spell",
+          "name": "Moonlight Affliction",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Unleashed"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.611399483680725,
+        "orientation": "upright",
+        "score": 0.21139948368072503
+      },
+      {
+        "card": {
+          "code": "OGS-002/024",
+          "displayName": "Firestorm",
+          "id": "ogs-002-024",
+          "imageURL": "https://example.invalid/ogs-002-024.png",
+          "kind": "Spell",
+          "name": "Firestorm",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Proving Grounds"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6107759892940521,
+        "orientation": "upright",
+        "score": 0.21077598929405206
+      }
+    ],
+    "capturedAt": "2026-11-05T19:37:44Z",
+    "codeReading": {
+      "code": "VEN-032/166",
+      "confidence": 1,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "VEN \u2022 032/166 \u2022 EN"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 282.1587301587301,
+        "width": 202,
+        "x": 100,
+        "y": 307.2539682539683
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1122
+      },
+      "previewFrame": {
+        "height": 729,
+        "width": 402,
+        "x": 0,
+        "y": 62
+      }
+    },
+    "id": "5D4F851E-81DB-4236-983B-F97CDB689CBB",
+    "photoFileName": "photos/5D4F851E-81DB-4236-983B-F97CDB689CBB.jpg",
+    "placement": {
+      "confidence": 1,
+      "kind": "detected"
+    },
+    "processingSeconds": 0.767714417,
+    "rectifiedFileName": "rectified/5D4F851E-81DB-4236-983B-F97CDB689CBB.jpg",
+    "verdict": {
+      "kind": "pending"
+    }
+  },
+  {
+    "batchID": "6B23DFD9-8EDC-448B-B27E-7D4DDAC318BF",
+    "candidates": [
+      {
+        "card": {
+          "code": "UNL-097/219",
+          "displayName": "Kinkou Initiate",
+          "id": "unl-097-219",
+          "imageURL": "https://example.invalid/unl-097-219.png",
+          "kind": "Unit",
+          "name": "Kinkou Initiate",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Unleashed"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.8867672145366668,
+        "orientation": "upright",
+        "score": 1.386767214536667
+      },
+      {
+        "card": {
+          "code": "SFD-130/221",
+          "displayName": "Treasure Hunter",
+          "id": "sfd-130-221",
+          "imageURL": "https://example.invalid/sfd-130-221.png",
+          "kind": "Unit",
+          "name": "Treasure Hunter",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Spiritforged"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.777607560157776,
+        "orientation": "upright",
+        "score": 0.37760756015777597
+      },
+      {
+        "card": {
+          "code": "RAD-095/167",
+          "displayName": "Momentary Companion",
+          "id": "rad-095-167",
+          "imageURL": "https://example.invalid/rad-095-167.png",
+          "kind": "Unit",
+          "name": "Momentary Companion",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Radiance"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.770177298784256,
+        "orientation": "upright",
+        "score": 0.370177298784256
+      },
+      {
+        "card": {
+          "code": "UNL-065/219",
+          "displayName": "Icevale Archer",
+          "id": "unl-065-219",
+          "imageURL": "https://example.invalid/unl-065-219.png",
+          "kind": "Unit",
+          "name": "Icevale Archer",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Unleashed"
+        },
+        "codeAgreement": "numberDiffers",
+        "descriptorScore": 0.7646482706069946,
+        "orientation": "upright",
+        "score": 0.36464827060699456
+      },
+      {
+        "card": {
+          "code": "SFD-048/221",
+          "displayName": "Stellacorn Herder",
+          "id": "sfd-048-221",
+          "imageURL": "https://example.invalid/sfd-048-221.png",
+          "kind": "Unit",
+          "name": "Stellacorn Herder",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Spiritforged"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.7613555550575256,
+        "orientation": "upright",
+        "score": 0.3613555550575256
+      }
+    ],
+    "capturedAt": "2026-11-03T19:44:47Z",
+    "codeReading": {
+      "code": "UNL-097/219",
+      "confidence": 1,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "UNL \u2022 097/219"
+    },
+    "id": "AD08D71D-D130-426A-A195-272F5D2468C4",
+    "photoFileName": "photos/AD08D71D-D130-426A-A195-272F5D2468C4.jpg",
+    "placement": {
+      "confidence": 1,
+      "kind": "detected"
+    },
+    "processingSeconds": 1.441028708,
+    "rectifiedFileName": "rectified/AD08D71D-D130-426A-A195-272F5D2468C4.jpg",
+    "verdict": {
+      "kind": "correct"
+    },
+    "verdictAt": "2026-11-03T19:44:55Z"
+  },
+  {
+    "batchID": "BF7582A9-D75D-4ACB-9EA5-AFCCA83D79A4",
+    "candidates": [
+      {
+        "card": {
+          "code": "VEN-072/166",
+          "displayName": "Guttural Roar",
+          "id": "ven-072-166",
+          "imageURL": "https://example.invalid/ven-072-166.png",
+          "kind": "Spell",
+          "name": "Guttural Roar",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Vendetta"
+        },
+        "codeAgreement": "exact",
+        "descriptorScore": 0.6339076697826385,
+        "orientation": "upright",
+        "score": 1.1339076697826385
+      },
+      {
+        "card": {
+          "code": "OGN-045/298",
+          "displayName": "Defy",
+          "id": "ogn-045-298",
+          "imageURL": "https://example.invalid/ogn-045-298.png",
+          "kind": "Spell",
+          "name": "Defy",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Common",
+          "setName": "Origins"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6810211658477783,
+        "orientation": "upsideDown",
+        "score": 0.28102116584777825
+      },
+      {
+        "card": {
+          "code": "SFD-043/221",
+          "displayName": "Emperor's Divide",
+          "id": "sfd-043-221",
+          "imageURL": "https://example.invalid/sfd-043-221.png",
+          "kind": "Spell",
+          "name": "Emperor's Divide",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Uncommon",
+          "setName": "Spiritforged"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6752390205860137,
+        "orientation": "upsideDown",
+        "score": 0.2752390205860137
+      },
+      {
+        "card": {
+          "code": "RAD-184/167",
+          "displayName": "Packed Amphitheater",
+          "id": "rad-184-167",
+          "imageURL": "https://example.invalid/rad-184-167.png",
+          "kind": "Battlefield",
+          "name": "Packed Amphitheater",
+          "orientation": "landscape",
+          "printing": 4,
+          "rarity": "Showcase",
+          "setName": "Radiance"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6655675411224365,
+        "orientation": "upsideDown",
+        "score": 0.2655675411224365
+      },
+      {
+        "card": {
+          "code": "OGN-264/298",
+          "displayName": "Guerilla Warfare - Teemo",
+          "id": "ogn-264-298",
+          "imageURL": "https://example.invalid/ogn-264-298.png",
+          "kind": "Spell",
+          "name": "Guerilla Warfare",
+          "orientation": "portrait",
+          "printing": 0,
+          "rarity": "Epic",
+          "setName": "Origins"
+        },
+        "codeAgreement": "unrelated",
+        "descriptorScore": 0.6648393273353577,
+        "orientation": "upsideDown",
+        "score": 0.26483932733535764
+      }
+    ],
+    "capturedAt": "2026-11-05T19:51:07Z",
+    "codeReading": {
+      "code": "VEN-072/166",
+      "confidence": 1,
+      "layout": "portrait",
+      "orientation": "upright",
+      "text": "VEN \u2022 072/166 \u2022 EN"
+    },
+    "crop": {
+      "guideFrame": {
+        "height": 282.1587301587301,
+        "width": 202,
+        "x": 100,
+        "y": 307.2539682539683
+      },
+      "photoHeight": 4032,
+      "photoWidth": 3024,
+      "pixelRect": {
+        "height": 2030,
+        "width": 1454,
+        "x": 785,
+        "y": 1122
+      },
+      "previewFrame": {
+        "height": 729,
+        "width": 402,
+        "x": 0,
+        "y": 62
+      }
+    },
+    "id": "A137F90D-2ED4-4585-B768-562E2DED1634",
+    "photoFileName": "photos/A137F90D-2ED4-4585-B768-562E2DED1634.jpg",
+    "placement": {
+      "kind": "wholeImage"
+    },
+    "processingSeconds": 0.817368083,
+    "rectifiedFileName": "rectified/A137F90D-2ED4-4585-B768-562E2DED1634.jpg",
+    "verdict": {
+      "kind": "correct"
+    },
+    "verdictAt": "2026-11-05T19:51:42Z"
+  }
+]

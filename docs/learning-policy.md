@@ -200,7 +200,9 @@ decodes exactly this text.
 - `admission` is section 7, rules 5-8: the 0.62 reference floor and 0.05
   alternative margin of tier `code`, the 0.85 / 0.60 two-witness thresholds of
   tier `artCorroborated`, the 0.90 impostor rule, the 0.985 dedupe and the cap
-  of 6 per art group.
+  of 6 per art group. `ExemplarAdmission` applies them; `docs/learning-eval.md`
+  documents the gate, its inputs, the similarity contract and the shared
+  fixture, and records what the gate yields on the real batches.
 
 `LearningPolicy.read(from:)` / `write(to:)` handle the file; `riftscan identify
 --policy policy.json --overlay overlay.json` runs the recogniser with both and

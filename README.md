@@ -93,7 +93,11 @@ Two targets live in this package:
    Everything that chooses *where* the card is (hypothesis ordering, the
    whole-image rule, the winning hypothesis) uses reference scores only, so
    exemplars can change which card wins but never where it was found, and an
-   empty overlay changes nothing at all. See `docs/learning-policy.md`.
+   empty overlay changes nothing at all. Which confirmed scans become
+   exemplars is decided by `ExemplarAdmission`, a pure gate (ADR-002 section 7,
+   rules 1–8) that the collection server ports to Python; the two are held to
+   one fixture, `Tests/Fixtures/admission-cases.json`, and one similarity
+   contract. See `docs/learning-policy.md` and `docs/learning-eval.md`.
 
 The result carries the ranked matches (each with its code agreement and whether
 that agreement came from the literal reading or an alternative), where the card
@@ -181,6 +185,55 @@ Run the tests (Swift Testing; the Vision-backed ones are tagged `vision`):
 ```bash
 swift test
 ```
+
+### Learning evaluation
+
+The scans pulled from the phone (`scans/<batch>/`, see "Reviewing the
+results") double as the recogniser's labelled test set and as the raw material
+for learned exemplars. Five commands turn them into numbers; the protocol and
+the measured results are in `docs/learning-eval.md`.
+
+```bash
+swift run -c release riftscan import-scans scans --output evaluation/manifest.json   # one case per human-judged scan
+swift run -c release riftscan build-overlay evaluation/manifest.json --leave-one-out \
+  --output evaluation/overlay.json --dump evaluation/admissions.json              # gate every scan, one overlay per held-out batch
+swift run -c release riftscan evaluate evaluation/manifest.json --dump evaluation/baseline.json --label baseline
+swift run -c release riftscan evaluate evaluation/manifest.json --batch <held-out batch> \
+  --overlay evaluation/overlay-holdout-<prefix>.json --dump evaluation/fold.json --label fold
+swift run -c release riftscan report evaluation/fold.json --baseline evaluation/baseline.json
+swift run -c release riftscan admission-report evaluation/admissions.json
+swift run -c release riftscan gate-diff Tests/Fixtures/admission-cases.json --server http://riftbound.lan
+```
+
+- `import-scans` reads v1 and v2 `scans.json` files, keeps the scans whose
+  latest decision was made by a person (`human`, `audit`, `spotCheck`, or the
+  `legacy` decision a v1 verdict stands for), labels each with the decision's
+  card, weights audit cases `1 / auditRate` (the policy's, 0.3) and the rest
+  1, loads each photo at 4096 px to record its size and settle its capture
+  quality, and writes a manifest stamped with the platform (`macOS`).
+- `build-overlay` runs the Mac recogniser once over every photo, builds the
+  gate's inputs (placement, code source and agreement, reference similarity
+  and code alternatives against the index, the oriented feature print) and
+  runs the Swift gate per fold: `--exclude-batch` for one fold, or
+  `--leave-one-out` for one fold per batch. It prints the exemplar count per
+  fold and **fails (exit 1) when a fold yields zero exemplars**, after writing
+  everything. `--accept-legacy` and `--training-quality standard` are
+  measurement-only relaxations for the pre-ledger batches (recorded in the
+  dump; never ship an overlay built with them).
+- `evaluate` gained `--overlay`, `--policy`, `--exclude-batch` (drop a batch's
+  exemplars from the overlay), `--batch` (only that batch's cases) and
+  `--dump`; it reports raw and weighted top-1/top-3, the confident tier's
+  precision and coverage (with the 95 % Wilson lower bound) and how often an
+  exemplar lifted the winner.
+- `report` re-tallies dumps and compares each with a baseline on their shared
+  cases, stating whether the shipping rule (top-1 and confident precision not
+  lower than baseline) holds.
+- `admission-report` prints the impostor similarity distribution (p50/p95/p99
+  between scans of different art groups), the reference floor's ROC and the
+  gate's outcomes by reason.
+- `gate-diff` posts every gate call (the fixture's cases, or a dump's folds
+  replayed) to the server's `POST /api/learning/admit/dry-run` and reports
+  mismatches; exit 1 on any.
 
 ## Measured accuracy
 
@@ -436,8 +489,10 @@ d=$(mktemp -d)/2B0E6D3C-0000-4000-8000-000000000002 && mkdir -p "$d" \
   && python3 -I Scripts/summarize-scans.py "$(dirname "$d")"
 ```
 
-`riftscan evaluate` can then be pointed at the pulled photos by copying the ones
-you have judged into `samples/` with their printed code as the file name.
+`riftscan import-scans scans` turns the judged scans into an evaluation
+manifest directly (see "Learning evaluation"); `riftscan evaluate` can also be
+pointed at photos copied into `samples/` with their printed code as the file
+name.
 
 ### Printing identity
 
@@ -493,6 +548,17 @@ through the official API under those terms.
   (base64), unit-normalised at build time so similarity is a dot product. The
   format is versioned; a mismatch is refused rather than misread. An optional
   `calibrationPrint` (same encoding) records the embedding the index was built in.
+- **Admission gate.** `ExemplarAdmission` (gate version 2) is a pure function of
+  an `AdmissionInput` (decision source and kind, the snapshot card, placement,
+  calibration hash, capture and training quality, code evidence, reference
+  similarity, code alternatives, feature print), the witnesses offered for the
+  art tier and the exemplars already admitted. Every similarity goes through
+  `SimilarityContract`: Float64 accumulation over the stored Float32 values,
+  rounded half-to-even to four decimals (`round(x * 10000) / 10000`) before any
+  comparison. `Tests/Fixtures/admission-cases.json` carries 58 cases and 15
+  similarity vectors (each threshold ± 0.00005); the Swift suite and the
+  server's Python port both run it, and `riftscan gate-diff` checks the live
+  server against the Swift gate.
 - **Overlay and policy formats.** `ExemplarIndex` is JSON `formatVersion` 2
   (`version`, `calibrationPrint`, `exemplars[{artGroup, featurePrint, scanID,
   batchID, admittedAt}]`), stored on the phone by `BinaryExemplarStore` (packed

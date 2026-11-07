@@ -1,0 +1,2441 @@
+{
+ "gateVersion": 2,
+ "contract": {
+  "decimals": 4,
+  "rounding": "round_half_even(x * 10000) / 10000 over a Float64 running sum of the Float32 elements, clamped to 0...1"
+ },
+ "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+ "policy": {
+  "referenceSimilarityFloor": 0.62,
+  "alternativeMargin": 0.05,
+  "witnessMutualSimilarity": 0.85,
+  "witnessReferenceFloor": 0.6,
+  "impostorSimilarity": 0.9,
+  "duplicateSimilarity": 0.985,
+  "maximumPerGroup": 6
+ },
+ "cases": [
+  {
+   "name": "rule1-autoAccepted-never-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "autoAccepted",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "decisionSource"
+   }
+  },
+  {
+   "name": "rule1-legacy-never-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "legacy",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "decisionSource"
+   }
+  },
+  {
+   "name": "rule1-pending-confirms-nothing",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "pending",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "decisionKind"
+   }
+  },
+  {
+   "name": "rule1-rejected-confirms-nothing",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "rejected",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "decisionKind"
+   }
+  },
+  {
+   "name": "rule1-voided-confirms-nothing",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "voided",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "decisionKind"
+   }
+  },
+  {
+   "name": "rule1-correct-without-card-snapshot",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "noCardID"
+   }
+  },
+  {
+   "name": "rule2-whole-image-placement",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "wholeImage",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "placement"
+   }
+  },
+  {
+   "name": "rule3-other-calibration-hash",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "0badcafe0badcafe0badcafe0badcafe",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "calibrationMismatch"
+   }
+  },
+  {
+   "name": "rule4-legacy-capture",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "legacy",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "captureQuality"
+   }
+  },
+  {
+   "name": "rule4-legacy-batch-training-override",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "legacy",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "trainingQuality"
+   }
+  },
+  {
+   "name": "rule1-audit-source-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "audit",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "rule1-spotCheck-corrected-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "spotCheck",
+    "decisionKind": "corrected",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-tray-canvas-0.55-below-floor",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.55,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.55
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "referenceBelowFloor"
+   }
+  },
+  {
+   "name": "code-floor-exactly-0.62-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.62,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.62
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-0.80-with-alternative-margin-0.16-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.64
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-0.80-with-alternative-margin-0.04-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.76
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "alternativeMargin"
+   }
+  },
+  {
+   "name": "code-alternative-margin-exactly-0.05-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.75
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-alternative-in-same-art-group-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-014a/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.79
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-alternative-without-reference-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-999/221",
+      "origin": "alternative"
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "code-alternative-won-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "alternative",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "codeNotLiteral"
+   }
+  },
+  {
+   "name": "code-read-from-full-image-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "fullImage",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "codeSource"
+   }
+  },
+  {
+   "name": "code-disagrees-with-confirmed-card-rejected",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "numberDiffers"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "codeDisagrees"
+   }
+  },
+  {
+   "name": "edge-floor-plus-half-unit-0.62005-rounds-0.62",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.62005,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.62005
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-floor-minus-half-unit-0.61995-rounds-0.62",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.61995,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.61995
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-alternative-margin-plus-half-unit-alt-0.75005-rounds-0.75",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.75005
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-alternative-margin-minus-half-unit-alt-0.74995-rounds-0.75",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "SFD-014/221",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     },
+     {
+      "code": "SFD-024/221",
+      "origin": "alternative",
+      "referenceSimilarity": 0.74995
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "sfd-014-221",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "art-codeless-alone-needs-second-witness",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-codeless-with-witness-admits-both",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "art-two-witnesses-both-listed",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000003",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "rkdhPwAAAADAL/M+AAAAAA==",
+     "cardID": "ogn-003-298"
+    },
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002",
+     "5CA00000-0000-4000-8000-000000000003"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "art-witness-too-dissimilar-0.80",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "zcxMP5qZGT8AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-mutual-exactly-0.85-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "mplZPzvbBj8AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-witness-mutual-plus-half-unit-0.85005-rounds-0.85",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "4JxZP/HVBj8AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-witness-mutual-minus-half-unit-0.84995-rounds-0.85",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "U5ZZP4TgBj8AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "art-witness-same-scan-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000001",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-with-code-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [
+      {
+       "code": "OGN-003/298",
+       "origin": "literal",
+       "referenceSimilarity": 0.7
+      }
+     ],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298",
+     "code": {
+      "source": "edgeBand",
+      "origin": "literal",
+      "agreement": "exact"
+     }
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-other-group-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-004-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-autoAccepted-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "autoAccepted",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-legacy-capture-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "legacy",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-reference-0.59-below-floor-ignored",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.59,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "needsSecondWitness"
+   }
+  },
+  {
+   "name": "art-witness-reference-exactly-0.60-counts",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.6,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "art-candidate-reference-0.59-below-witness-floor",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.59,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "witnessReferenceBelowFloor"
+   }
+  },
+  {
+   "name": "art-sibling-printing-same-group-corroborates",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.7,
+    "codeAlternatives": [],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003a-298"
+   },
+   "witnesses": [
+    {
+     "scanID": "5CA00000-0000-4000-8000-000000000002",
+     "batchID": "B0000000-0000-4000-8000-000000000002",
+     "decisionSource": "human",
+     "decisionKind": "corrected",
+     "placement": "detected",
+     "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+     "captureQuality": "standard",
+     "trainingQuality": "standard",
+     "referenceSimilarity": 0.7,
+     "codeAlternatives": [],
+     "featurePrint": "ZmZmP/Ys3z4AAAAAAAAAAA==",
+     "cardID": "ogn-003-298"
+    }
+   ],
+   "existing": [],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "artCorroborated",
+    "corroborators": [
+     "5CA00000-0000-4000-8000-000000000002"
+    ],
+    "evicted": []
+   }
+  },
+  {
+   "name": "impostor-other-group-0.93-blocks",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "exRuPwAAAADDMLw+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.93
+   }
+  },
+  {
+   "name": "impostor-exactly-0.90-blocks",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "ZmZmPwAAAAD2LN8+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.9
+   }
+  },
+  {
+   "name": "impostor-0.85-does-not-block",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "mplZPwAAAAA72wY/AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-impostor-plus-half-unit-0.90005-rounds-0.9",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "rWlmPwAAAABtH98+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.9
+   }
+  },
+  {
+   "name": "edge-impostor-minus-half-unit-0.89995-rounds-0.9",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "IGNmPwAAAAB9Ot8+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.9
+   }
+  },
+  {
+   "name": "impostor-closest-of-two-named",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "H4VrPwAAAACGqcg+AAAAAA==",
+     "referenceSimilarity": 0.7
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000002",
+     "artGroup": "ogn-251",
+     "featurePrint": "j8J1PwAAAAAAAAAAKVyPPg==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000002",
+    "similarity": 0.96
+   }
+  },
+  {
+   "name": "impostor-outranks-duplicate",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-250",
+     "featurePrint": "MzNzPwAAAAA4358+AAAAAA==",
+     "referenceSimilarity": 0.7
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000002",
+     "artGroup": "ogn-003",
+     "featurePrint": "pHB9PwAAAAAAAAAA9nMQPg==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "blocked",
+    "blockingScanID": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.95
+   }
+  },
+  {
+   "name": "duplicate-same-group-0.99",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "pHB9PwAAAAD2cxA+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "duplicate",
+    "duplicateOf": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.99
+   }
+  },
+  {
+   "name": "duplicate-exactly-0.985",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "9ih8PwAAAAAWsjA+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "duplicate",
+    "duplicateOf": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.985
+   }
+  },
+  {
+   "name": "near-duplicate-0.97-admits",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "7FF4PwAAAAB/8Hg+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  },
+  {
+   "name": "edge-duplicate-plus-half-unit-0.98505-rounds-0.9851",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "PSx8PwAAAAAzZzA+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "duplicate",
+    "duplicateOf": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.9851
+   }
+  },
+  {
+   "name": "edge-duplicate-minus-half-unit-0.98495-rounds-0.985",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "ryV8PwAAAADX/DA+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "duplicate",
+    "duplicateOf": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.985
+   }
+  },
+  {
+   "name": "duplicate-of-sibling-printing-exemplar",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000001",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+    "cardID": "ogn-003a-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "pHB9PwAAAAD2cxA+AAAAAA==",
+     "referenceSimilarity": 0.7
+    }
+   ],
+   "expected": {
+    "outcome": "duplicate",
+    "duplicateOf": "E0000000-0000-4000-8000-000000000001",
+    "similarity": 0.99
+   }
+  },
+  {
+   "name": "cap-full-group-keeps-medoid-admits-varied-candidate",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000007",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.8,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.8
+     }
+    ],
+    "featurePrint": "so9wPwAAAAAAAAAARB2vvg==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+     "referenceSimilarity": 0.7
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000002",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdrz4AAAAAAAAAAA==",
+     "referenceSimilarity": 0.75
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000003",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdr74AAAAAAAAAAA==",
+     "referenceSimilarity": 0.72
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000004",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa8+AAAAAA==",
+     "referenceSimilarity": 0.68
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000005",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa++AAAAAA==",
+     "referenceSimilarity": 0.66
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000006",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAAAAAAAARB2vPg==",
+     "referenceSimilarity": 0.64
+    }
+   ],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": [
+     "E0000000-0000-4000-8000-000000000006"
+    ]
+   }
+  },
+  {
+   "name": "cap-full-group-rejects-low-variety-candidate",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000007",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.63,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.63
+     }
+    ],
+    "featurePrint": "rhlZP8qoBz8AAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+     "referenceSimilarity": 0.7
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000002",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdrz4AAAAAAAAAAA==",
+     "referenceSimilarity": 0.75
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000003",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdr74AAAAAAAAAAA==",
+     "referenceSimilarity": 0.72
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000004",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa8+AAAAAA==",
+     "referenceSimilarity": 0.68
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000005",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa++AAAAAA==",
+     "referenceSimilarity": 0.66
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000006",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAAAAAAAARB2vPg==",
+     "referenceSimilarity": 0.64
+    }
+   ],
+   "expected": {
+    "outcome": "rejected",
+    "reason": "capReached"
+   }
+  },
+  {
+   "name": "cap-five-in-group-admits-sixth",
+   "candidate": {
+    "scanID": "5CA00000-0000-4000-8000-000000000007",
+    "batchID": "B0000000-0000-4000-8000-000000000001",
+    "decisionSource": "human",
+    "decisionKind": "correct",
+    "placement": "detected",
+    "calibrationHash": "c0ffee00c0ffee00c0ffee00c0ffee00",
+    "captureQuality": "standard",
+    "trainingQuality": "standard",
+    "referenceSimilarity": 0.63,
+    "codeAlternatives": [
+     {
+      "code": "OGN-003/298",
+      "origin": "literal",
+      "referenceSimilarity": 0.63
+     }
+    ],
+    "featurePrint": "rhlZP8qoBz8AAAAAAAAAAA==",
+    "cardID": "ogn-003-298",
+    "code": {
+     "source": "edgeBand",
+     "origin": "literal",
+     "agreement": "exact"
+    }
+   },
+   "witnesses": [],
+   "existing": [
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000001",
+     "artGroup": "ogn-003",
+     "featurePrint": "AACAPwAAAAAAAAAAAAAAAA==",
+     "referenceSimilarity": 0.7
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000002",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdrz4AAAAAAAAAAA==",
+     "referenceSimilarity": 0.75
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000003",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wP0Qdr74AAAAAAAAAAA==",
+     "referenceSimilarity": 0.72
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000004",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa8+AAAAAA==",
+     "referenceSimilarity": 0.68
+    },
+    {
+     "scanID": "E0000000-0000-4000-8000-000000000005",
+     "artGroup": "ogn-003",
+     "featurePrint": "so9wPwAAAABEHa++AAAAAA==",
+     "referenceSimilarity": 0.66
+    }
+   ],
+   "expected": {
+    "outcome": "admitted",
+    "tier": "code",
+    "corroborators": [],
+    "evicted": []
+   }
+  }
+ ],
+ "similarityVectors": [
+  {
+   "name": "identical",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "AACAPwAAAAAAAAAAAAAAAA==",
+   "expected": 1.0
+  },
+  {
+   "name": "orthogonal",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "AAAAAAAAgD8AAAAAAAAAAA==",
+   "expected": 0.0
+  },
+  {
+   "name": "opposite-clamps-to-zero",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "AACAvwAAAAAAAAAAAAAAAA==",
+   "expected": 0.0
+  },
+  {
+   "name": "unnormalised-inputs-are-taken-as-given",
+   "a": "AAAAPwAAAD8AAAAAAAAAAA==",
+   "b": "AAAAPwAAAD8AAAAAAAAAAA==",
+   "expected": 0.5
+  },
+  {
+   "name": "threshold-0.6-minus-half-unit-0.59995",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "U5YZP0LPTD8AAAAAAAAAAA==",
+   "expected": 0.6
+  },
+  {
+   "name": "threshold-0.6-plus-half-unit-0.60005",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "4JwZP1jKTD8AAAAAAAAAAA==",
+   "expected": 0.6
+  },
+  {
+   "name": "threshold-0.62-minus-half-unit-0.61995",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "C7UeP0HeSD8AAAAAAAAAAA==",
+   "expected": 0.6199
+  },
+  {
+   "name": "threshold-0.62-plus-half-unit-0.62005",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "mbsePxPZSD8AAAAAAAAAAA==",
+   "expected": 0.6201
+  },
+  {
+   "name": "threshold-0.85-minus-half-unit-0.84995",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "U5ZZP4TgBj8AAAAAAAAAAA==",
+   "expected": 0.85
+  },
+  {
+   "name": "threshold-0.85-plus-half-unit-0.85005",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "4JxZP/HVBj8AAAAAAAAAAA==",
+   "expected": 0.85
+  },
+  {
+   "name": "threshold-0.9-minus-half-unit-0.89995",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "IGNmP3063z4AAAAAAAAAAA==",
+   "expected": 0.9
+  },
+  {
+   "name": "threshold-0.9-plus-half-unit-0.90005",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "rWlmP20f3z4AAAAAAAAAAA==",
+   "expected": 0.9
+  },
+  {
+   "name": "threshold-0.985-minus-half-unit-0.98495",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "ryV8P9f8MD4AAAAAAAAAAA==",
+   "expected": 0.985
+  },
+  {
+   "name": "threshold-0.985-plus-half-unit-0.98505",
+   "a": "AACAPwAAAAAAAAAAAAAAAA==",
+   "b": "PSx8PzNnMD4AAAAAAAAAAA==",
+   "expected": 0.9851
+  },
+  {
+   "name": "float32-0.1-times-3",
+   "a": "zczMPc3MzD3NzMw9AAAAAA==",
+   "b": "AACAPwAAgD8AAIA/AAAAAA==",
+   "expected": 0.3
+  }
+ ]
+}

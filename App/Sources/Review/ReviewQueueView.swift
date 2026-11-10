@@ -2,7 +2,8 @@ import RiftboundRecognizer
 import SwiftUI
 
 /// One scan at a time: the crop beside the matched card, why it needs a look
-/// (or that it is an audit or a spot-check), and one tap (or swipe) to settle it.
+/// (or that it is an audit or a spot-check), and one tap, swipe or key to
+/// settle it: Return accepts, F fixes the match, → skips to the next scan.
 struct ReviewQueueView: View {
     @State private var model: ReviewQueueModel
     @Environment(\.dismiss) private var dismiss
@@ -60,8 +61,8 @@ struct ReviewQueueView: View {
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .navigationTitle(model.mode.isSpotCheck ? "Spot-check" : "Review")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .inlineNavigationTitle()
+        .darkNavigationBar()
         .task { await model.load() }
         .sheet(isPresented: $isFixing) {
             if let record = model.current {
@@ -77,6 +78,7 @@ struct ReviewQueueView: View {
                         Task { await model.reject(reason) }
                     }
                 )
+                .sheetSizing(minWidth: 520, minHeight: 640)
             }
         }
         .alert("Couldn't save", isPresented: isShowingStorageProblem, presenting: model.storageProblem) { _ in
@@ -97,6 +99,10 @@ struct ReviewQueueView: View {
                     kindBadge(kind)
                 }
                 comparison(record)
+                    #if os(macOS)
+                    // Keeps the verdict buttons in view in a laptop-height window.
+                    .frame(maxHeight: 440)
+                    #endif
                     .offset(x: dragOffset)
                     .gesture(swipe)
                 details(record)
@@ -114,7 +120,7 @@ struct ReviewQueueView: View {
                 } else {
                     verdictButtons
                 }
-                Text(model.currentKind == .possibleDuplicate ? "Swipe right to keep both, left to fix." : "Swipe right to confirm, left to fix.")
+                gestureHint
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
             }
@@ -158,6 +164,7 @@ struct ReviewQueueView: View {
                 .tint(Theme.blue)
                 .foregroundStyle(Theme.ground)
                 .disabled(model.current?.topCandidate == nil)
+                .keyboardShortcut(ReviewKey.accept)
                 .accessibilityHint("Confirms this scan as a second copy of the card")
 
                 Button {
@@ -174,8 +181,10 @@ struct ReviewQueueView: View {
 
             HStack {
                 Button("Wrong card") { isFixing = true }
+                    .keyboardShortcut(ReviewKey.fix)
                 Spacer()
                 Button("Skip for now") { model.skip() }
+                    .keyboardShortcut(ReviewKey.next)
             }
             .font(.subheadline)
             .foregroundStyle(Theme.muted)
@@ -341,6 +350,7 @@ struct ReviewQueueView: View {
                 .tint(Theme.blue)
                 .foregroundStyle(Theme.ground)
                 .disabled(model.current?.topCandidate == nil)
+                .keyboardShortcut(ReviewKey.accept)
 
                 Button {
                     isFixing = true
@@ -350,6 +360,7 @@ struct ReviewQueueView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.amber)
+                .keyboardShortcut(ReviewKey.fix)
             }
             .controlSize(.large)
 
@@ -357,11 +368,22 @@ struct ReviewQueueView: View {
                 Button("Not a card") { Task { await model.reject(.notACard) } }
                 Spacer()
                 Button("Skip for now") { model.skip() }
+                    .keyboardShortcut(ReviewKey.next)
             }
             .font(.subheadline)
             .foregroundStyle(Theme.muted)
             .padding(.horizontal, 4)
         }
+    }
+
+    /// How to settle the scan without the buttons: swipes on the iPhone, keys on the Mac.
+    private var gestureHint: Text {
+        let isDuplicate = model.currentKind == .possibleDuplicate
+        #if os(macOS)
+        return Text(isDuplicate ? "Return keeps both · F fixes the match · → skips to the next" : "Return confirms · F fixes the match · → skips to the next")
+        #else
+        return Text(isDuplicate ? "Swipe right to keep both, left to fix." : "Swipe right to confirm, left to fix.")
+        #endif
     }
 
     private var swipe: some Gesture {
@@ -405,6 +427,7 @@ struct ReviewQueueView: View {
                 .tint(Theme.amber)
                 .foregroundStyle(Theme.ground)
                 .controlSize(.large)
+                .keyboardShortcut(ReviewKey.accept)
         }
         .padding()
     }
@@ -412,4 +435,16 @@ struct ReviewQueueView: View {
     private var isShowingStorageProblem: Binding<Bool> {
         Binding(get: { model.storageProblem != nil }, set: { if !$0 { model.dismissStorageProblem() } })
     }
+}
+
+/// The review queue's keys. They sit on the buttons rather than in a menu
+/// because they only mean something while a scan is on screen, and a button's
+/// key goes quiet while the fix sheet (and its search field) has the focus.
+enum ReviewKey {
+    /// Return: it's right, or keep both for a possible duplicate.
+    static let accept = KeyboardShortcut(.return, modifiers: [])
+    /// F: the match is wrong; opens the fix sheet.
+    static let fix = KeyboardShortcut("f", modifiers: [])
+    /// →: on to the next scan, leaving this one pending.
+    static let next = KeyboardShortcut(.rightArrow, modifiers: [])
 }

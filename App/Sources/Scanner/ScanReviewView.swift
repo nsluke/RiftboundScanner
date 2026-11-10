@@ -54,7 +54,7 @@ struct ScanReviewView: View {
                 }
             }
             .navigationTitle("Review scan")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if let onRetake {
@@ -69,6 +69,7 @@ struct ScanReviewView: View {
                     isPickingCard = false
                     onVerdict(card.id == record.topCandidate?.card.id ? .correct : .corrected(card.id))
                 }
+                .sheetSizing()
             }
         }
     }

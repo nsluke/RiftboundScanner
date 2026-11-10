@@ -1,12 +1,47 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct RiftboundScannerApp: App {
     @State private var bootstrap = AppBootstrap()
 
     var body: some Scene {
+        #if os(macOS)
+        // One window: the camera, the feeder link and the sync engine each
+        // belong to a single scanner, so a second window would fight the first.
+        Window("Riftbound Scanner", id: "scanner") {
+            content
+                .frame(minWidth: 980, minHeight: 640)
+                // The review palette is a dark ground; the window chrome matches it.
+                .preferredColorScheme(.dark)
+        }
+        .defaultSize(width: 1280, height: 800)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Show Scans in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([AppPaths.scans])
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+        }
+        #else
         WindowGroup {
+            content
+        }
+        #endif
+    }
+
+    /// Unit tests run inside the app. They get an empty window instead of a
+    /// camera, a feeder link and a sync engine reaching for the home server.
+    @ViewBuilder
+    private var content: some View {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
             BootstrapView(bootstrap: bootstrap)
+        } else {
+            Color.clear
         }
     }
 }

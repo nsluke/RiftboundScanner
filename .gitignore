@@ -17,6 +17,8 @@ synthetic/
 
 # iOS app build products and pulled test data
 App/Info.plist
+App/MacInfo.plist
+App/RiftboundScannerMac.entitlements
 App/DerivedData/
 /scans/
 

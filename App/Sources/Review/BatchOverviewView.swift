@@ -54,8 +54,14 @@ struct BatchOverviewView: View {
         self.directory = directory
     }
 
+    #if os(macOS)
+    // A window is wide: as many thumbnails per row as fit, not the phone's three and five.
+    private let reviewColumns = [GridItem(.adaptive(minimum: 112), spacing: 12)]
+    private let confidentColumns = [GridItem(.adaptive(minimum: 64), spacing: 8)]
+    #else
     private let reviewColumns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
     private let confidentColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 5)
+    #endif
 
     var body: some View {
         Group {
@@ -80,8 +86,8 @@ struct BatchOverviewView: View {
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .navigationTitle(model.batch.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .inlineNavigationTitle()
+        .darkNavigationBar()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 exportButton
@@ -95,6 +101,7 @@ struct BatchOverviewView: View {
         .task { await model.load() }
         .sheet(item: $selectedRecord) { record in
             StoredScanReview(record: record, model: model, directory: directory)
+                .sheetSizing(minWidth: 520, minHeight: 680)
         }
         .confirmationDialog("Void this batch?", isPresented: $isConfirmingVoid) {
             Button("Void \(model.batch.displayName)", role: .destructive) {

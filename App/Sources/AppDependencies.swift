@@ -43,6 +43,8 @@ nonisolated struct AppDependencies: Sendable {
     /// Built on the main actor by the root view (the feeder pattern): the
     /// engine is main-actor state and cannot be constructed inside `live()`.
     let makeSyncEngine: @MainActor @Sendable () -> SyncEngine
+    /// What only one platform has: on the Mac, the camera picker.
+    let platform: PlatformDependencies
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
     /// takes long enough to count as a hang.
@@ -72,7 +74,6 @@ nonisolated struct AppDependencies: Sendable {
         } else {
             vault = .empty
         }
-        let documents = URL.documentsDirectory
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let device = ScanBatch.Device.current(appVersion: appVersion)
         let now: @Sendable () -> Date = { Date() }
@@ -101,7 +102,7 @@ nonisolated struct AppDependencies: Sendable {
         // One store seam: the file store under Documents, wrapped so every
         // decision also updates sync.json beside it (ADR-002, decision 4).
         let store = SyncingScanStore(
-            inner: FileScanStore(root: documents.appending(path: "Scans", directoryHint: .isDirectory), now: now, makeID: makeID),
+            inner: FileScanStore(root: AppPaths.scans, now: now, makeID: makeID),
             directory: paths.sync,
             now: now
         )
@@ -110,8 +111,9 @@ nonisolated struct AppDependencies: Sendable {
         // The sizes assets are shrunk to; a policy value here, not a literal
         // in the uploader (ADR-002, principle 4).
         let assetEncoding = AssetEncodingPolicy()
+        let camera = CaptureEngine()
         return AppDependencies(
-            camera: CaptureEngine(),
+            camera: camera,
             makeFeeder: { CSC100Feeder() },
             identifier: LiveCardIdentifier(recognizer: recognizer),
             store: store,
@@ -161,10 +163,37 @@ nonisolated struct AppDependencies: Sendable {
                     assets: StoredAssetProvider(store: store, policy: assetEncoding),
                     now: now
                 )
-            }
+            },
+            platform: .live(camera: camera)
         )
     }
 }
+
+#if os(macOS)
+/// The Mac's own collaborators. The camera picker discovers Continuity Camera
+/// iPhones and other cameras and points the shared engine at the chosen one.
+nonisolated struct PlatformDependencies: Sendable {
+    /// Built on the main actor by the root view, like the feeder.
+    let makeCameraSource: @MainActor @Sendable () -> CameraSourceModel
+
+    static func live(camera: CaptureEngine) -> PlatformDependencies {
+        PlatformDependencies {
+            CameraSourceModel(
+                discovery: LiveCameraDiscovery(),
+                camera: camera,
+                preferences: DefaultsCameraPreferenceStore(defaults: .standard)
+            )
+        }
+    }
+}
+#else
+/// The iPhone has nothing beyond the shared graph: one back camera, no picker.
+nonisolated struct PlatformDependencies: Sendable {
+    static func live(camera: CaptureEngine) -> PlatformDependencies {
+        PlatformDependencies()
+    }
+}
+#endif
 
 nonisolated enum BootstrapError: Error, Hashable {
     case indexMissing

@@ -33,7 +33,7 @@ struct CollectionView: View {
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .navigationTitle("Collection")
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .darkNavigationBar()
         .searchable(text: filterBinding.query, prompt: "Name, code or tag")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -54,12 +54,15 @@ struct CollectionView: View {
         }
         .sheet(isPresented: $isFiltering) {
             CollectionFilterSheet(model: model)
+                .sheetSizing()
         }
         .sheet(isPresented: $isAddingCard) {
             AddCardSheet(model: makeAddCard()) { _ in }
+                .sheetSizing()
         }
         .sheet(item: $selected) { entry in
             CardDetailView(entry: entry, pricesAsOf: model.pricesAsOf)
+                .sheetSizing(minWidth: 520, minHeight: 680)
         }
         .task { await model.load() }
         .refreshable { await model.refresh() }

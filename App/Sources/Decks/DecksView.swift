@@ -43,7 +43,7 @@ struct DecksView: View {
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .navigationTitle("Decks")
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .darkNavigationBar()
         .navigationDestination(for: DeckSummary.self) { summary in
             DeckDetailView(model: dependencies.makeDetailModel(for: summary))
         }

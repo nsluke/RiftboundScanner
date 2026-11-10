@@ -21,6 +21,13 @@ nonisolated struct AppPaths: Hashable, Sendable {
 
     var all: [URL] { [root, sync, learning, catalog] }
 
+    /// `Documents/Scans`: every batch's photos, records and verdicts. On the
+    /// iPhone it is shared through the Files app; on the Mac it lives in the
+    /// app's sandbox container.
+    static var scans: URL {
+        URL.documentsDirectory.appending(path: "Scans", directoryHint: .isDirectory)
+    }
+
     /// The production location.
     static var live: AppPaths {
         AppPaths(root: URL.applicationSupportDirectory.appending(path: "Riftbound", directoryHint: .isDirectory))

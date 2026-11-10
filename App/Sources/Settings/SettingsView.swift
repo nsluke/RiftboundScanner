@@ -19,13 +19,10 @@ struct SettingsView: View {
         Section {
             if model.isLoaded {
                 TextField("Fallback address", text: $model.manualEndpointText, prompt: Text("192.168.1.155:8096"))
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .textEntry(.url)
                     .accessibilityLabel("Fallback server address")
                 SecureField("Write token", text: $model.token, prompt: Text("Optional"))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .textEntry(.verbatim)
                     .accessibilityLabel("Server write token")
                 if !model.endpointIsValid {
                     Label("Enter a host or address such as 192.168.1.155:8096.", systemImage: "exclamationmark.circle")

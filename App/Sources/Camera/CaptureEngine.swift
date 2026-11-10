@@ -1,8 +1,12 @@
 import AVFoundation
 import Foundation
+import RiftboundRecognizer
+import Synchronization
+import os
 
 /// The camera as the scanner model sees it. The live implementation drives the
-/// back camera; tests inject a stub that returns a canned JPEG.
+/// iPhone's back camera, or on the Mac the camera `CameraSourceModel` picked;
+/// tests inject a stub that returns a canned JPEG.
 nonisolated protocol CameraOperating: Sendable {
     func requestAccess() async -> Bool
     func start() async throws
@@ -17,14 +21,23 @@ nonisolated enum CameraError: Error {
     case cannotAddInput
     case cannotAddOutput
     case torchUnavailable
+    /// The session has no live picture to photograph: stopped, or the
+    /// camera behind it went away between frames.
+    case notStreaming
     case captureFailed(String)
     case noImageData
 
     var message: String {
         switch self {
-        case .noCamera: String(localized: "No back camera is available on this device.")
+        case .noCamera:
+            #if os(macOS)
+            String(localized: "No camera is connected to this Mac.")
+            #else
+            String(localized: "No back camera is available on this device.")
+            #endif
         case .cannotAddInput, .cannotAddOutput: String(localized: "The camera could not be configured.")
         case .torchUnavailable: String(localized: "This camera has no torch.")
+        case .notStreaming: String(localized: "The camera isn't sending a picture. Check that it is still connected, then try again.")
         case .captureFailed(let detail): String(localized: "The photo could not be taken. \(detail)")
         case .noImageData: String(localized: "The camera returned no image.")
         }
@@ -45,11 +58,22 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
     let session = AVCaptureSession()
 
     private let queue = DispatchQueue(label: "com.nsluke.RiftboundScanner.capture")
+    private let logger = Logger(subsystem: "com.nsluke.RiftboundScanner", category: "camera")
     private let photoOutput = AVCapturePhotoOutput()
     // Touched only on `queue`.
-    private var device: AVCaptureDevice?
-    private var isConfigured = false
+    private var input: AVCaptureDeviceInput?
     private var inFlight: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
+    #if os(macOS)
+    private var chosenDeviceID: CameraDevice.ID?
+    #endif
+    /// How photos are turned to match the preview and brightened for the
+    /// camera in use; read when a photo arrives.
+    private let adjustment = Mutex(PhotoAdjustment())
+
+    private struct PhotoAdjustment {
+        var rotation = CameraRotation.none
+        var exposureBoost = 0.0
+    }
 
     init() {}
 
@@ -69,6 +93,10 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
                     try self.configureIfNeeded()
                     if !self.session.isRunning {
                         self.session.startRunning()
+                        if let device = self.input?.device {
+                            let frame = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+                            self.logger.info("Started \(device.localizedName, privacy: .public) at \(frame.width)×\(frame.height)")
+                        }
                     }
                     continuation.resume()
                 } catch {
@@ -93,7 +121,7 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             queue.async {
                 do {
-                    guard let device = self.device, device.hasTorch, device.isTorchAvailable else { throw CameraError.torchUnavailable }
+                    guard let device = self.input?.device, device.hasTorch, device.isTorchAvailable else { throw CameraError.torchUnavailable }
                     try device.lockForConfiguration()
                     defer { device.unlockForConfiguration() }
                     device.torchMode = isOn ? .on : .off
@@ -106,12 +134,43 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
     }
 
     func capturePhoto() async throws -> Data {
+        let photo = try await takePhoto()
+        let adjustment = self.adjustment.withLock { $0 }
+        do {
+            return try PhotoDecoder.adjusted(photo, turnedBy: adjustment.rotation, brightenedBy: adjustment.exposureBoost)
+        } catch {
+            throw CameraError.captureFailed(String(localized: "The photo could not be turned to match the preview."))
+        }
+    }
+
+    private func takePhoto() async throws -> Data {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, any Error>) in
             queue.async {
-                let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
-                settings.flashMode = .off
+                // AVFoundation raises an Objective-C exception, which no Swift
+                // code can catch, when asked for a photo without a live video
+                // connection; a camera that just went away leaves exactly that.
+                guard self.session.isRunning, let connection = self.photoOutput.connection(with: .video), connection.isEnabled, connection.isActive else {
+                    let connection = self.photoOutput.connection(with: .video)
+                    self.logger.error("No photo: running \(self.session.isRunning), connection \(connection != nil), enabled \(connection?.isEnabled ?? false), active \(connection?.isActive ?? false)")
+                    continuation.resume(throwing: CameraError.notStreaming)
+                    return
+                }
+                // JPEG on every camera the iPhone has; a Mac camera that cannot
+                // encode it gets its default codec, which ImageIO also reads.
+                let settings = self.photoOutput.availablePhotoCodecTypes.contains(.jpeg)
+                    ? AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                    : AVCapturePhotoSettings()
+                if self.photoOutput.supportedFlashModes.contains(.off) {
+                    settings.flashMode = .off
+                }
                 settings.photoQualityPrioritization = .balanced
-                if let dimensions = self.photoOutput.maxPhotoDimensions.width > 0 ? self.photoOutput.maxPhotoDimensions : nil {
+                // Sized from the format active now, not the one at setup:
+                // AVFoundation raises if the two disagree, and a camera's
+                // format can change under a running session.
+                if let device = self.input?.device, let dimensions = Self.photoDimensions(for: device.activeFormat) {
+                    if dimensions.width > self.photoOutput.maxPhotoDimensions.width || dimensions.height > self.photoOutput.maxPhotoDimensions.height {
+                        self.photoOutput.maxPhotoDimensions = dimensions
+                    }
                     settings.maxPhotoDimensions = dimensions
                 }
                 // The output does not retain its delegate, so `inFlight` keeps it
@@ -129,47 +188,133 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
 
     // MARK: - Queue-only
 
+    /// Opens the camera on first use. The iPhone always uses its back
+    /// camera; the Mac opens the camera last chosen through `use(_:)`.
     private func configureIfNeeded() throws {
-        guard !isConfigured else { return }
-        session.beginConfiguration()
-        defer { session.commitConfiguration() }
-        session.sessionPreset = .photo
+        guard input == nil else { return }
+        try install(try deviceToOpen())
+    }
 
+    #if os(iOS)
+    private func deviceToOpen() throws -> AVCaptureDevice {
         // The dual-wide virtual device switches to the ultra-wide lens for close
         // subjects, which is what a card a hand's width from the lens needs.
         guard let device = AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
             ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
         else { throw CameraError.noCamera }
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else { throw CameraError.cannotAddInput }
-        session.addInput(input)
-        guard session.canAddOutput(photoOutput) else { throw CameraError.cannotAddOutput }
-        session.addOutput(photoOutput)
+        return device
+    }
+    #else
+    private func deviceToOpen() throws -> AVCaptureDevice {
+        guard let chosenDeviceID, let device = AVCaptureDevice(uniqueID: chosenDeviceID.rawValue), device.isConnected else {
+            throw CameraError.noCamera
+        }
+        return device
+    }
+    #endif
 
-        // 12 MP is plenty: the recogniser downsamples to 2048 px anyway, and
-        // 48 MP captures are slow.
-        let supported = device.activeFormat.supportedMaxPhotoDimensions
-        if let chosen = supported.filter({ $0.width <= 4100 }).max(by: { $0.width < $1.width }) ?? supported.first {
+    /// Makes `device` the session's only input, replacing the one before,
+    /// then sizes photos from the format the session settled on.
+    private func install(_ device: AVCaptureDevice) throws {
+        try replaceInput(with: device)
+        #if os(macOS)
+        // Center Stage reframes as it follows faces; the guide crop needs a fixed frame.
+        AVCaptureDevice.centerStageControlMode = .app
+        AVCaptureDevice.isCenterStageEnabled = false
+        #endif
+
+        if let chosen = Self.photoDimensions(for: device.activeFormat) {
             photoOutput.maxPhotoDimensions = chosen
         }
         photoOutput.maxPhotoQualityPrioritization = .balanced
+        #if os(iOS)
         if let connection = photoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
             connection.videoRotationAngle = 90
         }
+        #endif
 
         try device.lockForConfiguration()
         if device.isFocusModeSupported(.continuousAutoFocus) {
             device.focusMode = .continuousAutoFocus
         }
+        #if os(iOS)
         if device.isAutoFocusRangeRestrictionSupported {
             device.autoFocusRangeRestriction = .near
         }
+        #endif
         device.unlockForConfiguration()
+    }
 
-        self.device = device
-        isConfigured = true
+    /// The photo size to ask `format` for. 12 MP is plenty: the recogniser
+    /// downsamples to 2048 px anyway, and 48 MP captures are slow.
+    private static func photoDimensions(for format: AVCaptureDevice.Format) -> CMVideoDimensions? {
+        let supported = format.supportedMaxPhotoDimensions
+        return supported.filter { $0.width <= 4100 }.max { $0.width < $1.width } ?? supported.first
+    }
+
+    /// One configuration transaction: the preset picks the active format
+    /// when it commits, so photo sizes are read only afterwards.
+    private func replaceInput(with device: AVCaptureDevice) throws {
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        if let input {
+            session.removeInput(input)
+            self.input = nil
+        }
+        let newInput = try AVCaptureDeviceInput(device: device)
+        guard session.canAddInput(newInput) else { throw CameraError.cannotAddInput }
+        session.addInput(newInput)
+        if !session.outputs.contains(photoOutput) {
+            guard session.canAddOutput(photoOutput) else { throw CameraError.cannotAddOutput }
+            session.addOutput(photoOutput)
+        }
+        #if os(iOS)
+        session.sessionPreset = .photo
+        #else
+        // An iPhone over Continuity Camera rejects `.photo`. It does offer a
+        // 1920 × 1440 format, but a Mac session re-applies its preset whenever
+        // its graph is rebuilt (attaching a preview layer is enough), so a
+        // format set by hand does not stay. At `.high` (1920 × 1080) the card
+        // keeps every pixel: both formats share the 1920 px side, and only the
+        // margin beside the card is narrower.
+        session.sessionPreset = .high
+        #endif
+        input = newInput
     }
 }
+
+#if os(macOS)
+nonisolated extension CaptureEngine: CameraSwitching {
+    func use(_ device: CameraDevice.ID) async -> PixelSize? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<PixelSize?, Never>) in
+            queue.async {
+                self.chosenDeviceID = device
+                // A device that reconnected is a new object, so the input is
+                // rebuilt every time; that is what makes a returning iPhone work.
+                do {
+                    let opened = try self.deviceToOpen()
+                    try self.install(opened)
+                    let boost = CameraDevice(opened).kind.photoExposureBoost
+                    self.adjustment.withLock { $0.exposureBoost = boost }
+                    let dimensions = CMVideoFormatDescriptionGetDimensions(opened.activeFormat.formatDescription)
+                    continuation.resume(returning: PixelSize(width: Int(dimensions.width), height: Int(dimensions.height)))
+                } catch {
+                    // Left closed: `start()` tries again and reports why.
+                    if let input = self.input {
+                        self.session.removeInput(input)
+                        self.input = nil
+                    }
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    func setRotation(_ rotation: CameraRotation) async {
+        adjustment.withLock { $0.rotation = rotation }
+    }
+}
+#endif
 
 /// Resumes one continuation exactly once, when AVFoundation delivers the photo.
 nonisolated private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {

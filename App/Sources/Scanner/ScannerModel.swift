@@ -282,6 +282,12 @@ final class ScannerModel {
         if batch == nil {
             await loadLatestBatch()
         }
+        // The screen calls this from `.task(id:)`, which cancels the call for
+        // a source that has since changed but cannot stop it. Loading sets
+        // `batch` before reading the records, so the newer call skips the
+        // load and brings the camera up first; a stale `.searching` finishing
+        // afterwards would put a running camera back to "Starting…".
+        guard !Task.isCancelled else { return }
         switch source {
         case .searching:
             if cameraState != .denied {

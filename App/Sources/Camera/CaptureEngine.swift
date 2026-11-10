@@ -66,8 +66,14 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
     #if os(macOS)
     private var chosenDeviceID: CameraDevice.ID?
     #endif
-    /// How photos are turned to match the preview; read when a photo arrives.
-    private let rotation = Mutex(CameraRotation.none)
+    /// How photos are turned to match the preview and brightened for the
+    /// camera in use; read when a photo arrives.
+    private let adjustment = Mutex(PhotoAdjustment())
+
+    private struct PhotoAdjustment {
+        var rotation = CameraRotation.none
+        var exposureBoost = 0.0
+    }
 
     init() {}
 
@@ -129,10 +135,9 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
 
     func capturePhoto() async throws -> Data {
         let photo = try await takePhoto()
-        let turn = rotation.withLock { $0 }
-        guard turn != .none else { return photo }
+        let adjustment = self.adjustment.withLock { $0 }
         do {
-            return try PhotoDecoder.reoriented(photo, by: turn)
+            return try PhotoDecoder.adjusted(photo, turnedBy: adjustment.rotation, brightenedBy: adjustment.exposureBoost)
         } catch {
             throw CameraError.captureFailed(String(localized: "The photo could not be turned to match the preview."))
         }
@@ -289,6 +294,8 @@ nonisolated extension CaptureEngine: CameraSwitching {
                 do {
                     let opened = try self.deviceToOpen()
                     try self.install(opened)
+                    let boost = CameraDevice(opened).kind.photoExposureBoost
+                    self.adjustment.withLock { $0.exposureBoost = boost }
                     let dimensions = CMVideoFormatDescriptionGetDimensions(opened.activeFormat.formatDescription)
                     continuation.resume(returning: PixelSize(width: Int(dimensions.width), height: Int(dimensions.height)))
                 } catch {
@@ -304,7 +311,7 @@ nonisolated extension CaptureEngine: CameraSwitching {
     }
 
     func setRotation(_ rotation: CameraRotation) async {
-        self.rotation.withLock { $0 = rotation }
+        adjustment.withLock { $0.rotation = rotation }
     }
 }
 #endif

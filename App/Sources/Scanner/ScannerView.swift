@@ -161,7 +161,8 @@ struct ScannerView: View {
     /// The preview shows the whole frame, so the guide is placed in it by
     /// `FrameGuide` and the crop follows the guide.
     private func updateGuideCrop() {
-        model.guideCrop = previewFrame.isEmpty ? nil : GuideCrop(guideFrame: cameraSource.guide.rect(in: previewFrame), previewFrame: previewFrame)
+        let guide = cameraSource.guide
+        model.guideCrop = previewFrame.isEmpty ? nil : GuideCrop(guideFrame: guide.rect(in: previewFrame), previewFrame: previewFrame, margin: guide.cropMargin)
     }
 
     private var viewfinder: some View {

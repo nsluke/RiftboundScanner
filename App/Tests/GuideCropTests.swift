@@ -93,11 +93,22 @@ struct FrameGuideTests {
         #expect(abs(rect.width / rect.height - 63.0 / 88.0) < 1e-9)
         #expect(abs(rect.midX - frame.midX) < 1e-9)
         #expect(abs(rect.midY - frame.midY) < 1e-9)
-        #expect(abs(rect.width - 540 * 0.73) < 1e-9)
+        #expect(abs(rect.width - 540 * 0.66) < 1e-9)
         #expect(frame.contains(rect))
-        // With the 15 % margin the crop still fits inside the photo.
-        let pixels = GuideCrop(guideFrame: rect, previewFrame: frame).pixelRect(forPhotoSize: CGSize(width: 1080, height: 1920))
-        #expect(pixels.width < 1080 && pixels.width > 1000)
+    }
+
+    @Test func theContinuityCropHoldsTheMeasuredCardWithLittleStandAroundIt() {
+        // The card measured on 31 fed cards: about 718 × 1017 px, centred in
+        // the upright 1080 × 1920 photo.
+        let frame = CGRect(x: 0, y: 0, width: 540, height: 960)
+        let guide = FrameGuide.continuityStand
+        let pixels = GuideCrop(guideFrame: guide.rect(in: frame), previewFrame: frame, margin: guide.cropMargin)
+            .pixelRect(forPhotoSize: CGSize(width: 1080, height: 1920))
+        let card = CGRect(x: (1080 - 718) / 2, y: (1920 - 1017) / 2, width: 718, height: 1017)
+        #expect(pixels.contains(card))
+        #expect(pixels.width < 718 * 1.2, "the dark stand around the card hides its edge from the recogniser")
+        #expect(FrameGuide.continuityStand.resized(to: 0.7).cropMargin == guide.cropMargin)
+        #expect(FrameGuide.iPhoneApp.cropMargin == 0.15)
     }
 
     @Test func sizesFollowTheShorterSideAndStayInRange() {

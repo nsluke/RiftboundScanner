@@ -500,6 +500,17 @@ lens, which sees the card bigger than the app's ultra-wide). The side panel's
 Rotate button (⌥⌘R) and Guide size slider fit both to the stand; each is
 remembered per camera under `scanner.cameraPreferences`.
 
+Measured on 31 cards fed on 10 Nov 2026: the card is about 718 × 1017 px of
+the upright 1080 × 1920 frame, its black border is lost against the dark
+stand, so the recogniser often cannot find the card and matches the whole
+crop, and there is no torch. The iPhone guide is therefore 66 % of the frame's
+short side with a 7 % crop margin (not the phone's 15 %), and Continuity
+photos are brightened half a stop (`CameraDevice.Kind.photoExposureBoost`,
+since macOS has no camera exposure bias). On those photos that took the
+recogniser from 17 to 27 right; the build before it, with a looser guide and
+no brightening, got 13. No printed code was read at this resolution, so no
+Mac scan is confident: every one goes through the review queue.
+
 **Keys.** Space takes a photo, ⌘↩ feeds and scans, ⌘. stops feeding. In the
 review queue Return confirms (or keeps both for a possible duplicate), F opens
 the fix sheet and → skips to the next scan; the keys sit on the buttons, so

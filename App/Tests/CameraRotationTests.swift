@@ -71,6 +71,29 @@ struct CameraRotationTests {
         #expect(properties[kCGImagePropertyPixelWidth] as? Int == 60, "only the EXIF orientation changes")
     }
 
+    @Test func brighteningTurnsAndLightensThePhoto() async throws {
+        let original = markedJPEG(width: 60, height: 90)
+        let photo = try PhotoDecoder.adjusted(original, turnedBy: .clockwise90, brightenedBy: 0.5)
+        let decoded = try await PhotoDecoder.decode(photo, maxPixelSize: 4096)
+
+        #expect(decoded.width == 90 && decoded.height == 60)
+        #expect(isRed(pixel(of: decoded, x: 80, y: 8)), "the red corner is top-right once turned")
+        let before = try await PhotoDecoder.decode(original, maxPixelSize: 4096)
+        #expect(pixel(of: decoded, x: 40, y: 40).green > pixel(of: before, x: 40, y: 60).green + 10, "the grey is lighter")
+    }
+
+    @Test func withoutBrighteningOnlyTheOrientationChanges() throws {
+        let original = markedJPEG(width: 60, height: 90)
+        #expect(try PhotoDecoder.adjusted(original, turnedBy: .none, brightenedBy: 0) == original)
+        #expect(try PhotoDecoder.adjusted(original, turnedBy: .clockwise180, brightenedBy: 0) == PhotoDecoder.reoriented(original, by: .clockwise180))
+    }
+
+    @Test func onlyContinuityPhotosAreBrightened() {
+        #expect(CameraDevice.Kind.continuity.photoExposureBoost == 0.5)
+        #expect(CameraDevice.Kind.external.photoExposureBoost == 0)
+        #expect(CameraDevice.Kind.builtIn.photoExposureBoost == 0)
+    }
+
     @Test func refusesDataThatIsNotAPhoto() {
         #expect(throws: PhotoDecoder.Failure.undecodable) {
             try PhotoDecoder.reoriented(Data("not a photo".utf8), by: .clockwise90)

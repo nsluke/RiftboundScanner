@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 import RiftboundRecognizer
@@ -48,6 +49,29 @@ nonisolated enum PhotoDecoder {
         let options: [CFString: Any] = [kCGImageDestinationOrientation: rotation.applied(to: stored).rawValue]
         guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, nil) else { throw .encodingFailed }
         return output as Data
+    }
+
+    /// The photo turned clockwise by `rotation` and brightened by
+    /// `exposure` stops. Without brightening only the EXIF orientation
+    /// changes (`reoriented(_:by:)`); with it the photo is re-encoded,
+    /// upright, as a high-quality JPEG.
+    static func adjusted(_ data: Data, turnedBy rotation: CameraRotation, brightenedBy exposure: Double) throws(Failure) -> Data {
+        guard exposure != 0 else {
+            return rotation == .none ? data : try reoriented(data, by: rotation)
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let image = CIImage(data: data) else { throw .undecodable }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let stored = (properties?[kCGImagePropertyOrientation] as? UInt32).flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        let upright = image.oriented(rotation.applied(to: stored))
+        let brightened = upright.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposure])
+        guard let rendered = CIContext(options: [.cacheIntermediates: false]).createCGImage(brightened, from: brightened.extent) else {
+            throw .encodingFailed
+        }
+        do {
+            return try ImageFile.encode(rendered, as: .jpeg(quality: 0.92))
+        } catch {
+            throw .encodingFailed
+        }
     }
 
     private static func decodeNow(_ data: Data, maxPixelSize: Int) throws(Failure) -> CGImage {

@@ -22,6 +22,16 @@ nonisolated struct CameraDevice: Hashable, Sendable, Identifiable {
         static func < (lhs: Kind, rhs: Kind) -> Bool {
             lhs.rawValue < rhs.rawValue
         }
+
+        /// Stops of brightening applied to this kind of camera's photos.
+        /// macOS has no exposure bias for cameras, and an iPhone through
+        /// Continuity Camera has no torch, so cards on the dark stand come
+        /// out underexposed. On 31 cards fed on 10 Nov 2026 half a stop
+        /// took the tight-cropped photos from 24 to 29 right; a full stop
+        /// or more did worse.
+        var photoExposureBoost: Double {
+            self == .continuity ? 0.5 : 0
+        }
     }
 
     let id: ID

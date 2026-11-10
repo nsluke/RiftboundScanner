@@ -77,10 +77,13 @@ nonisolated struct FrameGuide: Hashable, Sendable {
     let widthFraction: Double
     /// How far down the frame the card's centre sits.
     let centerYFraction: Double
+    /// The room `GuideCrop` leaves around the guide, as a fraction of its size.
+    let cropMargin: Double
 
-    init(widthFraction: Double, centerYFraction: Double = 0.5) {
+    init(widthFraction: Double, centerYFraction: Double = 0.5, cropMargin: Double = 0.15) {
         self.widthFraction = widthFraction.clamped(to: Self.widthRange)
         self.centerYFraction = centerYFraction
+        self.cropMargin = cropMargin
     }
 
     /// Where the iPhone app's guide lands in its own photos. Its standard
@@ -93,11 +96,14 @@ nonisolated struct FrameGuide: Hashable, Sendable {
 
     /// An iPhone on the feeder's stand through Continuity Camera, turned
     /// upright. Continuity Camera films 1920 × 1080 through the main wide
-    /// lens, which sees the card larger than the app's ultra-wide does: in
-    /// Luke's first Mac run (10 Nov 2026) the card was about 1100 × 790 px,
-    /// 73 % of the frame's short side, and centred. An estimate from one run;
-    /// the guide-size control corrects it per camera.
-    static let continuityStand = FrameGuide(widthFraction: 0.73, centerYFraction: 0.5)
+    /// lens, which sees the card larger than the app's ultra-wide does.
+    /// Measured on 31 cards fed on 10 Nov 2026: the card is about
+    /// 718 × 1017 px of the 1080 × 1920 frame, 66 % of the short side, and
+    /// centred. The margin is tighter than the iPhone's because the card's
+    /// black border disappears against the dark stand, so the recogniser
+    /// often cannot find it and matches the whole crop: on those photos a
+    /// 7 % margin got 24 of 31 right where 15 % got 17.
+    static let continuityStand = FrameGuide(widthFraction: 0.66, centerYFraction: 0.5, cropMargin: 0.07)
 
     /// The starting guide for a kind of camera, before the user resizes it.
     static func standard(for kind: CameraDevice.Kind) -> FrameGuide {
@@ -106,7 +112,7 @@ nonisolated struct FrameGuide: Hashable, Sendable {
 
     /// The same guide at another size.
     func resized(to widthFraction: Double) -> FrameGuide {
-        FrameGuide(widthFraction: widthFraction, centerYFraction: centerYFraction)
+        FrameGuide(widthFraction: widthFraction, centerYFraction: centerYFraction, cropMargin: cropMargin)
     }
 
     /// The guide inside `frame`, the rectangle the camera's whole frame fills.

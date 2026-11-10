@@ -190,7 +190,13 @@ with one feeder, on the author's home network. Expect rough edges.
 
 - Harsh lighting and glare are the weakest case.
 - Recognition through the Mac app's Continuity Camera is still being tuned.
-- No open-source license has been chosen yet.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The license covers this
+project's own code and documentation. It grants no rights to Riot Games' card
+names, text or art, including the card data in `App/Resources/CardVault.json`
+and the card art visible in the screenshots.
 
 ## Card data, images and Riot Games
 

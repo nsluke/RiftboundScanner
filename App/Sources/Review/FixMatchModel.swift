@@ -1,22 +1,23 @@
 import Observation
 import RiftboundRecognizer
 
-/// Resolves a typed collector number against the index as the user types,
-/// within one set. Code first: it is the one thing on the card that names a
-/// printing unambiguously.
+/// Finds the right printing for a wrong match from one field: a name, a code
+/// with its set, or a bare collector number (`FixQuery`). Results resolve as
+/// the user types; the arrow keys move the selection and Return uses it.
 @Observable
-final class FixMatchModel {
+final class FixMatchModel: Identifiable {
     let record: ScanRecord
     let directory: CardDirectory
-    var set: SetCode {
+    var query = "" {
         didSet { resolve() }
     }
-    var numberText = "" {
-        didSet { resolve() }
-    }
-    /// Printings matching the typed number; usually one, more when a number
-    /// has alternate-art or signature printings.
-    private(set) var matches: [Card] = []
+    /// The printings the query names, best first.
+    private(set) var results: [Card] = []
+    /// The result Return would use; the first one whenever the results change.
+    private(set) var selection: Card.ID?
+    /// Where a bare number is looked up first: the set of the last fix in
+    /// this review, else the batch's usual set, else the matched card's.
+    let preferredSet: SetCode?
     /// What the server last said about this scan's ledger item, when it was
     /// something the user has to act on (`unknown_card`, `duplicate_mismatch`).
     let serverStatus: TerminalStatus?
@@ -25,7 +26,27 @@ final class FixMatchModel {
         self.record = record
         self.directory = directory
         self.serverStatus = serverStatus
-        set = preferredSet ?? record.topCandidate?.card.code.set ?? directory.sets.first ?? record.codeReading?.code.set ?? SetCode(rawValue: "OGN")!
+        self.preferredSet = preferredSet ?? record.topCandidate?.card.code.set ?? record.codeReading?.code.set
+    }
+
+    /// The query as the panel understood it, for the hint under the field.
+    var parsedQuery: FixQuery {
+        FixQuery(query, sets: directory.sets)
+    }
+
+    var selectedCard: Card? {
+        results.first { $0.id == selection }
+    }
+
+    /// Moves the selection `offset` rows, stopping at either end.
+    func moveSelection(by offset: Int) {
+        guard !results.isEmpty else { return }
+        let index = results.firstIndex { $0.id == selection } ?? 0
+        selection = results[min(max(index + offset, 0), results.count - 1)].id
+    }
+
+    func select(_ card: Card) {
+        selection = card.id
     }
 
     /// The printing key the ledger was sent for this scan: the override when
@@ -54,14 +75,13 @@ final class FixMatchModel {
         }
     }
 
-    var sets: [SetCode] { directory.sets }
-
     /// The scan's candidates other than the one it was matched to.
     var otherCandidates: [Candidate] {
         Array(record.candidates.dropFirst())
     }
 
     private func resolve() {
-        matches = numberText.isEmpty ? [] : directory.cards(in: set, number: numberText)
+        results = directory.cards(for: parsedQuery, preferredSet: preferredSet)
+        selection = results.first?.id
     }
 }

@@ -42,4 +42,13 @@ struct PlatformSeamTests {
     @Test func aCameraLostMidRunExplainsWhyFeedingStopped() {
         #expect(ScannerModel.AutoScanEnd.cameraDisconnected("Luke's iPhone Camera").message == "Luke's iPhone Camera disconnected, so feeding stopped.")
     }
+
+    @Test func reviewOpensTheGridOnTheMacAndTheQueueOnTheIPhone() {
+        let batch = Fixtures.batch()
+        #if os(macOS)
+        #expect(ReviewRoute.review(batch) == .triage(batch))
+        #else
+        #expect(ReviewRoute.review(batch) == .queue(batch))
+        #endif
+    }
 }

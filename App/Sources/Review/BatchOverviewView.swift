@@ -154,13 +154,11 @@ struct BatchOverviewView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if counts.toReview > 0 {
-                NavigationLink(value: ReviewRoute.queue(model.batch)) {
+                NavigationLink(value: ReviewRoute.review(model.batch)) {
                     Text("Review the \(counts.toReview)")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.amber)
-                .foregroundStyle(Theme.ground)
+                .prominentAction(Theme.amber)
                 .controlSize(.large)
                 .padding()
                 .background(Theme.ground.opacity(0.95))

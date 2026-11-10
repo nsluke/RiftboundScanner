@@ -150,13 +150,11 @@ struct RunCompleteStrip: View {
             let counts = counts
             VStack(spacing: 8) {
                 if counts.toReview > 0 {
-                    NavigationLink(value: ReviewRoute.queue(batch)) {
+                    NavigationLink(value: ReviewRoute.review(batch)) {
                         Text(reviewLabel)
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.amber)
-                    .foregroundStyle(Theme.ground)
+                    .prominentAction(Theme.amber)
                     .accessibilityHint("Opens the review queue for this batch")
                 }
                 if counts.acceptable > 0 {

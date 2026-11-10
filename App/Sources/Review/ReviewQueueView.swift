@@ -3,15 +3,18 @@ import SwiftUI
 
 /// One scan at a time: the crop beside the matched card, why it needs a look
 /// (or that it is an audit or a spot-check), and one tap, swipe or key to
-/// settle it: Return accepts, F fixes the match, → skips to the next scan.
+/// settle it: Return accepts, F fixes the match, → skips to the next scan and
+/// ← goes back to the one before. The iPhone fixes a match in a sheet; the
+/// Mac puts the fix panel in the side panel, beside the full-size scan, and
+/// opens it at once for a scan the triage grid flagged.
 struct ReviewQueueView: View {
     @State private var model: ReviewQueueModel
     @Environment(\.dismiss) private var dismiss
     /// For the fix sheet's explanation of what the server said about a scan.
     @Environment(SyncEngine.self) private var sync: SyncEngine?
-    @State private var isFixing = false
+    /// The fix in progress for the scan on screen, if any.
+    @State private var fixing: FixMatchModel?
     @State private var dragOffset: CGFloat = 0
-    @State private var decidedCount = 0
 
     init(model: @autoclosure @escaping () -> ReviewQueueModel) {
         _model = State(wrappedValue: model())
@@ -29,8 +32,7 @@ struct ReviewQueueView: View {
                     Text(problem.message)
                 } actions: {
                     Button("Try again") { Task { await model.load() } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.amber)
+                        .prominentAction(Theme.amber)
                 }
             case .loaded:
                 switch model.progress {
@@ -49,8 +51,7 @@ struct ReviewQueueView: View {
                             : "Every scan in this batch has a verdict or was confident on its own.")
                     } actions: {
                         Button("Back to scanning") { dismiss() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.amber)
+                            .prominentAction(Theme.amber)
                     }
                 case nil:
                     EmptyView()
@@ -64,22 +65,18 @@ struct ReviewQueueView: View {
         .inlineNavigationTitle()
         .darkNavigationBar()
         .task { await model.load() }
-        .sheet(isPresented: $isFixing) {
-            if let record = model.current {
-                FixMatchView(
-                    model: FixMatchModel(record: record, directory: model.directory, preferredSet: model.dominantSet, serverStatus: serverStatus(for: record)),
-                    photoURL: model.photoURL(for: record),
-                    onChoose: { card in
-                        isFixing = false
-                        Task { await model.correct(to: card.id) }
-                    },
-                    onReject: { reason in
-                        isFixing = false
-                        Task { await model.reject(reason) }
-                    }
-                )
-                .sheetSizing(minWidth: 520, minHeight: 640)
-            }
+        #if os(iOS)
+        .sheet(item: $fixing) { fix in
+            FixMatchView(
+                model: fix,
+                photoURL: model.photoURL(for: fix.record),
+                onChoose: { card in use(card) },
+                onReject: { reason in reject(reason) }
+            )
+        }
+        #endif
+        .onChange(of: model.current?.id, initial: true) { _, _ in
+            fixing = model.currentIsFlagged ? makeFix() : nil
         }
         .alert("Couldn't save", isPresented: isShowingStorageProblem, presenting: model.storageProblem) { _ in
             Button("OK") { model.dismissStorageProblem() }
@@ -91,6 +88,46 @@ struct ReviewQueueView: View {
 
     // MARK: - Reviewing
 
+    #if os(macOS)
+    /// The Mac: the scan and its match as large as the window allows, and a
+    /// side panel with the details and either the verdict buttons or the fix
+    /// panel, so the photo stays in view while the right card is found.
+    private func reviewing(_ record: ScanRecord, position: Int, total: Int) -> some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 12) {
+                progressSegments(position: position, total: total)
+                comparison(record)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(20)
+            Divider().overlay(Theme.hairline)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    CalibrationNotice(batch: model.batch)
+                    if let kind = model.currentKind {
+                        kindBadge(kind)
+                    }
+                    details(record)
+                    if let fixing {
+                        FixMatchPanel(
+                            model: fixing,
+                            onChoose: { card in use(card) },
+                            onReject: { reason in reject(reason) },
+                            onCancel: { self.fixing = nil }
+                        )
+                    } else {
+                        decisionControls(record)
+                        gestureHint
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                .padding(20)
+            }
+            .frame(width: 380)
+        }
+    }
+    #else
     private func reviewing(_ record: ScanRecord, position: Int, total: Int) -> some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -99,27 +136,11 @@ struct ReviewQueueView: View {
                     kindBadge(kind)
                 }
                 comparison(record)
-                    #if os(macOS)
-                    // Keeps the verdict buttons in view in a laptop-height window.
-                    .frame(maxHeight: 440)
-                    #endif
                     .offset(x: dragOffset)
                     .gesture(swipe)
                 details(record)
-                if let duplicate = model.duplicateOf, model.currentKind == .possibleDuplicate {
-                    duplicateRow(duplicate)
-                }
-                if let options = model.printingOptions, options.hasAlternatives, record.topCandidate != nil {
-                    PrintingPickerView(options: options, selection: $model.selectedPrinting)
-                }
-                if model.asksForFinish, record.topCandidate != nil {
-                    FinishToggle(selection: $model.selectedFinish, inherited: model.inheritedFinish)
-                }
-                if model.currentKind == .possibleDuplicate {
-                    duplicateButtons
-                } else {
-                    verdictButtons
-                }
+                CalibrationNotice(batch: model.batch)
+                decisionControls(record)
                 gestureHint
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
@@ -127,6 +148,41 @@ struct ReviewQueueView: View {
             .padding()
         }
         .animation(.snappy, value: dragOffset)
+    }
+    #endif
+
+    /// The duplicate comparison, printing chips, finish and verdict buttons.
+    @ViewBuilder
+    private func decisionControls(_ record: ScanRecord) -> some View {
+        if let duplicate = model.duplicateOf, model.currentKind == .possibleDuplicate {
+            duplicateRow(duplicate)
+        }
+        if let options = model.printingOptions, options.hasAlternatives, record.topCandidate != nil {
+            PrintingPickerView(options: options, selection: $model.selectedPrinting)
+        }
+        if model.asksForFinish, record.topCandidate != nil {
+            FinishToggle(selection: $model.selectedFinish, inherited: model.inheritedFinish)
+        }
+        if model.currentKind == .possibleDuplicate {
+            duplicateButtons
+        } else {
+            verdictButtons
+        }
+    }
+
+    private func makeFix() -> FixMatchModel? {
+        guard let record = model.current else { return nil }
+        return FixMatchModel(record: record, directory: model.directory, preferredSet: model.fixSet, serverStatus: serverStatus(for: record))
+    }
+
+    private func use(_ card: Card) {
+        fixing = nil
+        Task { await model.correct(to: card.id) }
+    }
+
+    private func reject(_ reason: RejectionReason) {
+        fixing = nil
+        Task { await model.reject(reason) }
     }
 
     /// The earlier scan this one seems to repeat, so the two can be compared.
@@ -160,9 +216,7 @@ struct ReviewQueueView: View {
                     Label("Keep both", systemImage: "plus.square.on.square")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.blue)
-                .foregroundStyle(Theme.ground)
+                .prominentAction(Theme.blue)
                 .disabled(model.current?.topCandidate == nil)
                 .keyboardShortcut(ReviewKey.accept)
                 .accessibilityHint("Confirms this scan as a second copy of the card")
@@ -180,9 +234,10 @@ struct ReviewQueueView: View {
             .controlSize(.large)
 
             HStack {
-                Button("Wrong card") { isFixing = true }
+                Button("Wrong card") { fixing = makeFix() }
                     .keyboardShortcut(ReviewKey.fix)
                 Spacer()
+                previousButton
                 Button("Skip for now") { model.skip() }
                     .keyboardShortcut(ReviewKey.next)
             }
@@ -231,7 +286,7 @@ struct ReviewQueueView: View {
             VStack(spacing: 6) {
                 if let top = record.topCandidate {
                     GeometryReader { proxy in
-                        CardArtView(url: top.card.imageURL, size: proxy.size)
+                        CardArtView(url: top.card.imageURL, size: proxy.size, orientation: top.card.orientation)
                     }
                     .aspectRatio(63 / 88, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -346,14 +401,12 @@ struct ReviewQueueView: View {
                     Label("It's right", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.blue)
-                .foregroundStyle(Theme.ground)
+                .prominentAction(Theme.blue)
                 .disabled(model.current?.topCandidate == nil)
                 .keyboardShortcut(ReviewKey.accept)
 
                 Button {
-                    isFixing = true
+                    fixing = makeFix()
                 } label: {
                     Label("Wrong card", systemImage: "pencil")
                         .frame(maxWidth: .infinity)
@@ -367,6 +420,7 @@ struct ReviewQueueView: View {
             HStack {
                 Button("Not a card") { Task { await model.reject(.notACard) } }
                 Spacer()
+                previousButton
                 Button("Skip for now") { model.skip() }
                     .keyboardShortcut(ReviewKey.next)
             }
@@ -376,11 +430,21 @@ struct ReviewQueueView: View {
         }
     }
 
+    /// Back to the scan before; a new verdict there supersedes the old one.
+    @ViewBuilder
+    private var previousButton: some View {
+        if model.canGoBack {
+            Button("Previous") { model.goBack() }
+                .keyboardShortcut(ReviewKey.previous)
+                .accessibilityHint("Goes back to the scan before so you can decide it again")
+        }
+    }
+
     /// How to settle the scan without the buttons: swipes on the iPhone, keys on the Mac.
     private var gestureHint: Text {
         let isDuplicate = model.currentKind == .possibleDuplicate
         #if os(macOS)
-        return Text(isDuplicate ? "Return keeps both · F fixes the match · → skips to the next" : "Return confirms · F fixes the match · → skips to the next")
+        return Text(isDuplicate ? "Return keeps both · F fixes the match · → skips · ← goes back" : "Return confirms · F fixes the match · → skips · ← goes back")
         #else
         return Text(isDuplicate ? "Swipe right to keep both, left to fix." : "Swipe right to confirm, left to fix.")
         #endif
@@ -398,7 +462,7 @@ struct ReviewQueueView: View {
                         Task { await model.confirm() }  // keep both, for a duplicate
                     }
                 } else if value.translation.width < -80 {
-                    isFixing = true
+                    fixing = makeFix()
                 }
             }
     }
@@ -422,10 +486,14 @@ struct ReviewQueueView: View {
             .font(.subheadline)
             .foregroundStyle(Theme.muted)
             .accessibilityElement(children: .combine)
+            if model.canGoBack {
+                Button("Go back to the last scan") { model.goBack() }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Theme.blue)
+                    .keyboardShortcut(ReviewKey.previous)
+            }
             Button("Back to scanning") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.amber)
-                .foregroundStyle(Theme.ground)
+                .prominentAction(Theme.amber)
                 .controlSize(.large)
                 .keyboardShortcut(ReviewKey.accept)
         }
@@ -447,4 +515,6 @@ enum ReviewKey {
     static let fix = KeyboardShortcut("f", modifiers: [])
     /// →: on to the next scan, leaving this one pending.
     static let next = KeyboardShortcut(.rightArrow, modifiers: [])
+    /// ←: back to the scan before, to decide it again.
+    static let previous = KeyboardShortcut(.leftArrow, modifiers: [])
 }

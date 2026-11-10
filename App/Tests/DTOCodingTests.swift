@@ -127,20 +127,53 @@ struct DTOCodingTests {
         #expect(meta.exemplarCount == 312)
     }
 
-    /// The shape `GET /api/learning/stats` (S7) is expected to serve; every
-    /// key but `random_audits` may be missing.
-    @Test func learningStatsDecodeTheServerShapeWithMissingKeys() throws {
-        let full = try JSONDecoder.server.decode(LearningStats.self, from: Data(#"{"wilson_lower_bound":0.9812,"confidence_level":0.95,"random_audits":150,"random_audits_wrong":0,"unresolved_wrong_audits":0,"spot_checks":9,"audits_by_source":{"audit":150,"spotCheck":9},"human_labels":412,"sittings":3,"exemplars":320,"exemplars_by_set":{"OGN":300,"SFD":20},"overlay_version":5,"policy_version":2}"#.utf8))
+    /// The shape `GET /api/learning/stats` serves (RiftboundCollection
+    /// `learning/stats.py`): counts grouped by topic, not a flat object.
+    @Test func learningStatsDecodeTheServerShape() throws {
+        let full = try JSONDecoder.server.decode(LearningStats.self, from: Data("""
+        {"precision":{"total":150,"correct":150,"wrong":0,"open_wrong":0,"lower_bound":0.9812,"confidence":0.95,"healthy":true,
+                      "healthy_threshold":0.97,"display":"precision >= 98.1 % (95 %)"},
+         "spot_checks":{"total":9,"correct":8,"wrong":1,"open_wrong":0},
+         "audit_rate":{"current":0.1,"random_audits":150,"switch_count":300,"before":0.3,"after":0.1},
+         "labels":{"human_labels":412,"sittings":3,"phase2_ready":true,"phase2_requires":{"labels":300,"sittings":3}},
+         "exemplars":{"live":320,"groups":290,"by_set":{"OGN":300,"SFD":20},"by_calibration":{"cal":320},"by_tier":{"code":320},"revoked":{}},
+         "admissions":{"latest_outcomes":{},"latest_reasons":{},"gate_version":2,"last_run_at":null},
+         "conflicts":{"open":0,"resolved":1},
+         "overlays":[{"calibration_hash":"cal","format_version":1,"version":5,"etag":"ov-5","built_at":null,"exemplar_count":320,"live_exemplars":320}],
+         "policy":{"version":2,"stored":true,"created_at":"2026-11-07T03:30:00Z"},
+         "evaluations":1}
+        """.utf8))
         #expect(full.wilsonLowerBound == 0.9812)
+        #expect(full.confidenceLevel == 0.95)
         #expect(full.randomAudits == 150)
-        #expect(full.auditsBySource?["spotCheck"] == 9)
-        #expect(full.exemplarsBySet?["SFD"] == 20)
+        #expect(full.randomAuditsWrong == 0)
+        #expect(full.unresolvedWrongAudits == 0)
+        #expect(full.spotChecks == 9)
+        #expect(full.humanLabels == 412)
         #expect(full.sittings == 3)
+        #expect(full.exemplars == 320)
+        #expect(full.exemplarsBySet?["SFD"] == 20)
+        #expect(full.policyVersion == 2)
         #expect(full.isHealthy == true)
+    }
 
-        let empty = try JSONDecoder.server.decode(LearningStats.self, from: Data(#"{"random_audits":0,"wilson_lower_bound":null}"#.utf8))
+    /// What the deployed server answered on 10 Nov 2026, before any audit.
+    /// Its nested `spot_checks` failed the old flat decode.
+    @Test func learningStatsDecodeBeforeAnyAudit() throws {
+        let empty = try JSONDecoder.server.decode(LearningStats.self, from: Data("""
+        {"precision":{"total":0,"correct":0,"wrong":0,"open_wrong":0,"lower_bound":null,"confidence":0.95,"healthy":false,
+                      "healthy_threshold":0.97,"display":"precision not yet bounded (no random audits)"},
+         "spot_checks":{"total":0,"correct":0,"wrong":0,"open_wrong":0},
+         "audit_rate":{"current":0.3,"random_audits":0,"switch_count":300,"before":0.3,"after":0.1},
+         "labels":{"human_labels":0,"sittings":0,"phase2_ready":false,"phase2_requires":{"labels":300,"sittings":3}},
+         "exemplars":{"live":0,"groups":0,"by_set":{},"by_calibration":{},"by_tier":{},"revoked":{}},
+         "admissions":{"latest_outcomes":{},"latest_reasons":{},"gate_version":2,"last_run_at":null},
+         "conflicts":{"open":0,"resolved":0},"overlays":[],"policy":{"version":1,"stored":false,"created_at":null},"evaluations":0}
+        """.utf8))
         #expect(empty.wilsonLowerBound == nil)
         #expect(empty.isHealthy == nil)
+        #expect(empty.spotChecks == 0)
+        #expect(empty.exemplars == 0)
         let bare = try JSONDecoder.server.decode(LearningStats.self, from: Data("{}".utf8))
         #expect(bare.randomAudits == 0)
     }

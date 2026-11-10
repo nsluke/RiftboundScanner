@@ -7,7 +7,16 @@ struct CollectionClientTests {
     static let healthJSON = """
     {"status":"ok","version":"2.0.0","cards":1822,"catalog_as_of":"2026-11-04","prices_refreshed_at":"2026-11-07T03:10:00Z",
      "user_version":5,"api_version":2,"catalog_version":"3f9a1c","last_backup_at":"2026-11-07T03:00:00Z","free_disk_mb":11234.5,
-     "rss_mb":88.25,"assets_bytes":1048576,"scans_stored":144,"exemplars":12,"overlay_versions":3,"catalog_warnings":["UNL-T01: alias skipped"]}
+     "rss_mb":88.25,"assets_bytes":1048576,"scans_stored":144,"exemplars":12,"overlay_versions":{"c4l1b":3},"catalog_warnings":["UNL-T01: alias skipped"]}
+    """
+
+    /// What the deployed server (0.2.0, schema 6) answered on 10 Nov 2026:
+    /// no overlay built yet, so `overlay_versions` is an empty object.
+    static let deployedHealthJSON = """
+    {"status":"ok","version":"0.2.0","api_version":2,"user_version":6,"cards":1822,"scans_stored":0,"assets_bytes":0,
+     "exemplars":0,"overlay_versions":{},"catalog_as_of":"2026-11-04","catalog_version":"b04c31022e63",
+     "catalog_warnings":[],"prices_refreshed_at":"2026-11-09T21:00:02Z","last_backup_at":"2026-11-10T05:27:42Z",
+     "free_disk_mb":43064.2,"rss_mb":13.3,"disk_warning":null,"backup_warning":null,"write_token_required":false}
     """
 
     @Test func healthDecodesEveryField() async throws {
@@ -24,7 +33,19 @@ struct CollectionClientTests {
         #expect(report.assetsBytes == 1_048_576)
         #expect(report.scansStored == 144)
         #expect(report.exemplars == 12)
+        #expect(report.overlayVersions == ["c4l1b": 3])
         #expect(report.catalogWarnings == ["UNL-T01: alias skipped"])
+        #expect(report.isSupported)
+    }
+
+    @Test func theDeployedServersHealthDecodes() async throws {
+        // An Int `overlay_versions` failed this decode, so the probe called
+        // the server unhealthy and Settings said "No server answered".
+        let server = StubServer()
+        server.on("/health", .json(200, Self.deployedHealthJSON))
+        let report = try await server.client().health()
+        #expect(report.overlayVersions == [:])
+        #expect(report.userVersion == 6)
         #expect(report.isSupported)
     }
 
@@ -236,7 +257,7 @@ struct CollectionClientTests {
 
     @Test func learningStatsAreAPlainGet() async throws {
         let server = StubServer()
-        server.on("/api/learning/stats", .json(200, #"{"wilson_lower_bound":0.975,"confidence_level":0.95,"random_audits":150,"random_audits_wrong":0,"spot_checks":4}"#))
+        server.on("/api/learning/stats", .json(200, #"{"precision":{"total":150,"wrong":0,"open_wrong":0,"lower_bound":0.975,"confidence":0.95},"spot_checks":{"total":4},"audit_rate":{"random_audits":150}}"#))
         let stats = try await server.client().learningStats()
         #expect(stats.wilsonLowerBound == 0.975)
         #expect(stats.randomAudits == 150)

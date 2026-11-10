@@ -35,11 +35,12 @@ struct CardDetailView: View {
             }
             .sheet(item: $addToDeck) { model in
                 AddToDeckSheet(model: model)
+                    .sheetSizing()
             }
             .background(Theme.ground.ignoresSafeArea())
             .foregroundStyle(Theme.text)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineNavigationTitle()
+            .darkNavigationBar()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

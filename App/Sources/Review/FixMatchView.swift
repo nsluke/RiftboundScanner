@@ -56,8 +56,8 @@ struct FixMatchView: View {
             .background(Theme.ground.ignoresSafeArea())
             .foregroundStyle(Theme.text)
             .navigationTitle("Which card is it?")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineNavigationTitle()
+            .darkNavigationBar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -68,6 +68,7 @@ struct FixMatchView: View {
                     isSearching = false
                     onChoose(card)
                 }
+                .sheetSizing()
             }
             .onAppear { isNumberFocused = true }
         }
@@ -121,7 +122,7 @@ struct FixMatchView: View {
 
                 TextField("001", text: $model.numberText)
                     .font(.body.monospaced())
-                    .keyboardType(.numberPad)
+                    .textEntry(.number)
                     .textContentType(.none)
                     .focused($isNumberFocused)
                     .padding(.horizontal, 12)

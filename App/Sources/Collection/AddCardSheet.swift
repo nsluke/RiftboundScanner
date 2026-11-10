@@ -120,7 +120,7 @@ struct AddCardSheet: View {
                 recent
             }
             .navigationTitle("Add card")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -133,8 +133,7 @@ struct AddCardSheet: View {
     private var search: some View {
         Section {
             TextField("Name or code, e.g. OGN-066-P", text: $model.query)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
+                .textEntry(.code)
                 .accessibilityLabel("Search the catalog")
         } footer: {
             Text("Every printing in the catalog, promos included.")

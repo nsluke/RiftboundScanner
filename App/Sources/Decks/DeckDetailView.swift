@@ -33,8 +33,8 @@ struct DeckDetailView: View {
         .background(Theme.ground.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .navigationTitle(model.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .inlineNavigationTitle()
+        .darkNavigationBar()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 shareButton

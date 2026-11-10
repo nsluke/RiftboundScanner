@@ -29,7 +29,12 @@ nonisolated enum FeederFailure: Hashable, Sendable {
     var message: String {
         switch self {
         case .bluetoothOff: String(localized: "Bluetooth is off.")
-        case .bluetoothUnauthorized: String(localized: "Allow Bluetooth access in Settings to use the feeder.")
+        case .bluetoothUnauthorized:
+            #if os(macOS)
+            String(localized: "Allow Bluetooth access in System Settings to use the feeder.")
+            #else
+            String(localized: "Allow Bluetooth access in Settings to use the feeder.")
+            #endif
         case .bluetoothUnsupported: String(localized: "This device has no Bluetooth LE.")
         case .connectionFailed(let detail): String(localized: "Couldn't connect to the feeder. \(detail)")
         case .disconnected(let detail):

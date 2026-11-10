@@ -34,6 +34,22 @@ nonisolated enum PhotoDecoder {
         }
     }
 
+    /// The same encoded photo shown turned clockwise by `rotation`. Only the
+    /// EXIF orientation changes: ImageIO copies JPEG and HEIC data without
+    /// re-encoding, so the photo loses nothing.
+    static func reoriented(_ data: Data, by rotation: CameraRotation) throws(Failure) -> Data {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) else {
+            throw .undecodable
+        }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let stored = (properties?[kCGImagePropertyOrientation] as? UInt32).flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output as CFMutableData, type, 1, nil) else { throw .encodingFailed }
+        let options: [CFString: Any] = [kCGImageDestinationOrientation: rotation.applied(to: stored).rawValue]
+        guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, nil) else { throw .encodingFailed }
+        return output as Data
+    }
+
     private static func decodeNow(_ data: Data, maxPixelSize: Int) throws(Failure) -> CGImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { throw .undecodable }
         let options: [CFString: Any] = [

@@ -186,7 +186,7 @@ struct StartRunSheet: View {
                 }
             }
             .navigationTitle("Start run")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

@@ -448,6 +448,72 @@ xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScan
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath App/DerivedData
 ```
 
+### The Mac app
+
+`RiftboundScannerMac` (macOS 15) is the same app on a laptop, with the iPhone
+as its camera through Continuity Camera: run batches with the feeder, then
+review them with the keyboard. It builds from the same `App/Sources`; where the
+platforms differ the code says so in small seams rather than forked screens:
+`Shared/PlatformModifiers.swift` (inline titles, keyboards, sheet sizes),
+`Shared/SystemSettingsPane.swift` (where a permission is granted),
+`PlatformDependencies` in `AppDependencies.swift` (the Mac's camera picker),
+`CameraPreview` (a `UIView` or an `NSView`) and `#if os(macOS)` blocks in
+`CaptureEngine` and `ScannerView`. The tests are shared too and run natively on
+the Mac against the Mac app.
+
+```bash
+(cd App && xcodegen generate)
+xcodebuild -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
+  -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates build
+open "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app"
+xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
+  -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates
+```
+
+**The camera.** `LiveCameraDiscovery` follows `AVCaptureDevice.DiscoverySession`
+over Continuity Camera iPhones, external and built-in cameras (Desk View is
+left out). `CameraSelection` prefers the camera you last picked, else an iPhone,
+else an external camera, else the built-in one, and an iPhone that joins after
+launch replaces a built-in camera picked in the meantime. A camera in use that
+disconnects is *lost*, never silently replaced: feeding stops at once
+(`AutoScanEnd.cameraDisconnected`), photos already taken are still identified,
+and scanning resumes when it reconnects or you pick another camera from the
+toolbar menu. No camera, refused permission (with a button to the Privacy &
+Security pane), starting and failed are each their own screen.
+
+Measured on Luke's iPhone 16 Pro (10 Nov 2026): over Continuity Camera it offers
+at most 1920 × 1440, rejects the `.photo` preset and has no torch, and a Mac
+session re-applies its preset whenever its graph is rebuilt, so a hand-set
+format does not stay. The engine therefore runs at `.high` (1920 × 1080, the
+card keeps all its pixels; only the margin beside it shrinks) with Center Stage
+turned off. A Mac guide crop's long edge is about 1400 px, short of the
+1800–2200 px `CaptureQuality.standard` needs, so Mac captures are `legacy`
+and never train the learning loop. Continuity Camera delivers the
+sensor's landscape frames however the phone sits, so an iPhone starts turned a
+quarter-turn clockwise, the same turn the iPhone app applies to its own camera;
+the preview layer and the photo's EXIF orientation are turned together
+(`CameraRotation`), so `GuideCrop` maps the guide exactly as on the phone. The
+preview shows the whole frame, and `FrameGuide` places the card outline in it:
+for the built-in or a USB camera where the iPhone app's guide lands in its
+photos, for an iPhone a larger centred card (Continuity films through the main
+lens, which sees the card bigger than the app's ultra-wide). The side panel's
+Rotate button (⌥⌘R) and Guide size slider fit both to the stand; each is
+remembered per camera under `scanner.cameraPreferences`.
+
+**Keys.** Space takes a photo, ⌘↩ feeds and scans, ⌘. stops feeding. In the
+review queue Return confirms (or keeps both for a possible duplicate), F opens
+the fix sheet and → skips to the next scan; the keys sit on the buttons, so
+they go quiet while a sheet has focus. ⇧⌘S shows the scans in Finder.
+
+**Storage and permissions.** The app is sandboxed: scans live in
+`~/Library/Containers/com.nsluke.RiftboundScannerMac/Data/Documents/Scans`, the
+same layout as the phone's, so `python3 -I Scripts/summarize-scans.py` reads that
+folder directly. Entitlements: camera, Bluetooth, outgoing network (the
+collection server) and user-selected files (exports). The feeder is the same
+`CSC100Feeder` over CoreBluetooth; Bluetooth access is asked for on the first
+Connect. One window only: the camera, the feeder link and the sync engine
+belong to a single scanner.
+
 ### Talking to the collection server
 
 The app is a client of the [RiftboundCollection](../RiftboundCollection) server

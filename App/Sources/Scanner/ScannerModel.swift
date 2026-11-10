@@ -63,6 +63,8 @@ final class ScannerModel {
         case hopperEmpty
         case feederFailed(FeederError)
         case scanFailed(ScanProblem)
+        /// The camera in use (on the Mac, the iPhone) went away mid-run.
+        case cameraDisconnected(String)
 
         var message: String {
             switch self {
@@ -70,6 +72,7 @@ final class ScannerModel {
             case .hopperEmpty: String(localized: "The hopper looks empty.")
             case .feederFailed(let error): error.message
             case .scanFailed(let problem): problem.message
+            case .cameraDisconnected(let name): String(localized: "\(name) disconnected, so feeding stopped.")
             }
         }
     }
@@ -79,6 +82,10 @@ final class ScannerModel {
         case starting
         case ready
         case denied
+        /// No camera is connected; on the iPhone, no back camera exists.
+        case noCamera
+        /// The camera in use went away; the Mac waits for it to come back.
+        case disconnected(String)
         case unavailable(String)
     }
 
@@ -122,6 +129,8 @@ final class ScannerModel {
     /// The feeding half of the run, owned apart from the whole so stopping can
     /// cancel feeding at once while queued photos finish identifying.
     private var feedTask: Task<AutoScanEnd, Never>?
+    /// Why feeding was cancelled from outside, when it was not the user.
+    private var requestedStop: AutoScanEnd?
     /// Where the card sits in the preview, as the view last measured it.
     /// Captures are cropped to it before recognition; without it the whole
     /// photo is used.
@@ -256,9 +265,47 @@ final class ScannerModel {
         do {
             try await camera.start()
             cameraState = .ready
+        } catch CameraError.noCamera {
+            cameraState = .noCamera
         } catch {
             cameraState = .unavailable(ScanProblem(error).message)
         }
+    }
+
+    /// Follows the Mac's camera picker (`CameraSourceModel`). The camera comes
+    /// up once one is in use. When the camera in use goes away, feeding stops
+    /// at once, because every later photo would miss the card, and the screen
+    /// waits for it; photos already taken are still identified. A refused
+    /// permission stays on screen whatever the cameras do.
+    func follow(_ source: CameraSource) async {
+        // The batch is there to browse and review whatever the camera does.
+        if batch == nil {
+            await loadLatestBatch()
+        }
+        switch source {
+        case .searching:
+            if cameraState != .denied {
+                cameraState = .starting
+            }
+        case .using:
+            await start()
+        case .none:
+            await cameraWentAway(.noCamera, reason: .cameraDisconnected(String(localized: "The camera")))
+        case .lost(let device):
+            await cameraWentAway(.disconnected(device.name), reason: .cameraDisconnected(device.name))
+        }
+    }
+
+    private func cameraWentAway(_ state: CameraState, reason: AutoScanEnd) async {
+        // Only feeding can be stopped; a run that is draining already has its reason.
+        if case .running = autoScan {
+            stopAutoScan(because: reason)
+        }
+        isTorchOn = false
+        if cameraState != .denied {
+            cameraState = state
+        }
+        await camera.stop()
     }
 
     func stopCamera() {
@@ -391,6 +438,7 @@ final class ScannerModel {
     func startAutoScan() {
         guard canStartAutoScan else { return }
         runRecords = []
+        requestedStop = nil
         autoScan = .running(AutoScanProgress())
         let (queue, enqueue) = AsyncStream<CapturedPhoto>.makeStream(bufferingPolicy: .unbounded)
         autoScanTask = Task { await runAutoScan(queue: queue, enqueue: enqueue) }
@@ -399,6 +447,11 @@ final class ScannerModel {
     /// Stops feeding at once. Photos already taken still get identified and
     /// saved; the run reports ended once they have.
     func stopAutoScan() {
+        feedTask?.cancel()
+    }
+
+    private func stopAutoScan(because reason: AutoScanEnd) {
+        requestedStop = reason
         feedTask?.cancel()
     }
 
@@ -447,6 +500,10 @@ final class ScannerModel {
         let identifying = Task { await identifyQueued(queue) }
 
         var reason = await feeding.value
+        if let requestedStop {
+            reason = requestedStop
+            self.requestedStop = nil
+        }
         enqueue.finish()
         feeder.stop()
         feedTask = nil

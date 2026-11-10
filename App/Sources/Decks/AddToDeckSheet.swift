@@ -26,8 +26,8 @@ struct AddToDeckSheet: View {
             .background(Theme.ground.ignoresSafeArea())
             .foregroundStyle(Theme.text)
             .navigationTitle("Add to deck")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineNavigationTitle()
+            .darkNavigationBar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(isAdded ? "Done" : "Cancel") { dismiss() }
@@ -91,7 +91,7 @@ struct AddToDeckSheet: View {
                             Text("\(deck.name) · \(deck.formatTitle)").tag(Optional(deck.id))
                         }
                     }
-                    .pickerStyle(.navigationLink)
+                    .drillDownPickerStyle()
                     .accessibilityLabel("Deck")
                     if case .cached(let asOf, _) = listing.freshness {
                         Text("Deck list saved \(asOf.formatted(date: .abbreviated, time: .shortened)).")

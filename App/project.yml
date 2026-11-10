@@ -1,10 +1,12 @@
-# XcodeGen spec for the iOS app. Regenerate the project with `xcodegen generate`
-# from this folder; the .xcodeproj and Info.plist are build products, not sources.
+# XcodeGen spec for the iPhone and Mac apps. Regenerate the project with
+# `xcodegen generate` from this folder; the .xcodeproj, both Info.plists and the
+# Mac entitlements are build products, not sources.
 name: RiftboundScannerApp
 options:
   bundleIdPrefix: com.nsluke
   deploymentTarget:
     iOS: "18.0"
+    macOS: "15.0"
   xcodeVersion: "27.2"
   createIntermediateGroups: true
 settings:
@@ -85,6 +87,82 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nsluke.RiftboundScannerTests
         GENERATE_INFOPLIST_FILE: "YES"
+  # The Mac app: the same sources, with the iPhone as its camera through
+  # Continuity Camera. Platform differences live behind `#if os(macOS)` seams
+  # in the shared files (see README, "The Mac app").
+  RiftboundScannerMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources
+      - path: ../cache/index.json
+        buildPhase: resources
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: RiftboundScanner
+        product: RiftboundRecognizer
+    info:
+      path: MacInfo.plist
+      properties:
+        CFBundleDisplayName: Riftbound Scanner
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
+        LSApplicationCategoryType: public.app-category.utilities
+        NSCameraUsageDescription: Riftbound Scanner photographs your cards through your iPhone (Continuity Camera) or another camera to identify them. Card photos stay on this Mac and are uploaded only to your own home server.
+        # Continuity Camera devices are only discoverable with this key.
+        NSCameraUseContinuityCameraDeviceType: true
+        NSBluetoothAlwaysUsageDescription: Riftbound Scanner connects to your TCG Archivist card feeder over Bluetooth to advance cards while scanning.
+        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings.
+        NSBonjourServices: [_http._tcp]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            riftbound.lan:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+            riftbound.local:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: RiftboundScannerMac.entitlements
+      properties:
+        # Sandboxed: scans live in the app's container
+        # (~/Library/Containers/com.nsluke.RiftboundScannerMac/Data/Documents/Scans).
+        com.apple.security.app-sandbox: true
+        com.apple.security.device.camera: true
+        com.apple.security.device.bluetooth: true
+        # The collection server on the home network.
+        com.apple.security.network.client: true
+        # Saving an exported batch where the user chooses in the share sheet.
+        com.apple.security.files.user-selected.read-write: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nsluke.RiftboundScannerMac
+        PRODUCT_NAME: Riftbound Scanner
+        # The iPhone app's module name, so the tests' `@testable import
+        # RiftboundScannerApp` builds against either app.
+        PRODUCT_MODULE_NAME: RiftboundScannerApp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: "YES"
+        COMBINE_HIDPI_IMAGES: "YES"
+  # The same tests, run natively on the Mac against the Mac app.
+  RiftboundScannerMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: RiftboundScannerMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nsluke.RiftboundScannerMacTests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Riftbound Scanner.app/Contents/MacOS/Riftbound Scanner"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
   RiftboundScannerApp:
     build:
@@ -97,3 +175,14 @@ schemes:
       config: Debug
       targets:
         - RiftboundScannerAppTests
+  RiftboundScannerMac:
+    build:
+      targets:
+        RiftboundScannerMac: all
+        RiftboundScannerMacTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - RiftboundScannerMacTests

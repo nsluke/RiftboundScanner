@@ -69,3 +69,49 @@ struct GuideCropTests {
         #expect(crop.normalizedRect(forPhotoSize: CGSize(width: 10, height: 10)) == CGRect(x: 0, y: 0, width: 1, height: 1))
     }
 }
+
+@Suite("Frame guide")
+struct FrameGuideTests {
+    @Test func theIPhoneAppGuideCropsWhatThePhoneCrops() {
+        // The iPhone app's standard captures: a 1454 × 2030 crop at (785, 1122)
+        // of a 3024 × 4032 photo. A Mac preview of any size showing the whole
+        // 3:4 frame must crop the same pixels.
+        for preview in [CGRect(x: 0, y: 0, width: 600, height: 800), CGRect(x: 148, y: 52, width: 471, height: 628)] {
+            let crop = GuideCrop(guideFrame: FrameGuide.iPhoneApp.rect(in: preview), previewFrame: preview)
+            let pixels = crop.pixelRect(forPhotoSize: CGSize(width: 3024, height: 4032))
+            #expect(abs(pixels.minX - 785) <= 2)
+            #expect(abs(pixels.minY - 1122) <= 2)
+            #expect(abs(pixels.width - 1454) <= 2)
+            #expect(abs(pixels.height - 2030) <= 2)
+        }
+    }
+
+    @Test func theContinuityGuideIsACardCentredInTheUprightFrame() {
+        // A 1920 × 1080 Continuity Camera frame turned upright, shown at 540 × 960.
+        let frame = CGRect(x: 10, y: 20, width: 540, height: 960)
+        let rect = FrameGuide.continuityStand.rect(in: frame)
+        #expect(abs(rect.width / rect.height - 63.0 / 88.0) < 1e-9)
+        #expect(abs(rect.midX - frame.midX) < 1e-9)
+        #expect(abs(rect.midY - frame.midY) < 1e-9)
+        #expect(abs(rect.width - 540 * 0.73) < 1e-9)
+        #expect(frame.contains(rect))
+        // With the 15 % margin the crop still fits inside the photo.
+        let pixels = GuideCrop(guideFrame: rect, previewFrame: frame).pixelRect(forPhotoSize: CGSize(width: 1080, height: 1920))
+        #expect(pixels.width < 1080 && pixels.width > 1000)
+    }
+
+    @Test func sizesFollowTheShorterSideAndStayInRange() {
+        let landscape = CGRect(x: 0, y: 0, width: 1600, height: 900)
+        #expect(abs(FrameGuide.iPhoneApp.rect(in: landscape).width - 900 * 0.3699) < 1e-9)
+        #expect(FrameGuide.iPhoneApp.resized(to: 5).widthFraction == FrameGuide.widthRange.upperBound)
+        #expect(FrameGuide.iPhoneApp.resized(to: 0).widthFraction == FrameGuide.widthRange.lowerBound)
+        #expect(FrameGuide.iPhoneApp.resized(to: 0.5).centerYFraction == FrameGuide.iPhoneApp.centerYFraction)
+        #expect(FrameGuide.iPhoneApp.rect(in: .zero) == .zero)
+    }
+
+    @Test func aWideGuideNeverRunsPastALandscapeFrame() {
+        let landscape = CGRect(x: 0, y: 0, width: 1920, height: 1440)
+        let rect = FrameGuide(widthFraction: 0.9).rect(in: landscape)
+        #expect(rect.height <= landscape.height)
+    }
+}

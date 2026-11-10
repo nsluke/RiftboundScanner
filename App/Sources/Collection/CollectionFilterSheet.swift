@@ -32,10 +32,10 @@ struct CollectionFilterSheet: View {
                 Section("Price, USD market") {
                     HStack {
                         TextField("Min", value: filterBinding.minimumPrice, format: .number)
-                            .keyboardType(.decimalPad)
+                            .textEntry(.decimal)
                         Text("to").foregroundStyle(Theme.muted)
                         TextField("Max", value: filterBinding.maximumPrice, format: .number)
-                            .keyboardType(.decimalPad)
+                            .textEntry(.decimal)
                     }
                     ScrollView(.horizontal) {
                         HStack {
@@ -59,8 +59,8 @@ struct CollectionFilterSheet: View {
             .background(Theme.ground)
             .tint(Theme.amber)
             .navigationTitle("Filters")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .inlineNavigationTitle()
+            .darkNavigationBar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Clear") {

@@ -28,7 +28,7 @@ struct CardPickerView: View {
             }
             .searchable(text: $query, prompt: "Name or code, e.g. OGN-001")
             .navigationTitle("Which card is it?")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

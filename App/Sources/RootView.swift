@@ -15,6 +15,9 @@ struct RootView: View {
     @State private var decks: DecksModel
     @State private var settings: SettingsModel
     @State private var sync: SyncEngine
+    #if os(macOS)
+    @State private var cameraSource: CameraSourceModel
+    #endif
     private let deckDependencies: DeckDependencies
 
     init(dependencies: AppDependencies) {
@@ -54,22 +57,18 @@ struct RootView: View {
             confidenceRule: dependencies.confidenceRule
         ))
         _sync = State(wrappedValue: dependencies.makeSyncEngine())
+        #if os(macOS)
+        _cameraSource = State(wrappedValue: dependencies.platform.makeCameraSource())
+        #endif
     }
 
     var body: some View {
         TabView(selection: $tab) {
             Tab("Scan", systemImage: "camera.viewfinder", value: RootTab.scan) {
                 NavigationStack {
-                    ScannerView(
-                        model: scanner,
-                        session: dependencies.camera.session,
-                        directory: dependencies.directory,
-                        makeStartRun: {
-                            StartRunModel(memory: dependencies.runSetup, sets: dependencies.directory.sets, index: dependencies.index, appVersion: dependencies.appVersion)
-                        }
-                    )
-                    .toolbarVisibility(.hidden, for: .navigationBar)
-                    .reviewDestinations(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, rule: dependencies.confidenceRule)
+                    scannerView
+                        .hiddenNavigationBar()
+                        .reviewDestinations(store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Collection", systemImage: "square.grid.2x2", value: RootTab.collection) {
@@ -96,6 +95,9 @@ struct RootView: View {
                 }
             }
         }
+        #if os(macOS)
+        .tabViewStyle(.sidebarAdaptable)
+        #endif
         .environment(sync)
         .task { await sync.start() }
         .onChange(of: tab, initial: true) { sync.isScanTabVisible = tab == .scan }
@@ -106,5 +108,17 @@ struct RootView: View {
             @unknown default: break
             }
         }
+    }
+
+    /// The Scan tab's screen; the Mac's also takes the camera picker.
+    private var scannerView: ScannerView {
+        let makeStartRun = {
+            StartRunModel(memory: dependencies.runSetup, sets: dependencies.directory.sets, index: dependencies.index, appVersion: dependencies.appVersion)
+        }
+        #if os(macOS)
+        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun, cameraSource: cameraSource)
+        #else
+        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun)
+        #endif
     }
 }

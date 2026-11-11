@@ -18,13 +18,14 @@ struct RootView: View {
     #if os(macOS)
     @State private var cameraSource: CameraSourceModel
     @State private var serverBatches: ServerBatchesModel
+    @State private var remotePreview: RemotePreviewModel
     #endif
     private let deckDependencies: DeckDependencies
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         _scanner = State(wrappedValue: ScannerModel(
-            camera: dependencies.camera,
+            camera: dependencies.scannerCamera,
             feeder: dependencies.makeFeeder(),
             identifier: dependencies.identifier,
             store: dependencies.store,
@@ -61,6 +62,7 @@ struct RootView: View {
         #if os(macOS)
         _cameraSource = State(wrappedValue: dependencies.platform.makeCameraSource())
         _serverBatches = State(wrappedValue: dependencies.platform.makeServerBatches())
+        _remotePreview = State(wrappedValue: dependencies.platform.makeRemotePreview())
         #endif
     }
 
@@ -102,6 +104,10 @@ struct RootView: View {
         #endif
         .environment(sync)
         .task { await sync.start() }
+        #if os(macOS)
+        // The iPhone app's frames can be read once, so the root reads them for good.
+        .task { await remotePreview.run() }
+        #endif
         .onChange(of: tab, initial: true) { sync.isScanTabVisible = tab == .scan }
         .onChange(of: scenePhase) {
             switch scenePhase {
@@ -127,9 +133,9 @@ struct RootView: View {
             StartRunModel(memory: dependencies.runSetup, sets: dependencies.directory.sets, index: dependencies.index, appVersion: dependencies.appVersion)
         }
         #if os(macOS)
-        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun, cameraSource: cameraSource)
+        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun, cameraSource: cameraSource, remotePreview: remotePreview)
         #else
-        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun)
+        return ScannerView(model: scanner, session: dependencies.camera.session, directory: dependencies.directory, makeStartRun: makeStartRun, makeCameraForMac: dependencies.platform.makeCameraForMac)
         #endif
     }
 }

@@ -525,6 +525,15 @@ collection server) and user-selected files (exports). The feeder is the same
 Connect. One window only: the camera, the feeder link and the sync engine
 belong to a single scanner.
 
+**The iPhone app as the Mac's camera** ([ADR-004](docs/adr/004-iphone-as-mac-camera.md)).
+The sharpest way to scan from the Mac: on the iPhone, tap the Mac-and-phone
+button on the Scan tab (**Camera for Mac**) and leave that screen open with
+the phone on the stand. The Mac's camera menu then lists the phone as
+"<name> (Riftbound app)" and switches to it. The Mac drives the feeder and
+gets the iPhone app's own photos: the 0.5× lens up close, 12 MP, and the
+torch. The apps talk over Bonjour (`_riftcam._tcp`) on the local network; each
+asks for Local Network access once.
+
 **Reviewing what the iPhone scanned** ([ADR-003](docs/adr/003-mac-review-station.md)).
 Continuity Camera only ever gives the Mac the iPhone's main lens, which cannot
 focus on a card that close, so the sharp way to scan is the iPhone app, whose

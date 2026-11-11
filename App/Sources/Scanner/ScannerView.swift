@@ -14,6 +14,12 @@ struct ScannerView: View {
     #if os(macOS)
     /// Which camera the Mac photographs through; the iPhone has only one.
     let cameraSource: CameraSourceModel
+    /// The iPhone app's picture, when the picker chose it (ADR-004).
+    let remotePreview: RemotePreviewModel
+    #else
+    /// The screen that makes this iPhone the Mac's camera (ADR-004).
+    let makeCameraForMac: @MainActor () -> CameraForMacModel
+    @State private var isServingMac = false
     #endif
 
     @Environment(\.openURL) private var openURL
@@ -95,6 +101,7 @@ struct ScannerView: View {
             HStack {
                 batchMenu
                 Spacer()
+                cameraForMacButton
                 torchButton
             }
             .padding()
@@ -134,6 +141,26 @@ struct ScannerView: View {
             .padding(.bottom, 24)
         }
     }
+
+    /// Makes this iPhone the Mac's camera: the Mac's scan page then photographs
+    /// through this phone's close-focus lens (ADR-004).
+    private var cameraForMacButton: some View {
+        Button {
+            isServingMac = true
+        } label: {
+            Image(systemName: "macbook.and.iphone")
+                .font(.title3)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .tint(.white)
+        .accessibilityLabel("Camera for Mac")
+        .accessibilityHint("Lets the Mac's scan page use this iPhone's camera")
+        .sheet(isPresented: $isServingMac) {
+            CameraForMacView(model: makeCameraForMac(), session: session)
+                .interactiveDismissDisabled()
+        }
+    }
     #endif
 
     // MARK: - Mac
@@ -170,7 +197,7 @@ struct ScannerView: View {
             Color.black
             switch model.cameraState {
             case .ready:
-                CameraPreview(session: session, rotation: cameraSource.rotation)
+                livePicture
                     .aspectRatio(cameraSource.displayAspectRatio ?? 3.0 / 4.0, contentMode: .fit)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { previewFrame = $0 }
                     .overlay { frameGuide }
@@ -185,6 +212,17 @@ struct ScannerView: View {
                 cameraUnavailable
             }
             processingOverlay
+        }
+    }
+
+    /// The capture session's picture for a camera on this Mac; the frames the
+    /// iPhone app sends for that camera.
+    @ViewBuilder
+    private var livePicture: some View {
+        if cameraSource.source.device?.kind == .iPhoneApp {
+            RemotePreviewView(model: remotePreview)
+        } else {
+            CameraPreview(session: session, rotation: cameraSource.rotation)
         }
     }
 

@@ -12,6 +12,9 @@ nonisolated struct CameraDevice: Hashable, Sendable, Identifiable {
 
     /// What kind of camera it is, in the order the scanner prefers them.
     enum Kind: Int, Hashable, Sendable, Comparable {
+        /// The iPhone app's own camera over the local network (ADR-004): the
+        /// 0.5× lens up close, 12 MP photos and a torch.
+        case iPhoneApp
         /// An iPhone through Continuity Camera: the camera on the feeder's stand.
         case continuity
         /// A USB or other external camera.

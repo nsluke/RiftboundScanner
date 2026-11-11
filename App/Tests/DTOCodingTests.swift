@@ -263,7 +263,7 @@ struct AppConfigurationTests {
 
     @Test func thePlistDeclaresLocalNetworkUseAndTheVersion() throws {
         #expect((info["NSLocalNetworkUsageDescription"] as? String)?.isEmpty == false)
-        #expect(info["NSBonjourServices"] as? [String] == ["_http._tcp"])
+        #expect(info["NSBonjourServices"] as? [String] == ["_http._tcp", "_riftcam._tcp"])
         #expect((info["NSCameraUsageDescription"] as? String)?.contains("your own home server") == true)
         #expect(info["CFBundleShortVersionString"] as? String == "0.2.0")
     }

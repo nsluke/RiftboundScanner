@@ -13,6 +13,7 @@ nonisolated enum ScanProblem: Error, Hashable {
         switch error {
         case let problem as ScanProblem: self = problem
         case let cameraError as CameraError: self = .camera(cameraError.message)
+        case let remote as RemoteCameraFailure: self = .camera(remote.message)
         case is PhotoDecoder.Failure: self = .decoding
         default: self = .recognition(String(describing: error))
         }

@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 import RiftboundRecognizer
 
 /// Everything the app needs, wired once at launch. This is the only place that
@@ -45,6 +48,12 @@ nonisolated struct AppDependencies: Sendable {
     let makeSyncEngine: @MainActor @Sendable () -> SyncEngine
     /// What only one platform has: on the Mac, the camera picker.
     let platform: PlatformDependencies
+
+    /// The camera the scanner photographs through: on the Mac, whichever the
+    /// picker chose, the iPhone app's included (ADR-004); on the iPhone, its own.
+    var scannerCamera: any CameraOperating {
+        platform.scannerCamera
+    }
 
     /// The production graph. Runs off the main actor: decoding the 6 MB index
     /// takes long enough to count as a hang.
@@ -170,20 +179,26 @@ nonisolated struct AppDependencies: Sendable {
 }
 
 #if os(macOS)
-/// The Mac's own collaborators. The camera picker discovers Continuity Camera
-/// iPhones and other cameras and points the shared engine at the chosen one,
-/// and History imports batches an iPhone left on the server (ADR-003).
+/// The Mac's own collaborators. The camera picker lists the Mac's cameras and
+/// any iPhone whose Camera for Mac screen is open (ADR-004), and the scanner
+/// photographs through whichever it chose; History imports batches an iPhone
+/// left on the server (ADR-003).
 nonisolated struct PlatformDependencies: Sendable {
+    let scannerCamera: any CameraOperating
     /// Built on the main actor by the root view, like the feeder.
     let makeCameraSource: @MainActor @Sendable () -> CameraSourceModel
     let makeServerBatches: @MainActor @Sendable () -> ServerBatchesModel
+    let makeRemotePreview: @MainActor @Sendable () -> RemotePreviewModel
 
     static func live(camera: CaptureEngine, server: any ServerScanReading, store: any ScanStoring, directory: CardDirectory, index: IndexSummary) -> PlatformDependencies {
-        PlatformDependencies(
+        let phones = RemoteCameraBrowser()
+        let routed = MacCamera(local: camera, remote: phones, hostName: Host.current().localizedName ?? String(localized: "this Mac"))
+        return PlatformDependencies(
+            scannerCamera: routed,
             makeCameraSource: {
                 CameraSourceModel(
-                    discovery: LiveCameraDiscovery(),
-                    camera: camera,
+                    discovery: MergedCameraDiscovery(sources: [LiveCameraDiscovery(), phones]),
+                    camera: routed,
                     preferences: DefaultsCameraPreferenceStore(defaults: .standard)
                 )
             },
@@ -192,16 +207,29 @@ nonisolated struct PlatformDependencies: Sendable {
                     server: server,
                     importer: ServerBatchImporter(server: server, store: store, directory: directory, index: index)
                 )
-            }
+            },
+            makeRemotePreview: { RemotePreviewModel(frames: routed.previews) }
         )
     }
 }
 #else
-/// The iPhone has nothing beyond the shared graph: one back camera, no
-/// picker, and it captures the batches the Mac imports rather than importing.
+/// The iPhone's one back camera, which it can also serve to a Mac (ADR-004);
+/// it captures the batches the Mac imports rather than importing (ADR-003).
 nonisolated struct PlatformDependencies: Sendable {
+    let scannerCamera: any CameraOperating
+    /// The Camera for Mac screen's model, built on the main actor.
+    let makeCameraForMac: @MainActor @Sendable () -> CameraForMacModel
+
     static func live(camera: CaptureEngine, server: any ServerScanReading, store: any ScanStoring, directory: CardDirectory, index: IndexSummary) -> PlatformDependencies {
-        PlatformDependencies()
+        PlatformDependencies(
+            scannerCamera: camera,
+            makeCameraForMac: {
+                CameraForMacModel(
+                    listener: RemoteCameraListener(),
+                    host: RemoteCameraHost(source: EngineRemoteCameraSource(engine: camera), deviceName: UIDevice.current.name)
+                )
+            }
+        )
     }
 }
 #endif

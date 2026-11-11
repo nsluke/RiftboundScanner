@@ -226,7 +226,7 @@ struct ReviewTriageView: View {
                         .font(.caption)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if model.finish(of: record) == .foil {
+                    if marksFoil(record) {
                         Text("Foil")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Theme.blue)
@@ -249,12 +249,22 @@ struct ReviewTriageView: View {
         .accessibilityLabel(tileLabel(record, name: name, isFlagged: isFlagged))
         .accessibilityHint(isFlagged ? "Unflags this match" : "Flags this match as wrong")
         .accessibilityAddTraits(isFlagged ? [.isSelected] : [])
-        .accessibilityAction(named: model.finish(of: record) == .foil ? "Mark normal" : "Mark foil") { model.toggleFoil(record.id) }
+        .accessibilityActions {
+            if model.asksForFinish(record) {
+                Button(marksFoil(record) ? "Mark normal" : "Mark foil") { model.toggleFoil(record.id) }
+            }
+        }
+    }
+
+    /// Foil only where it is a choice: a foil-only printing (rares and up)
+    /// is foil whatever the grid says, so labelling it is noise.
+    private func marksFoil(_ record: ScanRecord) -> Bool {
+        model.asksForFinish(record) && model.finish(of: record) == .foil
     }
 
     private func tileLabel(_ record: ScanRecord, name: String, isFlagged: Bool) -> String {
         var parts = [String(localized: "Matched as \(name)"), isFlagged ? String(localized: "flagged as wrong") : String(localized: "looks right")]
-        if model.finish(of: record) == .foil {
+        if marksFoil(record) {
             parts.append(String(localized: "foil"))
         }
         return parts.joined(separator: ", ")

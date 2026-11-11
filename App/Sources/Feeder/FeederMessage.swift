@@ -12,6 +12,10 @@ nonisolated enum FeederMessage: Hashable, Sendable {
     case cardLengthSet
     /// One card has been advanced.
     case feedComplete
+    /// The motor ran without a card coming through: the hopper is empty.
+    /// Seen with firmware 0.1.5 on 10 Nov 2026, half a second after
+    /// `MOTOR:CARDLEN_SET`, on a feed into an empty hopper.
+    case feedEndedEmpty
     case unrecognized(String)
 
     init(parsing text: String) {
@@ -19,6 +23,7 @@ nonisolated enum FeederMessage: Hashable, Sendable {
         case "CONNECTED": self = .connected
         case "MOTOR:CARDLEN_SET": self = .cardLengthSet
         case "MOTOR:COMPLETE": self = .feedComplete
+        case "MOTOR:END": self = .feedEndedEmpty
         default:
             if text.hasPrefix("FWVER:") {
                 self = .firmwareVersion(String(text.dropFirst("FWVER:".count)))

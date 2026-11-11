@@ -51,8 +51,9 @@ nonisolated enum FeederFailure: Hashable, Sendable {
 nonisolated enum FeederError: Error, Hashable, Sendable {
     /// `feedOneCard` was called while the link was not `ready`.
     case notReady(FeederState)
-    /// No `MOTOR:COMPLETE` arrived in time. The feeder says nothing when its
-    /// hopper is empty, so this is also how an empty hopper shows up.
+    /// The feeder reported that no card came through (`MOTOR:END`).
+    case hopperEmpty
+    /// Neither `MOTOR:COMPLETE` nor `MOTOR:END` arrived in time.
     case timedOut
     case writeFailed(String)
     case disconnected
@@ -60,6 +61,7 @@ nonisolated enum FeederError: Error, Hashable, Sendable {
     var message: String {
         switch self {
         case .notReady: String(localized: "The feeder isn't ready.")
+        case .hopperEmpty: String(localized: "The hopper is empty.")
         case .timedOut: String(localized: "The feeder didn't report a card. The hopper may be empty.")
         case .writeFailed(let detail): String(localized: "The feeder rejected the command. \(detail)")
         case .disconnected: String(localized: "The feeder disconnected.")
@@ -79,7 +81,8 @@ protocol FeederControlling: AnyObject {
     /// Reconnects on its own if the link drops.
     func connect()
     /// Advances exactly one card and returns once the feeder reports it done.
-    /// Throws `FeederError.timedOut` after `timeout` without a report.
+    /// Throws `FeederError.hopperEmpty` when the feeder reports no card, and
+    /// `FeederError.timedOut` after `timeout` without a report.
     func feedOneCard(timeout: Duration) async throws
     /// Tells the feeder to stop its motor; sent at the end of a session or on error.
     func stop()

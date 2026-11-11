@@ -48,7 +48,7 @@ Status messages are plain ASCII with no terminator, and so are commands.
 | Command | Reply | Meaning |
 | --- | --- | --- |
 | `FWVER` | `FWVER:0.1.5` | Firmware version query. The app sends it right after subscribing and pushes `OTA:<url>` if the reply is not the current version. |
-| `MOTOR:START:80` | `MOTOR:CARDLEN_SET` at once, then `MOTOR:COMPLETE` ~0.36 s later | Advance one card. The argument (`80`, the app's value) is acknowledged as a card length, so it is probably distance, not speed. The app repeats it per card. |
+| `MOTOR:START:80` | `MOTOR:CARDLEN_SET` at once, then `MOTOR:COMPLETE` ~0.36 s later, or `MOTOR:END` ~0.54 s later when the hopper is empty | Advance one card. The argument (`80`, the app's value) is acknowledged as a card length, so it is probably distance, not speed. The app repeats it per card. |
 | `MOTOR:STOP` | (none seen) | Stop the motor. The app sends it when the user ends the session; a safety net, not part of the per-card cycle. |
 | `OTA:<https url>` | — | Firmware update; the feeder fetches the image itself. Never send this by hand. |
 
@@ -63,8 +63,20 @@ Live run against the real feeder on 2026-11-05 (`Scripts/blescan.sh feed ESP_OTA
 
 Luke confirmed exactly one Magic card was fed. So the per-card cycle for a custom app is: write `MOTOR:START:<len>`, wait for
 `MOTOR:COMPLETE`, photograph, repeat. Still unknown: what the argument's units are
-(sweep 60/100 and watch how far a card travels), what the feeder says when the hopper
-is empty or a card jams, and whether `MOTOR:STOP` ever replies.
+(sweep 60/100 and watch how far a card travels), what the feeder says when a card
+jams, and whether `MOTOR:STOP` ever replies.
+
+An empty hopper, from the Mac app's feeder log on 2026-11-10 (firmware 0.1.5; Luke
+confirmed the hopper was empty):
+
+```
+22:34:04.144 → MOTOR:START:80
+22:34:04.225 ← MOTOR:CARDLEN_SET
+22:34:04.764 ← MOTOR:END
+```
+
+`CSC100Feeder` ends the run on `MOTOR:END` at once, and still treats a feed with no
+reply for 5 s as an empty hopper.
 
 Words tried over the command characteristic with no reply and no motor movement
 (2026-11-05, each write acknowledged at the ATT layer): `STATUS`, `FEED`, `NEXT`,
@@ -87,5 +99,5 @@ are killed or silently denied by TCC because the parent has no Bluetooth usage s
 ## Open questions
 
 - Command words for feed / start / stop / speed, and whether they need a terminator.
-- What the feeder reports when a card has been fed, when the hopper is empty, or on a jam.
+- What the feeder reports on a jam. (A fed card is `MOTOR:COMPLETE`; an empty hopper is `MOTOR:END`.)
 - Whether the status characteristic's `read` returns the last message.

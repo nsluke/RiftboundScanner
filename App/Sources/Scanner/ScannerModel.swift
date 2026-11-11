@@ -551,7 +551,7 @@ final class ScannerModel {
                 try await feeder.feedOneCard()
             } catch is CancellationError {
                 return .stoppedByUser
-            } catch FeederError.timedOut {
+            } catch FeederError.hopperEmpty, FeederError.timedOut {
                 return .hopperEmpty
             } catch let error as FeederError {
                 return .feederFailed(error)

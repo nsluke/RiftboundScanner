@@ -10,6 +10,7 @@ struct FeederMessageTests {
         ("FWVER:", .firmwareVersion("")),
         ("MOTOR:CARDLEN_SET", .cardLengthSet),
         ("MOTOR:COMPLETE", .feedComplete),
+        ("MOTOR:END", .feedEndedEmpty),
         ("MOTOR:JAM", .unrecognized("MOTOR:JAM")),
         ("", .unrecognized("")),
     ])

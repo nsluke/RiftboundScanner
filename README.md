@@ -465,7 +465,9 @@ the Mac against the Mac app.
 (cd App && xcodegen generate)
 xcodebuild -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
   -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates build
-open "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app"
+# Run it from Applications: from under ~/Documents its Bonjour browse is refused (ADR-004).
+ditto "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app" "/Applications/Riftbound Scanner.app"
+open "/Applications/Riftbound Scanner.app"
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
   -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates
 ```
@@ -529,10 +531,12 @@ belong to a single scanner.
 The sharpest way to scan from the Mac: on the iPhone, tap the Mac-and-phone
 button on the Scan tab (**Camera for Mac**) and leave that screen open with
 the phone on the stand. The Mac's camera menu then lists the phone as
-"<name> (Riftbound app)" and switches to it. The Mac drives the feeder and
-gets the iPhone app's own photos: the 0.5× lens up close, 12 MP, and the
-torch. The apps talk over Bonjour (`_riftcam._tcp`) on the local network; each
-asks for Local Network access once.
+"<name> (Riftbound app)" and switches to it. The phone lets go of the feeder
+and the Mac connects to it, then drives it and gets the iPhone app's own
+photos: the 0.5× lens up close, 12 MP, and the torch. The apps talk over
+Bonjour (`_riftcam._tcp`) on the local network; each asks for Local Network
+access once. Run the Mac app from `/Applications`: launched from the build
+folder under `~/Documents`, macOS refuses its Bonjour browse (`NoAuth`).
 
 **Reviewing what the iPhone scanned** ([ADR-003](docs/adr/003-mac-review-station.md)).
 Continuity Camera only ever gives the Mac the iPhone's main lens, which cannot

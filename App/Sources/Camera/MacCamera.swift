@@ -13,14 +13,16 @@ actor MacCamera: CameraOperating, CameraSwitching {
     private enum Route {
         case local
         case remote(RemoteCameraSession, device: CameraDevice.ID, info: RemoteCameraInfo)
-        /// The iPhone app was chosen but could not be reached.
-        case remoteUnavailable(RemoteCameraFailure)
+        /// The iPhone app was chosen but could not be reached; starting the
+        /// camera again tries it again.
+        case remoteUnavailable(RemoteCameraFailure, device: CameraDevice.ID)
     }
 
     private let local: any LocalCamera
     private let remote: any RemoteCameraConnecting
     private let hostName: String
     private let makeSession: @Sendable (any RemoteCameraChannel) -> RemoteCameraSession
+    private let pause: @Sendable (Duration) async throws -> Void
     private var route = Route.local
     private var forwarding: Task<Void, Never>?
     /// The switch in progress. Switches run one after another: two at once
@@ -37,12 +39,14 @@ actor MacCamera: CameraOperating, CameraSwitching {
         local: any LocalCamera,
         remote: any RemoteCameraConnecting,
         hostName: String,
-        makeSession: @escaping @Sendable (any RemoteCameraChannel) -> RemoteCameraSession = { RemoteCameraSession(channel: $0) }
+        makeSession: @escaping @Sendable (any RemoteCameraChannel) -> RemoteCameraSession = { RemoteCameraSession(channel: $0) },
+        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.local = local
         self.remote = remote
         self.hostName = hostName
         self.makeSession = makeSession
+        self.pause = pause
         (previews, previewSink) = AsyncStream.makeStream(of: Data.self, bufferingPolicy: .bufferingNewest(1))
     }
 
@@ -71,19 +75,32 @@ actor MacCamera: CameraOperating, CameraSwitching {
         // The phone's app cannot share its camera with Continuity Camera, and
         // a Mac camera left running would only hold the device.
         await local.stop()
-        do {
-            let session = makeSession(try await remote.connect(device))
-            let info = try await session.open(name: hostName)
-            route = .remote(session, device: device, info: info)
-            forward(session.previews)
-            logger.notice("Using \(info.deviceName, privacy: .public)'s Riftbound app: photos \(info.photoSize.width)×\(info.photoSize.height), torch \(info.hasTorch)")
-            return info.photoSize
-        } catch {
-            logger.error("Could not use \(device.rawValue, privacy: .public): \(String(describing: error), privacy: .public)")
-            route = .remoteUnavailable(error as? RemoteCameraFailure ?? .closed)
-            return nil
+        var failure = RemoteCameraFailure.closed
+        for attempt in 1...Self.connectAttempts {
+            do {
+                let session = makeSession(try await remote.connect(device))
+                let info = try await session.open(name: hostName)
+                route = .remote(session, device: device, info: info)
+                forward(session.previews)
+                logger.notice("Using \(info.deviceName, privacy: .public)'s Riftbound app: photos \(info.photoSize.width)×\(info.photoSize.height), torch \(info.hasTorch)")
+                return info.photoSize
+            } catch {
+                failure = error as? RemoteCameraFailure ?? .closed
+                logger.error("Could not use \(device.rawValue, privacy: .public) (attempt \(attempt)): \(String(describing: error), privacy: .public)")
+                // A refusal or a version mismatch will not change on its own.
+                guard failure == .timedOut || failure == .closed, attempt < Self.connectAttempts else { break }
+                try? await pause(Self.retryPause)
+            }
         }
+        route = .remoteUnavailable(failure, device: device)
+        return nil
     }
+
+    /// macOS can take a few seconds to apply an app's Local Network approval
+    /// after its first attempt ("Local network prohibited" in the logs), so a
+    /// link that will not open is tried again before the picker is told.
+    private static let connectAttempts = 3
+    private static let retryPause: Duration = .seconds(2)
 
     /// The iPhone app turns its photos upright itself; only the Mac's own
     /// cameras need turning.
@@ -107,8 +124,12 @@ actor MacCamera: CameraOperating, CameraSwitching {
             try await local.start()
         case .remote(let session, _, _):
             guard await session.isOpen else { throw RemoteCameraFailure.closed }
-        case .remoteUnavailable(let failure):
-            throw failure
+        case .remoteUnavailable(_, let device):
+            // "Try again" on the scan page: try the phone again.
+            guard await use(device) != nil else {
+                if case .remoteUnavailable(let failure, _) = route { throw failure }
+                throw RemoteCameraFailure.closed
+            }
         }
     }
 
@@ -124,7 +145,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
         switch route {
         case .local: try await local.setTorch(isOn)
         case .remote(let session, _, _): try await session.setTorch(isOn)
-        case .remoteUnavailable(let failure): throw failure
+        case .remoteUnavailable(let failure, _): throw failure
         }
     }
 
@@ -132,7 +153,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
         switch route {
         case .local: try await local.capturePhoto()
         case .remote(let session, _, _): try await session.capture()
-        case .remoteUnavailable(let failure): throw failure
+        case .remoteUnavailable(let failure, _): throw failure
         }
     }
 

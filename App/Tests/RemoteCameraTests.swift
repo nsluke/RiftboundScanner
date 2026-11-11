@@ -349,6 +349,32 @@ nonisolated struct FakePhoneConnector: RemoteCameraConnecting {
     }
 }
 
+/// Refuses the first `failures` links, then connects.
+nonisolated final class FlakyConnector: RemoteCameraConnecting {
+    let inner: FakePhoneConnector
+    private let state: Mutex<(attempts: Int, failures: Int)>
+
+    init(inner: FakePhoneConnector, failures: Int) {
+        self.inner = inner
+        state = Mutex((0, failures))
+    }
+
+    var attempts: Int { state.withLock { $0.attempts } }
+
+    func handles(_ id: CameraDevice.ID) -> Bool {
+        inner.handles(id)
+    }
+
+    func connect(_ id: CameraDevice.ID) async throws -> any RemoteCameraChannel {
+        let refused = state.withLock { state in
+            state.attempts += 1
+            return state.attempts <= state.failures
+        }
+        if refused { throw RemoteCameraFailure.timedOut }
+        return try await inner.connect(id)
+    }
+}
+
 /// Counts how many links were opened.
 nonisolated final class CountingConnector: RemoteCameraConnecting {
     let inner: FakePhoneConnector
@@ -418,12 +444,32 @@ struct MacCameraTests {
     @Test func anUnreachablePhoneIsReportedWhenTheScannerStarts() async throws {
         var connector = FakePhoneConnector(source: FakeRemoteSource())
         connector.reachable = false
-        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac")
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac", pause: { _ in })
 
         #expect(await camera.use(phone.id) == nil)
         await #expect(throws: RemoteCameraFailure.timedOut) {
             try await camera.start()
         }
+    }
+
+    /// macOS can apply an app's Local Network approval a few seconds after
+    /// its first attempt, so a link that will not open is tried again.
+    @Test func aPhoneThatAnswersOnALaterAttemptIsUsed() async throws {
+        let connector = FlakyConnector(inner: FakePhoneConnector(source: FakeRemoteSource()), failures: 2)
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac", pause: { _ in })
+
+        #expect(await camera.use(phone.id) == PixelSize(width: 3024, height: 4032))
+        #expect(connector.attempts == 3)
+    }
+
+    @Test func tryAgainReachesAPhoneThatHasComeBack() async throws {
+        let connector = FlakyConnector(inner: FakePhoneConnector(source: FakeRemoteSource()), failures: 3)
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac", pause: { _ in })
+        #expect(await camera.use(phone.id) == nil, "three attempts, all refused")
+
+        try await camera.start()
+
+        #expect(try await camera.capturePhoto() == Data("photo-1".utf8))
     }
 
     @Test func theIPhoneAppIsListedAsTheBestCamera() {

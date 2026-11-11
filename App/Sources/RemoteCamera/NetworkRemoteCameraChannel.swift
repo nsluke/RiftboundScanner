@@ -16,8 +16,8 @@ nonisolated final class NetworkRemoteCameraChannel: RemoteCameraChannel, @unchec
     private let continuation: AsyncThrowingStream<RemoteCameraFrame, any Error>.Continuation
     private var decoder = RemoteCameraFrameCodec.Decoder()
 
-    /// Both ends use plain TCP on the network they share. Peer-to-peer Wi-Fi
-    /// is left off: a sandboxed Mac app's browse for it fails with `NoAuth`.
+    /// Both ends use plain TCP on a network they share (Wi-Fi, or the USB
+    /// link when the phone is plugged into the Mac); peer-to-peer Wi-Fi is off.
     static var parameters: NWParameters {
         NWParameters.tcp
     }
@@ -41,7 +41,7 @@ nonisolated final class NetworkRemoteCameraChannel: RemoteCameraChannel, @unchec
     }
 
     /// Opens a connection to `endpoint` and waits until it is ready.
-    static func connect(to endpoint: NWEndpoint, timeout: Duration = .seconds(8)) async throws -> NetworkRemoteCameraChannel {
+    static func connect(to endpoint: NWEndpoint, timeout: Duration = .seconds(5)) async throws -> NetworkRemoteCameraChannel {
         let connection = NWConnection(to: endpoint, using: parameters)
         let ready = Mutex(false)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in

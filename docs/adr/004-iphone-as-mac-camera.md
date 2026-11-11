@@ -15,7 +15,9 @@ The Mac scans through the iPhone over Continuity Camera, and Continuity Camera o
 
 ## Consequences
 
-- Both apps ask for Local Network access once, and both list `_riftcam._tcp` in `NSBonjourServices`. The phone and the Mac must share a network: a sandboxed Mac app's browse with peer-to-peer Wi-Fi fails with `NoAuth`, so it is off.
+- Both apps ask for Local Network access once, and both list `_riftcam._tcp` in `NSBonjourServices`. The phone and the Mac must share a network (Wi-Fi, or the USB link when the phone is plugged in); peer-to-peer Wi-Fi is off.
+- **The Mac app must run from outside `~/Documents`, e.g. `/Applications`.** Run from the build folder under `~/Documents/GitHub`, every Bonjour browse fails at once with `DNSServiceBrowse NoAuth(-65555)`, although Local Network is allowed for that exact binary; the same binary copied to `/tmp` browses and finds the phone. A restart does not change it. (Peer-to-peer Wi-Fi and Xcode's debug dylib were ruled out along the way.)
+- macOS can apply a new build's Local Network approval a few seconds after its first connection ("Local network prohibited"), so `MacCamera` tries a phone three times, two seconds apart, and the scan page's Try again tries it once more.
 - The iPhone must stay on the Camera for Mac screen with its screen on: iOS stops the camera of an app that leaves the foreground. Leaving the screen turns the torch off.
 - A photo is 3–5 MB; at Wi-Fi speeds it adds about a third of a second per card. A capture that gets no answer in 20 s fails the card rather than stalling the run.
 - Both apps must come from builds with the same wire version.

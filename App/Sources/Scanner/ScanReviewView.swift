@@ -2,17 +2,17 @@ import CoreGraphics
 import RiftboundRecognizer
 import SwiftUI
 
-/// Shows what the recogniser saw and collects the verdict. Used for a fresh
-/// scan (with Retake) and for revisiting a stored one (with Close).
+/// Shows what the recogniser saw in a photo just taken by hand and collects
+/// the verdict, with Retake. A stored scan opens in the review queue's
+/// one-at-a-time view instead (`ReviewRoute.scans`).
 struct ScanReviewView: View {
     let record: ScanRecord
     let photo: CGImage?
     let rectified: CGImage?
     let directory: CardDirectory
     let onVerdict: (Verdict) -> Void
-    let onRetake: (() -> Void)?
+    let onRetake: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var isPickingCard = false
 
     var body: some View {
@@ -57,11 +57,7 @@ struct ScanReviewView: View {
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if let onRetake {
-                        Button("Retake", action: onRetake)
-                    } else {
-                        Button("Close") { dismiss() }
-                    }
+                    Button("Retake", action: onRetake)
                 }
             }
             .sheet(isPresented: $isPickingCard) {
@@ -140,19 +136,6 @@ struct ScanReviewView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-
-            // A fresh scan has Retake instead; a stored one can be taken out.
-            if onRetake == nil {
-                Button(role: .destructive) {
-                    onVerdict(.voided)
-                } label: {
-                    Label("Delete scan", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityHint("Takes this scan out of the batch")
-            }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())

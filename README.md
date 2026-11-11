@@ -513,10 +513,20 @@ recogniser from 17 to 27 right; the build before it, with a looser guide and
 no brightening, got 13. No printed code was read at this resolution, so no
 Mac scan is confident: every one goes through the review queue.
 
+**Review.** Every way into a batch (Review on the run strip, a History row,
+an imported server batch) opens one screen, `BatchReviewView`. It opens on
+**To review**: on the Mac the triage grid, then the one-at-a-time queue for
+the flagged and the rest; on the iPhone the queue. **All scans** shows the
+whole batch by what it needs; any scan opened there goes to the same
+one-at-a-time view and fix panel, decided or not (`ReviewRoute.scans`).
+**Delete** takes a scan out of the batch with a `voided` decision: it leaves
+review, the collection and the label count, and syncs like any verdict.
+
 **Keys.** Space takes a photo, ⌘↩ feeds and scans, ⌘. stops feeding. In the
 review queue Return confirms (or keeps both for a possible duplicate), F opens
-the fix sheet and → skips to the next scan; the keys sit on the buttons, so
-they go quiet while a sheet has focus. ⇧⌘S shows the scans in Finder.
+the fix sheet, ⌫ deletes and → skips to the next scan; in the grid X flags, ⌫
+deletes and ⌘↩ confirms the rest. The keys sit on the buttons, so they go
+quiet while a sheet has focus. ⇧⌘S shows the scans in Finder.
 
 **Storage and permissions.** The app is sandboxed: scans live in
 `~/Library/Containers/com.nsluke.RiftboundScannerMac/Data/Documents/Scans`, the

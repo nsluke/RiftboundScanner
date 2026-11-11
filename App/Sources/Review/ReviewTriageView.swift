@@ -1,7 +1,7 @@
 import RiftboundRecognizer
 import SwiftUI
 
-/// The Mac's way into a batch's review (`ReviewRoute.review`): the uncertain
+/// The Mac's "To review" in `BatchReviewView`: the uncertain
 /// scans in a grid, each beside its match, with the focused pair large on the
 /// right. Click a tile or press X to flag it wrong, ⌥F to mark it foil, then
 /// ⌘↩ confirms the rest; the flagged ones and anything the grid leaves out

@@ -149,8 +149,4 @@ final class BatchDetailModel {
     func photoURL(for record: ScanRecord) -> URL {
         store.photoURL(for: record)
     }
-
-    func rectifiedURL(for record: ScanRecord) -> URL? {
-        store.rectifiedURL(for: record)
-    }
 }

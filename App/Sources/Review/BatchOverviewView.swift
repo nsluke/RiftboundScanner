@@ -1,15 +1,19 @@
 import SwiftUI
 
-/// Every scan in a batch, grouped by what it still needs. The to-review scans
-/// lead; the ones confirmed automatically sit folded away for spot-checks.
+/// Every scan in a batch, grouped by what it still needs: the "All scans"
+/// side of `BatchReviewView`. The to-review scans lead; the ones confirmed
+/// automatically sit folded away for spot-checks. A scan opens in the same
+/// one-at-a-time view the queue uses (`ReviewRoute.scans`).
 struct BatchOverviewView: View {
+    /// What needs a look is the other side of the batch's screen, so the
+    /// filters here only slice what is already there.
     enum Filter: Hashable, CaseIterable {
-        case toReview, all, corrected, rejected
+        case all, confirmedAutomatically, corrected, rejected
 
         func label(counts: Counts) -> String {
             switch self {
-            case .toReview: String(localized: "To review · \(counts.toReview)")
             case .all: String(localized: "All · \(counts.all)")
+            case .confirmedAutomatically: String(localized: "Confirmed automatically · \(counts.confirmedAutomatically)")
             case .corrected: String(localized: "Corrected · \(counts.corrected)")
             case .rejected: String(localized: "Rejected · \(counts.rejected)")
             }
@@ -41,17 +45,18 @@ struct BatchOverviewView: View {
 
     @State private var model: BatchDetailModel
     let directory: CardDirectory
+    /// Switches the batch's screen to what still needs a look.
+    let onReview: () -> Void
 
     @Environment(SyncEngine.self) private var sync: SyncEngine?
     @Environment(\.dismiss) private var dismiss
-    @State private var filter: Filter = .toReview
-    @State private var isShowingConfident = false
-    @State private var selectedRecord: ScanRecord?
+    @State private var filter: Filter = .all
     @State private var isConfirmingVoid = false
 
-    init(model: @autoclosure @escaping () -> BatchDetailModel, directory: CardDirectory) {
+    init(model: @autoclosure @escaping () -> BatchDetailModel, directory: CardDirectory, onReview: @escaping () -> Void) {
         _model = State(wrappedValue: model())
         self.directory = directory
+        self.onReview = onReview
     }
 
     #if os(macOS)
@@ -99,10 +104,6 @@ struct BatchOverviewView: View {
             }
         }
         .task { await model.load() }
-        .sheet(item: $selectedRecord) { record in
-            StoredScanReview(record: record, model: model, directory: directory)
-                .sheetSizing(minWidth: 520, minHeight: 680)
-        }
         .confirmationDialog("Void this batch?", isPresented: $isConfirmingVoid) {
             Button("Void \(model.batch.displayName)", role: .destructive) {
                 Task {
@@ -126,9 +127,8 @@ struct BatchOverviewView: View {
                     ContentUnavailableView("No scans in this batch yet", systemImage: "tray")
                 } else {
                     switch filter {
-                    case .toReview:
-                        toReviewSection(records.filter(\.needsReview), counts: counts)
-                        confirmedSection(records.filter { $0.isAutoConfirmable || $0.verdict == .correct }, counts: counts)
+                    case .confirmedAutomatically:
+                        confirmedAutomatically(records.filter(\.isAutoConfirmable))
                     case .all:
                         grid(records, columns: reviewColumns, width: 96, showsReason: true, emptyText: "")
                     case .corrected:
@@ -142,7 +142,7 @@ struct BatchOverviewView: View {
                 }
                 if let sync, let syncSummary = sync.summary(for: model.batch.id) {
                     SyncSection(summary: syncSummary, status: sync.status, records: records, photoURL: model.photoURL(for:)) { attention in
-                        selectedRecord = records.first { $0.id == attention.scanID }
+                        ReviewRoute.scans(model.batch, ids: [attention.scanID], start: attention.scanID)
                     } retry: {
                         Task { await sync.retryNow() }
                     }
@@ -154,7 +154,7 @@ struct BatchOverviewView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if counts.toReview > 0 {
-                NavigationLink(value: ReviewRoute.review(model.batch)) {
+                Button(action: onReview) {
                     Text("Review the \(counts.toReview)")
                         .frame(maxWidth: .infinity)
                 }
@@ -187,41 +187,17 @@ struct BatchOverviewView: View {
         .scrollIndicators(.hidden)
     }
 
+    /// The scans accepted without a look, and a way to re-check one of them.
     @ViewBuilder
-    private func toReviewSection(_ records: [ScanRecord], counts: Counts) -> some View {
-        if records.isEmpty {
-            Label("Nothing left to review", systemImage: "checkmark.seal")
-                .font(.subheadline)
-                .foregroundStyle(Theme.blue)
-        } else {
-            grid(records, columns: reviewColumns, width: 96, showsReason: true, emptyText: "")
-        }
-    }
-
-    @ViewBuilder
-    private func confirmedSection(_ records: [ScanRecord], counts: Counts) -> some View {
-        if !records.isEmpty {
-            DisclosureGroup(isExpanded: $isShowingConfident) {
-                VStack(alignment: .leading, spacing: 10) {
-                    grid(records, columns: confidentColumns, width: 56, showsReason: false, emptyText: "")
-                    if let sample = records.filter(\.isAutoConfirmable).randomElement() {
-                        Button {
-                            selectedRecord = sample
-                        } label: {
-                            Label("Spot-check one", systemImage: "eye")
-                        }
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.blue)
-                        .accessibilityHint("Opens one confident scan to check it")
-                    }
-                }
-                .padding(.top, 8)
-            } label: {
-                Text("Confirmed automatically · \(records.count)")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.muted)
+    private func confirmedAutomatically(_ records: [ScanRecord]) -> some View {
+        grid(records, columns: confidentColumns, width: 56, showsReason: false, emptyText: String(localized: "Nothing was confirmed automatically."))
+        if let sample = records.randomElement() {
+            NavigationLink(value: ReviewRoute.scans(model.batch, ids: [sample.id], start: sample.id)) {
+                Label("Spot-check one", systemImage: "eye")
             }
-            .tint(Theme.muted)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.blue)
+            .accessibilityHint("Opens one confident scan to check it")
         }
     }
 
@@ -234,9 +210,7 @@ struct BatchOverviewView: View {
         } else {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(records) { record in
-                    Button {
-                        selectedRecord = record
-                    } label: {
+                    NavigationLink(value: ReviewRoute.scans(model.batch, ids: records.map(\.id), start: record.id)) {
                         VStack(spacing: 4) {
                             ScanThumbnail(record: record, url: model.photoURL(for: record), width: width, showsReason: showsReason)
                             if width >= 96 {
@@ -355,7 +329,8 @@ struct SyncSection: View {
     let status: SyncEngine.Status
     let records: [ScanRecord]
     let photoURL: (ScanRecord) -> URL
-    let open: (SyncAttention) -> Void
+    /// Where a row that needs the user opens its scan.
+    let route: (SyncAttention) -> ReviewRoute
     let retry: () -> Void
 
     var body: some View {
@@ -381,9 +356,7 @@ struct SyncSection: View {
                     .foregroundStyle(Theme.muted)
             }
             ForEach(summary.attention) { attention in
-                Button {
-                    open(attention)
-                } label: {
+                NavigationLink(value: route(attention)) {
                     HStack(alignment: .top, spacing: 10) {
                         if let record = records.first(where: { $0.id == attention.scanID }) {
                             ScanThumbnail(record: record, url: photoURL(record), width: 36)

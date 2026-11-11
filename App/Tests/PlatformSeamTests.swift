@@ -44,11 +44,10 @@ struct PlatformSeamTests {
     }
 
     @Test func reviewOpensTheGridOnTheMacAndTheQueueOnTheIPhone() {
-        let batch = Fixtures.batch()
         #if os(macOS)
-        #expect(ReviewRoute.review(batch) == .triage(batch))
+        #expect(BatchReviewView.ReviewStyle.platform == .grid)
         #else
-        #expect(ReviewRoute.review(batch) == .queue(batch))
+        #expect(BatchReviewView.ReviewStyle.platform == .oneAtATime)
         #endif
     }
 }

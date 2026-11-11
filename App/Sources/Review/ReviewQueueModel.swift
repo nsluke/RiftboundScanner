@@ -23,9 +23,18 @@ final class ReviewQueueModel {
         /// Up to `limit` of `candidates`, which must be accepted scans of this
         /// batch; the sampler picks which.
         case spotCheck(candidates: [ScanRecord.ID], limit: Int)
+        /// The scans `ids` names, in that order, opened from the batch's
+        /// screen at `start`: the same view and verdicts for any scan,
+        /// pending or decided.
+        case browse(ids: [ScanRecord.ID], start: ScanRecord.ID)
 
         var isSpotCheck: Bool {
             if case .spotCheck = self { return true }
+            return false
+        }
+
+        var isBrowsing: Bool {
+            if case .browse = self { return true }
             return false
         }
     }
@@ -181,10 +190,15 @@ final class ReviewQueueModel {
         do {
             let loaded = try await store.records(in: batch.id).sorted { $0.capturedAt < $1.capturedAt }
             records = loaded
-            queue = .loaded(rows(in: loaded))
+            let rows = rows(in: loaded)
+            queue = .loaded(rows)
             outcomes = [:]
             dominantSet = Self.dominantSet(in: loaded)
-            position = 0
+            if case .browse(_, let start) = mode {
+                position = rows.firstIndex { $0.id == start } ?? 0
+            } else {
+                position = 0
+            }
             resetSelection()
         } catch {
             queue = .failed(.storage(String(describing: error)))
@@ -214,6 +228,9 @@ final class ReviewQueueModel {
             let wanted = Set(candidates)
             let accepted = records.filter { wanted.contains($0.id) && $0.lastDecision?.source == .autoAccepted }
             return sample(accepted, limit).sorted { $0.capturedAt < $1.capturedAt }
+        case .browse(let ids, _):
+            let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return ids.compactMap { byID[$0] }.filter { $0.verdict != .voided }
         }
     }
 
@@ -222,6 +239,7 @@ final class ReviewQueueModel {
         switch mode {
         case .spotCheck: .spotCheck
         case .pending: record.reviewKind(under: rule, in: batch, vault: vault, directory: directory) ?? .audit
+        case .browse: record.reviewKind(under: rule, in: batch, vault: vault, directory: directory) ?? .opened
         }
     }
 

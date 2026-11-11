@@ -40,7 +40,7 @@ struct HistoryView: View {
                                 .foregroundStyle(.secondary)
                         }
                         ForEach(batches) { batch in
-                            NavigationLink(value: batch) {
+                            NavigationLink(value: ReviewRoute.batch(batch)) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(batch.displayName)
                                         .font(.headline)
@@ -79,9 +79,6 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("History")
-        .navigationDestination(for: ScanBatch.self) { batch in
-            BatchOverviewView(model: BatchDetailModel(batch: batch, store: store, directory: directory), directory: directory)
-        }
         .reviewDestinations(store: store, directory: directory, vault: vault, rule: rule)
         .task { await reload() }
         .refreshable { await reload() }
@@ -176,7 +173,7 @@ struct HistoryView: View {
             .frame(width: 160)
         case .imported(let outcome):
             VStack(alignment: .trailing, spacing: 4) {
-                NavigationLink(value: ReviewRoute.review(outcome.batch)) {
+                NavigationLink(value: ReviewRoute.batch(outcome.batch)) {
                     Text("Review")
                 }
                 .prominentAction(Theme.amber)
@@ -270,38 +267,5 @@ struct BatchBadges: View {
             .padding(.vertical, 2)
             .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
-    }
-}
-
-/// Loads a stored scan's images, then reuses the review screen to change its verdict.
-struct StoredScanReview: View {
-    let record: ScanRecord
-    let model: BatchDetailModel
-    let directory: CardDirectory
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var photo: CGImage?
-    @State private var rectified: CGImage?
-
-    var body: some View {
-        ScanReviewView(
-            record: record,
-            photo: photo,
-            rectified: rectified,
-            directory: directory,
-            onVerdict: { verdict in
-                Task {
-                    await model.update(record, verdict: verdict)
-                    dismiss()
-                }
-            },
-            onRetake: nil
-        )
-        .task {
-            photo = await PhotoDecoder.thumbnail(at: model.photoURL(for: record), maxPixelSize: 1024)
-            if let url = model.rectifiedURL(for: record) {
-                rectified = await PhotoDecoder.thumbnail(at: url, maxPixelSize: 1024)
-            }
-        }
     }
 }

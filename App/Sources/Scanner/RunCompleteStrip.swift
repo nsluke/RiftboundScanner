@@ -44,11 +44,6 @@ struct RunCompleteStrip: View {
                     .lineLimit(1)
             }
             Spacer()
-            if let batch = model.batch {
-                NavigationLink("See all", value: ReviewRoute.overview(batch))
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.blue)
-            }
             Button {
                 model.dismissAutoScanResult()
             } label: {
@@ -150,7 +145,7 @@ struct RunCompleteStrip: View {
             let counts = counts
             VStack(spacing: 8) {
                 if counts.toReview > 0 {
-                    NavigationLink(value: ReviewRoute.review(batch)) {
+                    NavigationLink(value: ReviewRoute.batch(batch)) {
                         Text(reviewLabel)
                             .frame(maxWidth: .infinity)
                     }
@@ -178,6 +173,12 @@ struct RunCompleteStrip: View {
                     .buttonStyle(.bordered)
                     .tint(Theme.blue)
                     .accessibilityHint("Re-checks a sample of the scans that were accepted without a look")
+                }
+                if counts.toReview == 0 {
+                    NavigationLink("See the batch", value: ReviewRoute.batch(batch))
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.blue)
+                        .accessibilityHint("Opens every scan in this run")
                 }
                 if counts.toReview == 0, counts.acceptable == 0, spotCheckCandidates.isEmpty {
                     Text("Everything in this run has a verdict.")

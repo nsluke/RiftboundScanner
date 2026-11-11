@@ -330,6 +330,15 @@ struct ReviewQueueView: View {
                 .background(Theme.blue.opacity(0.18), in: Capsule())
                 .foregroundStyle(Theme.blue)
                 .accessibilityLabel("Spot-check of an accepted scan")
+        case .opened:
+            let isDecided = model.current.map { $0.verdict != .pending } ?? false
+            Label(isDecided ? "Decided before" : "Confident", systemImage: isDecided ? "clock.arrow.circlepath" : "checkmark.seal")
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Theme.surface, in: Capsule())
+                .foregroundStyle(Theme.muted)
+                .accessibilityLabel(isDecided ? "This scan already has a verdict; a new one replaces it" : "The recogniser was sure of this scan")
         case .pickPrinting:
             tierBadge(.pickPrinting, systemImage: "rectangle.on.rectangle", accessibility: "Pick printing: the card is known, the printing is not settled")
         case .possibleDuplicate:
@@ -385,6 +394,17 @@ struct ReviewQueueView: View {
                 Label("Nothing in the index resembled this photo. Name the card, or reject it.", systemImage: "questionmark.square.dashed")
                     .font(.footnote)
                     .foregroundStyle(Theme.amber)
+            case .opened:
+                if record.verdict == .pending {
+                    Label("The code was read and the art matched, so this one needs no look. Is it the right card?", systemImage: "checkmark.seal")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.blue)
+                } else {
+                    LabeledContent("Current verdict") {
+                        VerdictBadge(verdict: record.verdict, directory: model.directory)
+                    }
+                    .font(.footnote)
+                }
             case nil:
                 EmptyView()
             }
@@ -486,7 +506,7 @@ struct ReviewQueueView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 44))
                 .foregroundStyle(Theme.blue)
-            Text(model.mode.isSpotCheck ? "Spot-check complete" : "Review complete")
+            Text(model.mode.isSpotCheck ? "Spot-check complete" : model.mode.isBrowsing ? "That's all of them" : "Review complete")
                 .font(.title2.weight(.semibold))
             VStack(spacing: 4) {
                 Text("\(tally.confirmed) confirmed · \(tally.corrected) corrected · \(tally.rejected) rejected")
@@ -494,7 +514,7 @@ struct ReviewQueueView: View {
                     Text("\(tally.deleted) deleted")
                 }
                 if tally.skipped > 0 {
-                    Text(model.mode.isSpotCheck ? "\(tally.skipped) skipped, left as accepted" : "\(tally.skipped) skipped, still pending")
+                    Text(model.mode.isSpotCheck ? "\(tally.skipped) skipped, left as accepted" : model.mode.isBrowsing ? "\(tally.skipped) left as they were" : "\(tally.skipped) skipped, still pending")
                         .foregroundStyle(Theme.amber)
                 }
             }
@@ -507,7 +527,7 @@ struct ReviewQueueView: View {
                     .foregroundStyle(Theme.blue)
                     .keyboardShortcut(ReviewKey.previous)
             }
-            Button("Back to scanning") { dismiss() }
+            Button(model.mode.isBrowsing ? "Back to the batch" : "Back to scanning") { dismiss() }
                 .prominentAction(Theme.amber)
                 .controlSize(.large)
                 .keyboardShortcut(ReviewKey.accept)

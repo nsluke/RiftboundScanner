@@ -35,6 +35,8 @@ final class ReviewTriageModel {
     /// Pending scans the grid leaves to the queue: printings to pick,
     /// possible duplicates, unknown cards and audits.
     private(set) var leftForQueue = 0
+    /// Tiles deleted in this sitting.
+    private(set) var deletedCount = 0
 
     /// Finishes the user changed from the inherited one, by tile.
     private var chosenFinish: [ScanRecord.ID: Finish] = [:]
@@ -67,6 +69,7 @@ final class ReviewTriageModel {
                 }
             }
             leftForQueue = others
+            deletedCount = 0
             flagged = []
             chosenFinish = [:]
             phase = .triaging
@@ -104,6 +107,27 @@ final class ReviewTriageModel {
         if flagged.remove(id) == nil {
             flagged.insert(id)
         }
+    }
+
+    /// Takes a tile's scan out of the batch with a `human` `voided`
+    /// decision, as the queue's Delete does, and moves the focus to the tile
+    /// that takes its place.
+    func delete(_ id: ScanRecord.ID) async {
+        guard phase == .triaging, var records = tiles.value, let index = records.firstIndex(where: { $0.id == id }) else { return }
+        do {
+            _ = try await store.decide(id, in: batch.id, DecisionInput(.voided, source: .human))
+        } catch {
+            storageProblem = .storage(String(describing: error))
+            return
+        }
+        records.remove(at: index)
+        flagged.remove(id)
+        chosenFinish[id] = nil
+        deletedCount += 1
+        if focusedID == id {
+            focusedID = records.indices.contains(index) ? records[index].id : records.last?.id
+        }
+        tiles = .loaded(records)
     }
 
     // MARK: - Finish

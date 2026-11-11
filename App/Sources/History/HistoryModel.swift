@@ -88,7 +88,8 @@ final class BatchDetailModel {
     func load() async {
         records = .loading
         do {
-            records = .loaded(try await store.records(in: batch.id).sorted { $0.capturedAt > $1.capturedAt })
+            // Deleted scans are gone from the batch as far as anyone looking is concerned.
+            records = .loaded(try await store.records(in: batch.id).filter { $0.verdict != .voided }.sorted { $0.capturedAt > $1.capturedAt })
         } catch {
             records = .failed(.storage(String(describing: error)))
         }
@@ -96,11 +97,16 @@ final class BatchDetailModel {
 
     /// Re-judging a stored scan is a `human` decision appended by the store;
     /// the copy shown here may be behind, and the store's answer replaces it.
+    /// A deleted scan (`voided`) leaves the list.
     func update(_ record: ScanRecord, verdict: Verdict) async {
         do {
             let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: .human))
             if var list = records.value, let position = list.firstIndex(where: { $0.id == record.id }) {
-                list[position] = decided
+                if decided.verdict == .voided {
+                    list.remove(at: position)
+                } else {
+                    list[position] = decided
+                }
                 records = .loaded(list)
             }
             resetShare()

@@ -129,7 +129,7 @@ struct ReviewTriageView: View {
         HStack(spacing: 16) {
             Text(footerCounts)
                 .font(.subheadline.monospacedDigit())
-            Text("Click or X flags · arrows move · ⌥F marks foil · ⌘↩ confirms")
+            Text("Click or X flags · arrows move · ⌥F marks foil · ⌫ deletes · ⌘↩ confirms")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
             Spacer()
@@ -147,6 +147,9 @@ struct ReviewTriageView: View {
 
     private var footerCounts: String {
         var parts = [String(localized: "\(model.unflaggedCount) look right"), String(localized: "\(model.flagged.count) flagged")]
+        if model.deletedCount > 0 {
+            parts.append(String(localized: "\(model.deletedCount) deleted"))
+        }
         if model.leftForQueue > 0 {
             parts.append(String(localized: "\(model.leftForQueue) more after, one at a time"))
         }
@@ -253,6 +256,12 @@ struct ReviewTriageView: View {
             if model.asksForFinish(record) {
                 Button(marksFoil(record) ? "Mark normal" : "Mark foil") { model.toggleFoil(record.id) }
             }
+            Button("Delete scan") { Task { await model.delete(record.id) } }
+        }
+        .contextMenu {
+            Button("Delete scan", systemImage: "trash", role: .destructive) {
+                Task { await model.delete(record.id) }
+            }
         }
     }
 
@@ -337,6 +346,16 @@ struct ReviewTriageView: View {
             .controlSize(.large)
             .keyboardShortcut("x", modifiers: [])
             .accessibilityHint(isFlagged ? "Unflags this match" : "Sends this scan to the fix panel after the rest are confirmed")
+            Button(role: .destructive) {
+                Task { await model.delete(record.id) }
+            } label: {
+                Label("Delete scan", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .keyboardShortcut(ReviewKey.delete)
+            .accessibilityHint("Takes this scan out of the batch")
             if model.asksForFinish(record) {
                 Picker("Finish", selection: Binding(
                     get: { model.finish(of: record) ?? .normal },

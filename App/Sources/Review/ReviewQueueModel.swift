@@ -35,8 +35,9 @@ final class ReviewQueueModel {
         var corrected = 0
         var rejected = 0
         var skipped = 0
+        var deleted = 0
 
-        var decided: Int { confirmed + corrected + rejected }
+        var decided: Int { confirmed + corrected + rejected + deleted }
     }
 
     /// What happened to one row in this sitting. Kept per scan, so going back
@@ -46,6 +47,7 @@ final class ReviewQueueModel {
         case corrected
         case rejected
         case skipped
+        case deleted
     }
 
     enum Progress: Hashable {
@@ -125,6 +127,7 @@ final class ReviewQueueModel {
             case .corrected: tally.corrected += 1
             case .rejected: tally.rejected += 1
             case .skipped: tally.skipped += 1
+            case .deleted: tally.deleted += 1
             }
         }
     }
@@ -318,6 +321,16 @@ final class ReviewQueueModel {
         await reject(.duplicateCapture)
     }
 
+    /// Takes the scan out of the batch: a misfeed, a blurred photo, a card
+    /// that should not be there. It is a `voided` decision like a voided
+    /// batch's, so it leaves review, the collection and the label count, its
+    /// photo stops uploading, and Previous can still bring it back. Always
+    /// `human`: deleting says nothing about whether the recogniser was right,
+    /// so it is never an audit or spot-check answer.
+    func delete() async {
+        await decide(.voided, finish: .inherit, printing: .inherit, outcome: .deleted, source: .human)
+    }
+
     /// Leaves the scan as it is and moves on; a pending one stays in the
     /// batch's to-review list.
     func skip() {
@@ -339,11 +352,12 @@ final class ReviewQueueModel {
     }
 
     /// Every verdict is appended by the store, with the source the row calls
-    /// for: `human`, `audit` or `spotCheck` (ADR-002, decision 6).
-    private func decide(_ verdict: Verdict, finish: Override<Finish>, printing: Override<PrintingKey>, outcome: Outcome) async {
+    /// for: `human`, `audit` or `spotCheck` (ADR-002, decision 6), unless
+    /// `source` says otherwise.
+    private func decide(_ verdict: Verdict, finish: Override<Finish>, printing: Override<PrintingKey>, outcome: Outcome, source: DecisionSource? = nil) async {
         guard let record = current else { return }
         do {
-            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: kind(of: record).source, finish: finish, ledgerPrintingCode: printing))
+            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: source ?? kind(of: record).source, finish: finish, ledgerPrintingCode: printing))
             if var rows = queue.value, rows.indices.contains(position) {
                 rows[position] = decided
                 queue = .loaded(rows)

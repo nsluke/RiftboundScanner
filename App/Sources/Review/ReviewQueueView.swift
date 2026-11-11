@@ -224,7 +224,7 @@ struct ReviewQueueView: View {
                 Button {
                     Task { await model.drop() }
                 } label: {
-                    Label("Drop", systemImage: "trash")
+                    Label("Drop", systemImage: "xmark.square")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -236,6 +236,7 @@ struct ReviewQueueView: View {
             HStack {
                 Button("Wrong card") { fixing = makeFix() }
                     .keyboardShortcut(ReviewKey.fix)
+                deleteButton
                 Spacer()
                 previousButton
                 Button("Skip for now") { model.skip() }
@@ -419,6 +420,7 @@ struct ReviewQueueView: View {
 
             HStack {
                 Button("Not a card") { Task { await model.reject(.notACard) } }
+                deleteButton
                 Spacer()
                 previousButton
                 Button("Skip for now") { model.skip() }
@@ -428,6 +430,16 @@ struct ReviewQueueView: View {
             .foregroundStyle(Theme.muted)
             .padding(.horizontal, 4)
         }
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            Task { await model.delete() }
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .keyboardShortcut(ReviewKey.delete)
+        .accessibilityHint("Takes this scan out of the batch; Previous brings it back")
     }
 
     /// Back to the scan before; a new verdict there supersedes the old one.
@@ -444,7 +456,7 @@ struct ReviewQueueView: View {
     private var gestureHint: Text {
         let isDuplicate = model.currentKind == .possibleDuplicate
         #if os(macOS)
-        return Text(isDuplicate ? "Return keeps both · F fixes the match · → skips · ← goes back" : "Return confirms · F fixes the match · → skips · ← goes back")
+        return Text(isDuplicate ? "Return keeps both · F fixes the match · ⌫ deletes · → skips · ← goes back" : "Return confirms · F fixes the match · ⌫ deletes · → skips · ← goes back")
         #else
         return Text(isDuplicate ? "Swipe right to keep both, left to fix." : "Swipe right to confirm, left to fix.")
         #endif
@@ -478,6 +490,9 @@ struct ReviewQueueView: View {
                 .font(.title2.weight(.semibold))
             VStack(spacing: 4) {
                 Text("\(tally.confirmed) confirmed · \(tally.corrected) corrected · \(tally.rejected) rejected")
+                if tally.deleted > 0 {
+                    Text("\(tally.deleted) deleted")
+                }
                 if tally.skipped > 0 {
                     Text(model.mode.isSpotCheck ? "\(tally.skipped) skipped, left as accepted" : "\(tally.skipped) skipped, still pending")
                         .foregroundStyle(Theme.amber)
@@ -517,4 +532,6 @@ enum ReviewKey {
     static let next = KeyboardShortcut(.rightArrow, modifiers: [])
     /// ←: back to the scan before, to decide it again.
     static let previous = KeyboardShortcut(.leftArrow, modifiers: [])
+    /// ⌫: takes the scan out of the batch.
+    static let delete = KeyboardShortcut(.delete, modifiers: [])
 }

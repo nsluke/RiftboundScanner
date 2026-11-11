@@ -61,6 +61,31 @@ struct ReviewTriageModelTests {
         #expect(stored.first { $0.id == wrong.id }?.decisions.isEmpty == true, "a flagged tile is left for the fix panel")
     }
 
+    @Test func deletingATileVoidsItAndMovesTheFocusOn() async throws {
+        let batch = Fixtures.batch()
+        let first = uncertain(batch, at: 1)
+        let second = uncertain(batch, at: 2)
+        let third = uncertain(batch, at: 3)
+        let model = try await makeModel(batch: batch, records: [first, second, third])
+        model.toggleFlag(second.id)
+        model.focusedID = second.id
+
+        await model.delete(second.id)
+
+        #expect(model.tiles.value?.map(\.id) == [first.id, third.id])
+        #expect(model.focusedID == third.id, "the tile that takes its place")
+        #expect(model.flagged.isEmpty)
+        #expect(model.deletedCount == 1)
+        let stored = try #require(await store.records(in: batch.id).first { $0.id == second.id })
+        #expect(stored.decisions.map(\.verdict) == [.voided])
+        #expect(stored.decisions.map(\.source) == [.human])
+
+        await model.delete(third.id)
+        #expect(model.focusedID == first.id, "the last tile hands the focus back")
+        await model.confirmUnflagged()
+        #expect(model.phase == .confirmed(1), "deleted tiles are not confirmed")
+    }
+
     @Test func flaggingTwiceUnflags() async throws {
         let batch = Fixtures.batch()
         let record = uncertain(batch, at: 1)

@@ -140,6 +140,19 @@ struct ScanReviewView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+
+            // A fresh scan has Retake instead; a stored one can be taken out.
+            if onRetake == nil {
+                Button(role: .destructive) {
+                    onVerdict(.voided)
+                } label: {
+                    Label("Delete scan", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityHint("Takes this scan out of the batch")
+            }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())

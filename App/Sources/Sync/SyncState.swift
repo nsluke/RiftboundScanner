@@ -428,19 +428,22 @@ nonisolated struct BatchSyncState: Hashable, Sendable, Codable {
     }
 }
 
-/// Which uploads a scan is due (ADR-002, decision 4 payload tiers): the
-/// record for every decided scan, `photo_small` for every decided scan, the
-/// rectified canvas when a person decided, the full photo when the
-/// recogniser was wrong or the card was rejected. A5 adds audit samples.
-/// A voided scan sends its record, so the server learns the void, and no
-/// asset: the user just threw the batch away.
+/// Which uploads a scan is due (ADR-002, decision 4 payload tiers, widened
+/// by ADR-003): the record for every scan, `photo_small` for every scan, the
+/// rectified canvas when a person decided, and the full photo while the scan
+/// waits for a person or when the recogniser was wrong or the card was
+/// rejected. A scan waiting for a person is on the server whole so another
+/// device can review it: the Mac imports an iPhone's batch from there
+/// (`ServerBatchImporter`). A voided scan sends its record, so the server
+/// learns the void, and no asset: the user just threw the batch away.
 nonisolated enum UploadTiers {
     static func wantsRecord(_ record: ScanRecord) -> Bool {
-        !record.decisions.isEmpty
+        true
     }
 
     static func eligibleAssets(for record: ScanRecord) -> Set<AssetKind> {
-        guard let last = record.lastDecision, last.verdict != .voided else { return [] }
+        guard let last = record.lastDecision else { return [.photoSmall, .photo] }
+        guard last.verdict != .voided else { return [] }
         var kinds: Set<AssetKind> = [.photoSmall]
         if last.source.isHuman {
             kinds.insert(.canvas)

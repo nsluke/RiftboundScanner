@@ -65,7 +65,8 @@ struct ScannerModelTests {
     @Test func captureCropsToTheGuideAndKeepsTheCropAsThePhoto() async throws {
         // A 63×88 fixture photo in a preview of the same aspect; the guide covers
         // the middle half of each axis, and the 15 % margin grows it to 65 %.
-        let model = makeModel(camera: StubCamera(photo: try ImageFile.encode(Fixtures.image(width: 630, height: 880), as: .jpeg(quality: 0.9))))
+        let store = InMemoryScanStore()
+        let model = makeModel(camera: StubCamera(photo: try ImageFile.encode(Fixtures.image(width: 630, height: 880), as: .jpeg(quality: 0.9))), store: store)
         model.guideCrop = GuideCrop(
             guideFrame: CGRect(x: 78.75, y: 110, width: 157.5, height: 220),
             previewFrame: CGRect(x: 0, y: 0, width: 315, height: 440)
@@ -75,7 +76,7 @@ struct ScannerModelTests {
         let pending = try #require(model.pendingScan)
         #expect(pending.photo.width == 410)
         #expect(pending.photo.height == 572)
-        let saved = try await PhotoDecoder.decode(pending.photoData, maxPixelSize: 4096)
+        let saved = try await PhotoDecoder.decode(try #require(await store.photos[pending.id]), maxPixelSize: 4096)
         #expect(saved.width == 410)
         #expect(saved.height == 572)
     }
@@ -89,36 +90,80 @@ struct ScannerModelTests {
         #expect(pending.photo.height == 88)
     }
 
-    @Test func resolvingPersistsTheRecordWithItsVerdict() async throws {
+    /// A photo taken by hand is saved pending at once and judged in the
+    /// review queue's view, like any stored scan.
+    @Test func aPhotoIsSavedPendingAndJudgedInTheQueuesView() async throws {
         let store = InMemoryScanStore()
         let model = makeModel(store: store)
         await model.start()
         await model.capture()
-        await model.resolve(.corrected(Fixtures.jinx.id))
 
         let batch = try #require(model.batch)
-        let stored = await store.records(in: batch.id)
-        #expect(stored.count == 1)
-        #expect(stored.first?.verdict == .corrected(Fixtures.jinx.id))
-        #expect(stored.first?.verdictAt == Fixtures.epoch)
-        #expect(stored.first?.decisions.map(\.source) == [.human])
-        #expect(stored.first?.confirmedCardID == Fixtures.jinx.id)
-        #expect(model.records.first?.decisions.count == 1)
+        let pending = try #require(model.pendingScan)
+        #expect(await store.records(in: batch.id).map(\.verdict) == [.pending])
         #expect(await store.photos[ScanRecord.ID(rawValue: recordID)] != nil)
+        #expect(model.records.map(\.id) == [pending.id])
+
+        let review = try #require(model.review(of: pending))
+        await review.load()
+        #expect(review.current?.id == pending.id)
+        await review.correct(to: Fixtures.jinx.id)
+        #expect(review.progress == .done(.init(confirmed: 0, corrected: 1, rejected: 0, skipped: 0)))
+        await model.finishReviewing()
+
+        let stored = try #require(await store.records(in: batch.id).first)
+        #expect(stored.verdict == .corrected(Fixtures.jinx.id))
+        #expect(stored.verdictAt == Fixtures.epoch)
+        #expect(stored.decisions.map(\.source) == [.human])
+        #expect(stored.confirmedCardID == Fixtures.jinx.id)
+        #expect(model.records.first?.verdict == .corrected(Fixtures.jinx.id))
         #expect(model.pendingScan == nil)
-        #expect(model.records.count == 1)
         #expect(model.savedVerdictCount == 1)
     }
 
-    @Test func retakeDropsThePendingScan() async throws {
+    @Test func aSkippedPhotoStaysPendingInTheBatch() async throws {
         let store = InMemoryScanStore()
         let model = makeModel(store: store)
         await model.start()
         await model.capture()
-        model.retake()
+        let pending = try #require(model.pendingScan)
+        let review = try #require(model.review(of: pending))
+        await review.load()
+        review.skip()
+        await model.finishReviewing()
+
         #expect(model.pendingScan == nil)
+        #expect(model.records.map(\.verdict) == [.pending])
+        #expect(model.savedVerdictCount == 0)
+        #expect(model.isBusy == false && model.problem == nil, "the camera is free for the next photo")
+    }
+
+    @Test func resumingABatchLeavesItsDeletedScansOut() async throws {
+        let store = InMemoryScanStore()
+        let batch = Fixtures.batch()
+        await store.save(batch)
+        try await store.append(Fixtures.record(batch: batch.id), photo: Data(), rectified: nil)
+        try await store.append(Fixtures.record(batch: batch.id, verdict: .voided), photo: Data(), rectified: nil)
+        let model = makeModel(store: store)
+
+        await model.start()
+
+        #expect(model.batch?.id == batch.id)
+        #expect(model.records.count == 1)
+        #expect(model.summary.total == 1, "the Scan tab's count leaves deleted scans out")
+    }
+
+    @Test func retakeTakesThePhotoBackOutOfTheBatch() async throws {
+        let store = InMemoryScanStore()
+        let model = makeModel(store: store)
+        await model.start()
+        await model.capture()
+        await model.retake()
+        #expect(model.pendingScan == nil)
+        #expect(model.records.isEmpty)
         let batchID = try #require(model.batch?.id)
-        #expect(await store.records(in: batchID).isEmpty)
+        #expect(await store.records(in: batchID).map(\.verdict) == [.voided])
+        #expect(await store.records(in: batchID).first?.decisions.map(\.source) == [.human])
     }
 
     @Test func recognitionFailureIsReportedAndRecoverable() async {
@@ -186,7 +231,7 @@ struct ScannerModelHintTests {
 
         await model.capture()
         #expect(await identifier.hints == [RecognitionHints(expectedSet: SetCode(rawValue: "OGN")!)], "the single-shot path hints too")
-        model.retake()
+        await model.retake()
 
         model.connectFeeder()
         model.startAutoScan()
@@ -202,7 +247,7 @@ struct ScannerModelHintTests {
         #expect(model.batch?.purpose == .calibration)
         #expect(model.recognitionHints == .none)
         await model.capture()
-        model.retake()
+        await model.retake()
         await model.beginNewBatch(ScanBatch.Setup(label: "pile", purpose: .collection, product: .loose, defaultFinish: .normal))
         #expect(model.recognitionHints == .none)
         await model.capture()

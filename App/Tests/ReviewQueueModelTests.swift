@@ -168,6 +168,52 @@ struct ReviewQueueModelTests {
         #expect(model.progress == .done(.init(confirmed: 0, corrected: 0, rejected: 1, skipped: 1)))
     }
 
+    /// Deleting is a `human` `voided` decision whatever the row is: it takes
+    /// the scan out of the batch and says nothing about the recogniser.
+    @Test func deletingVoidsTheScanAsAHumanAndAdvances() async throws {
+        let uncertain = Fixtures.record(batch: batch.id, capturedAt: Fixtures.epoch, codeRead: false)
+        let audit = Fixtures.record(id: Fixtures.uuid(firstByte: 0), batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(10))
+        let model = try await makeModel(records: [audit, uncertain])
+
+        await model.delete()
+        #expect(model.current?.id == audit.id)
+        #expect(model.currentKind == .audit)
+        await model.delete()
+        #expect(model.progress == .done(.init(confirmed: 0, corrected: 0, rejected: 0, skipped: 0, deleted: 2)))
+
+        let stored = await store.records(in: batch.id)
+        #expect(stored.allSatisfy { $0.verdict == .voided })
+        #expect(stored.allSatisfy { $0.decisions.map(\.source) == [.human] }, "an audit row deleted is not an audit answer")
+
+        model.goBack()
+        await model.confirm()
+        #expect(await store.records(in: batch.id).first { $0.id == audit.id }?.verdict == .correct, "Previous brings a deleted scan back")
+        #expect(model.tally.deleted == 1)
+    }
+
+    /// A scan opened from the batch's screen walks the scans of that grid
+    /// from the one tapped, pending or decided, in the queue's own view.
+    @Test func browsingOpensAtTheTappedScanAndWalksTheGridsOrder() async throws {
+        let decided = Fixtures.record(batch: batch.id, verdict: .correct, capturedAt: Fixtures.epoch, codeRead: false)
+        let pending = Fixtures.record(batch: batch.id, capturedAt: Fixtures.epoch.addingTimeInterval(1), codeRead: false)
+        let deleted = Fixtures.record(batch: batch.id, verdict: .voided, capturedAt: Fixtures.epoch.addingTimeInterval(2), codeRead: false)
+        let model = try await makeModel(records: [decided, pending, deleted], mode: .browse(ids: [pending.id, deleted.id, decided.id], start: decided.id))
+
+        #expect(model.queue.value?.map(\.id) == [pending.id, decided.id], "in the grid's order, without deleted scans")
+        #expect(model.current?.id == decided.id, "opens at the scan tapped")
+        #expect(model.currentKind == .opened)
+
+        await model.correct(to: Fixtures.jinx.id)
+        let stored = try #require(await store.records(in: batch.id).first { $0.id == decided.id })
+        #expect(stored.verdict == .corrected(Fixtures.jinx.id))
+        #expect(stored.decisions.last?.source == .human, "a revisit is a new human label")
+
+        model.goBack()
+        model.goBack()
+        #expect(model.current?.id == pending.id)
+        #expect(model.currentKind == .uncertain(.noCodeRead), "a pending scan keeps why it needs a look")
+    }
+
     @Test func aBatchWithNothingUncertainSaysSo() async throws {
         let model = try await makeModel(records: [unsampledConfident()])
         #expect(model.progress == .nothingToReview)

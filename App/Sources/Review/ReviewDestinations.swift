@@ -6,10 +6,10 @@ extension View {
     func reviewDestinations(store: any ScanStoring, directory: CardDirectory, vault: CardVault, rule: @escaping @Sendable () -> ConfidenceRule) -> some View {
         navigationDestination(for: ReviewRoute.self) { route in
             switch route {
-            case .queue(let batch):
-                ReviewQueueView(model: ReviewQueueModel(batch: batch, store: store, directory: directory, vault: vault, rule: rule()))
-            case .overview(let batch):
-                BatchOverviewView(model: BatchDetailModel(batch: batch, store: store, directory: directory), directory: directory)
+            case .batch(let batch):
+                BatchReviewView(batch: batch, store: store, directory: directory, vault: vault, rule: rule())
+            case .scans(let batch, let ids, let start):
+                ReviewQueueView(model: ReviewQueueModel(batch: batch, store: store, directory: directory, vault: vault, rule: rule(), mode: .browse(ids: ids, start: start)))
             case .spotCheck(let batch, let candidates, let limit):
                 ReviewQueueView(model: ReviewQueueModel(batch: batch, store: store, directory: directory, vault: vault, rule: rule(), mode: .spotCheck(candidates: candidates, limit: limit)))
             }

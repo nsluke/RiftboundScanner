@@ -62,8 +62,8 @@ targets:
             riftbound.local:
               NSExceptionAllowsInsecureHTTPLoads: true
               NSIncludesSubdomains: true
-        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings.
-        NSBonjourServices: [_http._tcp]
+        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings, and lets your Mac use this iPhone as its scanning camera.
+        NSBonjourServices: [_http._tcp, _riftcam._tcp]
         NSBluetoothAlwaysUsageDescription: Riftbound Scanner connects to your TCG Archivist card feeder over Bluetooth to advance cards while scanning.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
@@ -114,8 +114,8 @@ targets:
         # Continuity Camera devices are only discoverable with this key.
         NSCameraUseContinuityCameraDeviceType: true
         NSBluetoothAlwaysUsageDescription: Riftbound Scanner connects to your TCG Archivist card feeder over Bluetooth to advance cards while scanning.
-        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings.
-        NSBonjourServices: [_http._tcp]
+        NSLocalNetworkUsageDescription: Riftbound Scanner looks for your own collection server on the local network to sync scans and holdings, and finds your iPhone when it is the Mac's scanning camera.
+        NSBonjourServices: [_http._tcp, _riftcam._tcp]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSExceptionDomains:

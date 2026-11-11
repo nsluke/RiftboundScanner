@@ -469,7 +469,9 @@ the Mac against the Mac app.
 (cd App && xcodegen generate)
 xcodebuild -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
   -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates build
-open "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app"
+# Run it from Applications: from under ~/Documents its Bonjour browse is refused (ADR-004).
+ditto "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app" "/Applications/Riftbound Scanner.app"
+open "/Applications/Riftbound Scanner.app"
 xcodebuild test -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
   -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates
 ```
@@ -515,10 +517,23 @@ recogniser from 17 to 27 right; the build before it, with a looser guide and
 no brightening, got 13. No printed code was read at this resolution, so no
 Mac scan is confident: every one goes through the review queue.
 
+**Review.** Every way into a batch (Review on the run strip, a History row,
+an imported server batch) opens one screen, `BatchReviewView`. It opens on
+**To review**: on the Mac the triage grid, then the one-at-a-time queue for
+the flagged and the rest; on the iPhone the queue. **All scans** shows the
+whole batch by what it needs; any scan opened there goes to the same
+one-at-a-time view and fix panel, decided or not (`ReviewRoute.scans`). So
+does a photo taken by hand: it is saved pending like a fed card and opens in
+that view at once; a verdict closes it, Skip leaves it pending in the batch,
+and Retake deletes it.
+**Delete** takes a scan out of the batch with a `voided` decision: it leaves
+review, the collection and the label count, and syncs like any verdict.
+
 **Keys.** Space takes a photo, ⌘↩ feeds and scans, ⌘. stops feeding. In the
 review queue Return confirms (or keeps both for a possible duplicate), F opens
-the fix sheet and → skips to the next scan; the keys sit on the buttons, so
-they go quiet while a sheet has focus. ⇧⌘S shows the scans in Finder.
+the fix sheet, ⌫ deletes and → skips to the next scan; in the grid X flags, ⌫
+deletes and ⌘↩ confirms the rest. The keys sit on the buttons, so they go
+quiet while a sheet has focus. ⇧⌘S shows the scans in Finder.
 
 **Storage and permissions.** The app is sandboxed: scans live in
 `~/Library/Containers/com.nsluke.RiftboundScannerMac/Data/Documents/Scans`, the
@@ -528,6 +543,28 @@ collection server) and user-selected files (exports). The feeder is the same
 `CSC100Feeder` over CoreBluetooth; Bluetooth access is asked for on the first
 Connect. One window only: the camera, the feeder link and the sync engine
 belong to a single scanner.
+
+**The iPhone app as the Mac's camera** ([ADR-004](adr/004-iphone-as-mac-camera.md)).
+The sharpest way to scan from the Mac: on the iPhone, tap the Mac-and-phone
+button on the Scan tab (**Camera for Mac**) and leave that screen open with
+the phone on the stand. The Mac's camera menu then lists the phone as
+"<name> (Riftbound app)" and switches to it. The phone lets go of the feeder
+and the Mac connects to it, then drives it and gets the iPhone app's own
+photos: the 0.5× lens up close, 12 MP, and the torch. The apps talk over
+Bonjour (`_riftcam._tcp`) on the local network; each asks for Local Network
+access once. Run the Mac app from `/Applications`: launched from the build
+folder under `~/Documents`, macOS refuses its Bonjour browse (`NoAuth`).
+
+**Reviewing what the iPhone scanned** ([ADR-003](adr/003-mac-review-station.md)).
+Continuity Camera only ever gives the Mac the iPhone's main lens, which cannot
+focus on a card that close, so the sharp way to scan is the iPhone app, whose
+dual-wide camera drops to the 0.5× lens up close. Every scan that waits for a
+person uploads its record and full photo, and History on the Mac lists those
+batches under **On the server**. **Import to review** copies one into the
+Mac's store (`ServerBatchImporter`; an interrupted import resumes), then the
+triage grid and fix panel work as for a batch scanned here, and the verdicts
+go back to the server as the next decision of each scan. Review a batch on one
+device: the server refuses whichever decision log arrives second.
 
 ### Talking to the collection server
 

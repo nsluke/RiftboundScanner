@@ -173,6 +173,13 @@ final class CameraSourceModel {
         if case .using(let device) = next, !isUsing(device) {
             await switchTo(device)
         }
+        // The iPhone app is remembered once used, picked or not: someone
+        // opened Camera for Mac on purpose, and the next launch waits for it
+        // rather than taking that phone through Continuity Camera.
+        if case .using(let device) = next, device.kind == .iPhoneApp, saved.cameraID != device.id {
+            saved.cameraID = device.id
+            await preferences.save(saved)
+        }
         source = next
     }
 

@@ -7,6 +7,7 @@ extension CameraDevice {
     static let otherIPhone = CameraDevice(id: ID(rawValue: "iphone-b"), name: "Spare iPhone Camera", kind: .continuity)
     static let webcam = CameraDevice(id: ID(rawValue: "usb-1"), name: "USB Camera", kind: .external)
     static let builtIn = CameraDevice(id: ID(rawValue: "builtin"), name: "MacBook Pro Camera", kind: .builtIn)
+    static let phoneApp = CameraDevice(id: ID(rawValue: "riftcam:Lukes-iPhone"), name: "Lukes-iPhone (Riftbound app)", kind: .iPhoneApp, hasTorch: true)
 }
 
 /// Reports a fixed sequence of connected-camera lists, then finishes, so

@@ -12,6 +12,9 @@ nonisolated struct CameraDevice: Hashable, Sendable, Identifiable {
 
     /// What kind of camera it is, in the order the scanner prefers them.
     enum Kind: Int, Hashable, Sendable, Comparable {
+        /// The iPhone app's own camera over the local network (ADR-004): the
+        /// 0.5× lens up close, 12 MP photos and a torch.
+        case iPhoneApp
         /// An iPhone through Continuity Camera: the camera on the feeder's stand.
         case continuity
         /// A USB or other external camera.
@@ -47,6 +50,16 @@ nonisolated struct CameraDevice: Hashable, Sendable, Identifiable {
     }
 }
 
+nonisolated extension CameraDevice.ID {
+    /// Starts the id of every iPhone app found on the network (ADR-004).
+    static let iPhoneAppPrefix = "riftcam:"
+
+    /// Whether this names an iPhone app rather than a camera on the Mac.
+    var isIPhoneApp: Bool {
+        rawValue.hasPrefix(Self.iPhoneAppPrefix)
+    }
+}
+
 /// Which camera the scanner is using as cameras come and go.
 nonisolated enum CameraSource: Hashable, Sendable {
     /// Discovery has not reported yet.
@@ -75,11 +88,17 @@ nonisolated enum CameraSelection {
     /// The camera to use when the choice is open: the saved one while it is
     /// connected, otherwise the first iPhone, then an external camera, then
     /// the built-in one. Ties keep discovery order.
+    ///
+    /// While a saved iPhone app is away, no iPhone is taken through Continuity
+    /// Camera: that takes the phone's camera and pushes the app's Camera for
+    /// Mac screen aside, so the app could never come back (ADR-004). Picking
+    /// a Continuity Camera iPhone from the menu still works.
     static func preferred(among devices: [CameraDevice], saved: CameraDevice.ID?) -> CameraDevice? {
         if let saved, let device = devices.first(where: { $0.id == saved }) {
             return device
         }
-        return devices.enumerated()
+        let candidates = saved?.isIPhoneApp == true ? devices.filter { $0.kind != .continuity } : devices
+        return candidates.enumerated()
             .min { ($0.element.kind, $0.offset) < ($1.element.kind, $1.offset) }?
             .element
     }
@@ -88,7 +107,8 @@ nonisolated enum CameraSelection {
     ///
     /// - A camera in use that disconnects becomes `lost`, never a silent
     ///   switch: the next photo would come from a camera aimed elsewhere.
-    /// - A lost camera that reconnects is used again; until then it stays lost.
+    /// - A lost camera that reconnects is used again; until then it stays
+    ///   lost, unless the iPhone app appears as a camera (ADR-004).
     /// - A camera the user did not save gives way when the saved camera
     ///   appears, or when a more preferred kind does (an iPhone that joins
     ///   after launch replaces the built-in camera picked in the meantime).
@@ -105,7 +125,17 @@ nonisolated enum CameraSelection {
             }
             return best.id == saved || best.kind < inUse.kind ? .using(best) : .using(connected)
         case .lost(let missing):
-            return devices.first(where: { $0.id == missing.id }).map(CameraSource.using) ?? .lost(missing)
+            if let back = devices.first(where: { $0.id == missing.id }) {
+                return .using(back)
+            }
+            // Continuity Camera drops out exactly when the iPhone app takes
+            // the phone's camera for the Mac (ADR-004): the same phone on the
+            // same stand, which only advertises because someone opened
+            // Camera for Mac for this.
+            if let app = devices.first(where: { $0.kind == .iPhoneApp }) {
+                return .using(app)
+            }
+            return .lost(missing)
         }
     }
 }

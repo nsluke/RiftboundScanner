@@ -1,8 +1,8 @@
 import Foundation
 
 /// A feeder with no hardware behind it, for previews and tests. Each feed takes
-/// the next scripted outcome; once the script runs out it behaves like an empty
-/// hopper and times out.
+/// the next scripted outcome; once the script runs out it reports an empty
+/// hopper, as the CSC100 does.
 @Observable
 final class StubFeeder: FeederControlling {
     enum FeedOutcome: Sendable {
@@ -15,6 +15,7 @@ final class StubFeeder: FeederControlling {
 
     private(set) var state: FeederState
     private(set) var feedCount = 0
+    private(set) var connectCount = 0
     private(set) var stopCount = 0
     private(set) var disconnectCount = 0
     private var script: [FeedOutcome]
@@ -27,6 +28,7 @@ final class StubFeeder: FeederControlling {
     }
 
     func connect() {
+        connectCount += 1
         state = .ready(firmwareVersion: firmwareVersion)
     }
 
@@ -35,7 +37,7 @@ final class StubFeeder: FeederControlling {
         feedCount += 1
         state = .feeding
         defer { state = .ready(firmwareVersion: firmwareVersion) }
-        guard !script.isEmpty else { throw FeederError.timedOut }
+        guard !script.isEmpty else { throw FeederError.hopperEmpty }
         switch script.removeFirst() {
         case .fed:
             await Task.yield()

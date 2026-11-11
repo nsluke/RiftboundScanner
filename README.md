@@ -37,8 +37,9 @@ So this project replaces the software half:
   traffic, so the feeder can be told to advance one card at a time.
 - **An iPhone app** that runs feeder, camera and recogniser together, then lets
   you confirm or fix each match.
-- **A Mac app** that does the same with an iPhone as its camera over Continuity
-  Camera, so you can review batches with a keyboard on a laptop.
+- **A Mac app** that does the same with an iPhone as its camera, through the
+  iPhone app or Continuity Camera, so you can review batches with a keyboard on
+  a laptop.
 
 Confirmed cards sync to a small self-hosted collection server, which keeps the
 ledger of what you own and pulls daily prices.
@@ -137,7 +138,9 @@ xcrun devicectl device install app --device <device udid> \
 (cd App && xcodegen generate)
 xcodebuild -project App/RiftboundScannerApp.xcodeproj -scheme RiftboundScannerMac \
   -destination 'platform=macOS' -derivedDataPath App/DerivedData -allowProvisioningUpdates build
-open "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app"
+# Run it from /Applications: from under ~/Documents macOS refuses its Bonjour browse.
+ditto "App/DerivedData/Build/Products/Debug/Riftbound Scanner.app" "/Applications/Riftbound Scanner.app"
+open "/Applications/Riftbound Scanner.app"
 ```
 
 The project file sets the author's Apple development team. Change
@@ -149,8 +152,9 @@ Scanning only works on a real iPhone or on the Mac.
 ## The feeder
 
 The CSC100 speaks plain ASCII over Bluetooth LE. `MOTOR:START:80` advances one
-card and the feeder answers `MOTOR:COMPLETE` when it is in place. The full
-protocol, as observed from the vendor app, is in [CSC100 Bluetooth notes](docs/csc100-ble.md).
+card and the feeder answers `MOTOR:COMPLETE` when it is in place, or `MOTOR:END`
+when the hopper is empty. The full protocol, as observed from the vendor app, is
+in [CSC100 Bluetooth notes](docs/csc100-ble.md).
 `Scripts/blescan.sh` probes and drives the feeder from a Mac.
 
 The feeder is optional. Without it, both apps take one photo per tap or per press

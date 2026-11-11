@@ -85,6 +85,23 @@ struct CameraSourceModelTests {
         #expect(await store.preferences.cameraID == CameraDevice.webcam.id)
     }
 
+    @Test func usingTheIPhoneAppRemembersItForTheNextLaunch() async {
+        let store = InMemoryCameraPreferenceStore()
+        let model = CameraSourceModel(discovery: ScriptedCameraDiscovery([.iPhone, .builtIn], [.builtIn], [.builtIn, .phoneApp]), camera: SpyCameraSwitch(), preferences: store)
+
+        await model.run()
+
+        #expect(model.source == .using(.phoneApp))
+        #expect(await store.preferences.cameraID == CameraDevice.phoneApp.id)
+
+        let engine = SpyCameraSwitch()
+        let relaunched = CameraSourceModel(discovery: ScriptedCameraDiscovery([.iPhone, .builtIn]), camera: engine, preferences: store)
+        await relaunched.run()
+
+        #expect(relaunched.source == .using(.builtIn), "waits for the app on the built-in camera, leaving the phone alone")
+        #expect(await engine.opened == [CameraDevice.builtIn.id])
+    }
+
     @Test func choosingACameraThatIsNotConnectedDoesNothing() async {
         let engine = SpyCameraSwitch()
         let model = CameraSourceModel(discovery: ScriptedCameraDiscovery([.iPhone]), camera: engine, preferences: InMemoryCameraPreferenceStore())

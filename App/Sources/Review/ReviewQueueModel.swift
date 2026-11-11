@@ -23,9 +23,18 @@ final class ReviewQueueModel {
         /// Up to `limit` of `candidates`, which must be accepted scans of this
         /// batch; the sampler picks which.
         case spotCheck(candidates: [ScanRecord.ID], limit: Int)
+        /// The scans `ids` names, in that order, opened from the batch's
+        /// screen at `start`: the same view and verdicts for any scan,
+        /// pending or decided.
+        case browse(ids: [ScanRecord.ID], start: ScanRecord.ID)
 
         var isSpotCheck: Bool {
             if case .spotCheck = self { return true }
+            return false
+        }
+
+        var isBrowsing: Bool {
+            if case .browse = self { return true }
             return false
         }
     }
@@ -35,8 +44,19 @@ final class ReviewQueueModel {
         var corrected = 0
         var rejected = 0
         var skipped = 0
+        var deleted = 0
 
-        var decided: Int { confirmed + corrected + rejected }
+        var decided: Int { confirmed + corrected + rejected + deleted }
+    }
+
+    /// What happened to one row in this sitting. Kept per scan, so going back
+    /// and deciding again replaces the earlier outcome instead of adding one.
+    enum Outcome: Hashable {
+        case confirmed
+        case corrected
+        case rejected
+        case skipped
+        case deleted
     }
 
     enum Progress: Hashable {
@@ -62,10 +82,16 @@ final class ReviewQueueModel {
     private(set) var position = 0 {
         didSet { resetSelection() }
     }
-    private(set) var tally = Tally()
+    private(set) var outcomes: [ScanRecord.ID: Outcome] = [:]
     private(set) var storageProblem: ScanProblem?
     /// The set most of the batch's scans belong to, for prefilling corrections.
     private(set) var dominantSet: SetCode?
+    /// The set of the last card this sitting corrected to; a run is usually
+    /// fed a set at a time, so the next fix looks there first.
+    private(set) var lastFixSet: SetCode?
+    /// Scans the triage grid flagged as wrong: they lead the queue and open
+    /// straight into the fix panel.
+    let flagged: Set<ScanRecord.ID>
     /// The printing the ledger gets for the scan on screen; starts as the
     /// inherited one and changes only when the user taps a chip.
     var selectedPrinting: PrintingKey? {
@@ -90,6 +116,7 @@ final class ReviewQueueModel {
         vault: CardVault,
         rule: ConfidenceRule = .default,
         mode: Mode = .pending,
+        flagged: Set<ScanRecord.ID> = [],
         sample: @escaping Sampler = { Array($0.shuffled().prefix($1)) }
     ) {
         self.batch = batch
@@ -98,7 +125,36 @@ final class ReviewQueueModel {
         self.vault = vault
         self.rule = rule
         self.mode = mode
+        self.flagged = flagged
         self.sample = sample
+    }
+
+    var tally: Tally {
+        outcomes.values.reduce(into: Tally()) { tally, outcome in
+            switch outcome {
+            case .confirmed: tally.confirmed += 1
+            case .corrected: tally.corrected += 1
+            case .rejected: tally.rejected += 1
+            case .skipped: tally.skipped += 1
+            case .deleted: tally.deleted += 1
+            }
+        }
+    }
+
+    /// Where a bare collector number is looked up first in the fix panel.
+    var fixSet: SetCode? {
+        lastFixSet ?? dominantSet
+    }
+
+    /// Whether the scan on screen was flagged as wrong in the triage grid
+    /// and has not been decided since.
+    var currentIsFlagged: Bool {
+        guard let current else { return false }
+        return flagged.contains(current.id) && outcomes[current.id] == nil
+    }
+
+    var canGoBack: Bool {
+        position > 0 && queue.value != nil
     }
 
     var current: ScanRecord? {
@@ -134,10 +190,15 @@ final class ReviewQueueModel {
         do {
             let loaded = try await store.records(in: batch.id).sorted { $0.capturedAt < $1.capturedAt }
             records = loaded
-            queue = .loaded(rows(in: loaded))
-            tally = Tally()
+            let rows = rows(in: loaded)
+            queue = .loaded(rows)
+            outcomes = [:]
             dominantSet = Self.dominantSet(in: loaded)
-            position = 0
+            if case .browse(_, let start) = mode {
+                position = rows.firstIndex { $0.id == start } ?? 0
+            } else {
+                position = 0
+            }
             resetSelection()
         } catch {
             queue = .failed(.storage(String(describing: error)))
@@ -161,11 +222,15 @@ final class ReviewQueueModel {
                 case nil: break
                 }
             }
-            return needPerson + duplicates + audits
+            let flaggedFirst = needPerson.filter { flagged.contains($0.id) } + needPerson.filter { !flagged.contains($0.id) }
+            return flaggedFirst + duplicates + audits
         case .spotCheck(let candidates, let limit):
             let wanted = Set(candidates)
             let accepted = records.filter { wanted.contains($0.id) && $0.lastDecision?.source == .autoAccepted }
             return sample(accepted, limit).sorted { $0.capturedAt < $1.capturedAt }
+        case .browse(let ids, _):
+            let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return ids.compactMap { byID[$0] }.filter { $0.verdict != .voided }
         }
     }
 
@@ -174,6 +239,7 @@ final class ReviewQueueModel {
         switch mode {
         case .spotCheck: .spotCheck
         case .pending: record.reviewKind(under: rule, in: batch, vault: vault, directory: directory) ?? .audit
+        case .browse: record.reviewKind(under: rule, in: batch, vault: vault, directory: directory) ?? .opened
         }
     }
 
@@ -235,9 +301,9 @@ final class ReviewQueueModel {
         if let selectedPrinting, selectedPrinting != recognized,
            let sibling = directory.card(forKey: selectedPrinting), sibling.id != current.topCandidate?.card.id {
             let printing: Override<PrintingKey> = current.effectivePrintingCode == nil ? .inherit : .set(selectedPrinting)
-            await decide(.corrected(sibling.id), finish: finishOverride, printing: printing) { $0.corrected += 1 }
+            await decide(.corrected(sibling.id), finish: finishOverride, printing: printing, outcome: .corrected)
         } else {
-            await decide(.correct, finish: finishOverride, printing: printingOverride) { $0.confirmed += 1 }
+            await decide(.correct, finish: finishOverride, printing: printingOverride, outcome: .confirmed)
         }
     }
 
@@ -252,11 +318,15 @@ final class ReviewQueueModel {
             return
         }
         let printing: Override<PrintingKey> = current.effectivePrintingCode == nil ? .inherit : (PrintingKey(cardID: card).map { .set($0) } ?? .inherit)
-        await decide(.corrected(card), finish: .inherit, printing: printing) { $0.corrected += 1 }
+        let set = directory[card]?.code.set
+        await decide(.corrected(card), finish: .inherit, printing: printing, outcome: .corrected)
+        if let set {
+            lastFixSet = set
+        }
     }
 
     func reject(_ reason: RejectionReason) async {
-        await decide(.rejected(reason), finish: .inherit, printing: .inherit) { $0.rejected += 1 }
+        await decide(.rejected(reason), finish: .inherit, printing: .inherit, outcome: .rejected)
     }
 
     /// "Keep both": the possible duplicate is a second copy after all.
@@ -269,12 +339,30 @@ final class ReviewQueueModel {
         await reject(.duplicateCapture)
     }
 
+    /// Takes the scan out of the batch: a misfeed, a blurred photo, a card
+    /// that should not be there. It is a `voided` decision like a voided
+    /// batch's, so it leaves review, the collection and the label count, its
+    /// photo stops uploading, and Previous can still bring it back. Always
+    /// `human`: deleting says nothing about whether the recogniser was right,
+    /// so it is never an audit or spot-check answer.
+    func delete() async {
+        await decide(.voided, finish: .inherit, printing: .inherit, outcome: .deleted, source: .human)
+    }
+
     /// Leaves the scan as it is and moves on; a pending one stays in the
     /// batch's to-review list.
     func skip() {
-        guard current != nil else { return }
-        tally.skipped += 1
+        guard let current else { return }
+        outcomes[current.id] = outcomes[current.id] ?? .skipped
         position += 1
+    }
+
+    /// Back to the scan before, decided or skipped, so it can be decided
+    /// again. Decisions are append-only (ADR-002, decision 2): a new verdict
+    /// supersedes the earlier one rather than erasing it.
+    func goBack() {
+        guard canGoBack else { return }
+        position -= 1
     }
 
     func dismissStorageProblem() {
@@ -282,17 +370,18 @@ final class ReviewQueueModel {
     }
 
     /// Every verdict is appended by the store, with the source the row calls
-    /// for: `human`, `audit` or `spotCheck` (ADR-002, decision 6).
-    private func decide(_ verdict: Verdict, finish: Override<Finish>, printing: Override<PrintingKey>, counting: (inout Tally) -> Void) async {
+    /// for: `human`, `audit` or `spotCheck` (ADR-002, decision 6), unless
+    /// `source` says otherwise.
+    private func decide(_ verdict: Verdict, finish: Override<Finish>, printing: Override<PrintingKey>, outcome: Outcome, source: DecisionSource? = nil) async {
         guard let record = current else { return }
         do {
-            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: kind(of: record).source, finish: finish, ledgerPrintingCode: printing))
+            let decided = try await store.decide(record.id, in: batch.id, DecisionInput(verdict, source: source ?? kind(of: record).source, finish: finish, ledgerPrintingCode: printing))
             if var rows = queue.value, rows.indices.contains(position) {
                 rows[position] = decided
                 queue = .loaded(rows)
             }
             records = records.map { $0.id == decided.id ? decided : $0 }
-            counting(&tally)
+            outcomes[decided.id] = outcome
             position += 1
         } catch {
             storageProblem = .storage(String(describing: error))

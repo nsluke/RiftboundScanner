@@ -9,6 +9,8 @@ enum Theme {
     static let amber = Color(red: 0xF2 / 255, green: 0xB8 / 255, blue: 0x4B / 255)
     static let blue = Color(red: 0x7C / 255, green: 0xC4 / 255, blue: 0xFF / 255)
     static let muted = Color(red: 0x9A / 255, green: 0xA3 / 255, blue: 0xB2 / 255)
+    /// A match the user has marked wrong.
+    static let wrong = Color(red: 0xEF / 255, green: 0x6B / 255, blue: 0x5E / 255)
     static let text = Color.white
 
     /// Rarity and domain colours from the Card Vault design.

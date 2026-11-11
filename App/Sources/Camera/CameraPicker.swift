@@ -45,6 +45,7 @@ struct CameraPicker: View {
 extension CameraDevice.Kind {
     var systemImage: String {
         switch self {
+        case .iPhoneApp: "iphone.gen3.radiowaves.left.and.right"
         case .continuity: "iphone"
         case .external: "web.camera"
         case .builtIn: "laptopcomputer"

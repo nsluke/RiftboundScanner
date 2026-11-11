@@ -76,7 +76,40 @@ extension View {
         self
         #endif
     }
+
+    /// The screen's main action: filled in `tint` with dark text. On the Mac
+    /// `.borderedProminent` turns grey while the window is inactive, which
+    /// left the dark label unreadable, so the Mac draws its own fill.
+    func prominentAction(_ tint: Color) -> some View {
+        #if os(macOS)
+        buttonStyle(FilledActionButtonStyle(tint: tint))
+        #else
+        buttonStyle(.borderedProminent)
+            .tint(tint)
+            .foregroundStyle(Theme.ground)
+        #endif
+    }
 }
+
+#if os(macOS)
+/// A filled button that looks the same in a key and an inactive window.
+private struct FilledActionButtonStyle: ButtonStyle {
+    let tint: Color
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(controlSize == .large ? .body.weight(.semibold) : .callout.weight(.semibold))
+            .foregroundStyle(Theme.ground)
+            .padding(.horizontal, controlSize == .large ? 16 : 12)
+            .frame(minHeight: controlSize == .large ? 32 : 24)
+            .background(tint.opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 7))
+            .opacity(isEnabled ? 1 : 0.4)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+#endif
 
 /// What a text field holds, which decides its keyboard and corrections.
 enum TextEntryKind {

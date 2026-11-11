@@ -8,9 +8,9 @@ import os
 /// service with a command characteristic (write with response) and a status
 /// characteristic (notify), plain ASCII both ways, no pairing. The feeder sends
 /// `CONNECTED` on subscribe, answers `FWVER`, and answers `MOTOR:START:<len>`
-/// with `MOTOR:CARDLEN_SET` then `MOTOR:COMPLETE` once a card has moved. It
-/// says nothing when the hopper is empty, so a feed that never completes is the
-/// only sign of one.
+/// with `MOTOR:CARDLEN_SET` then `MOTOR:COMPLETE` once a card has moved, or
+/// `MOTOR:END` when the motor ran and no card came through (an empty hopper).
+/// A feed that gets neither in time is reported as timed out.
 ///
 /// CoreBluetooth calls back on the queue given to the central manager; this
 /// driver passes the main queue, which is what makes its main-actor isolated
@@ -79,6 +79,7 @@ final class CSC100Feeder: NSObject, FeederControlling {
                 for await event in events {
                     switch event {
                     case .success(.feedComplete): return
+                    case .success(.feedEndedEmpty): throw FeederError.hopperEmpty
                     case .success: continue
                     case .failure(let error): throw error
                     }
@@ -154,7 +155,7 @@ final class CSC100Feeder: NSObject, FeederControlling {
             case .ready: state = .ready(firmwareVersion: version)
             default: break
             }
-        case .connected, .cardLengthSet, .feedComplete, .unrecognized:
+        case .connected, .cardLengthSet, .feedComplete, .feedEndedEmpty, .unrecognized:
             break
         }
         feedEvents?.yield(.success(message))

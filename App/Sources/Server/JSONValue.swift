@@ -7,6 +7,11 @@ nonisolated indirect enum JSONValue: Hashable, Sendable, Codable {
     case null
     case bool(Bool)
     case number(Double)
+    /// An integer a `Double` cannot hold exactly (beyond ±2^53), such as a
+    /// 64-bit perceptual hash's `bits`. Kept exact, so a record forwarded
+    /// through this type decodes back to the same hashes.
+    case integer(Int64)
+    case unsignedInteger(UInt64)
     case string(String)
     case array([JSONValue])
     case object([String: JSONValue])
@@ -17,6 +22,10 @@ nonisolated indirect enum JSONValue: Hashable, Sendable, Codable {
             self = .null
         } else if let bool = try? container.decode(Bool.self) {
             self = .bool(bool)
+        } else if let integer = try? container.decode(Int64.self), integer.magnitude > Self.largestExactDoubleInteger {
+            self = .integer(integer)
+        } else if let integer = try? container.decode(UInt64.self), integer > Self.largestExactDoubleInteger {
+            self = .unsignedInteger(integer)
         } else if let number = try? container.decode(Double.self) {
             self = .number(number)
         } else if let string = try? container.decode(String.self) {
@@ -34,11 +43,16 @@ nonisolated indirect enum JSONValue: Hashable, Sendable, Codable {
         case .null: try container.encodeNil()
         case .bool(let bool): try container.encode(bool)
         case .number(let number): try container.encode(number)
+        case .integer(let integer): try container.encode(integer)
+        case .unsignedInteger(let integer): try container.encode(integer)
         case .string(let string): try container.encode(string)
         case .array(let array): try container.encode(array)
         case .object(let object): try container.encode(object)
         }
     }
+
+    /// 2^53: every integer up to here is exact as a `Double`.
+    private static let largestExactDoubleInteger: UInt64 = 1 << 53
 
     /// Re-reads already-encoded JSON bytes as a value.
     init(data: Data) throws {

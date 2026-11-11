@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import Foundation
 import RiftboundRecognizer
 import Synchronization
@@ -65,6 +66,10 @@ nonisolated final class CaptureEngine: CameraOperating, @unchecked Sendable {
     private var inFlight: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
     #if os(macOS)
     private var chosenDeviceID: CameraDevice.ID?
+    #else
+    /// The small frames the iPhone sends a Mac while it is its camera (ADR-004).
+    private var previewOutput: AVCaptureVideoDataOutput?
+    private var previewEncoder: PreviewFrameEncoder?
     #endif
     /// How photos are turned to match the preview and brightened for the
     /// camera in use; read when a photo arrives.
@@ -339,3 +344,112 @@ nonisolated private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCa
         continuation.resume(returning: data)
     }
 }
+
+#if os(iOS)
+/// The iPhone app as the Mac's camera (ADR-004): what the camera gives, and
+/// small frames for the Mac's viewfinder.
+nonisolated extension CaptureEngine {
+    /// The size photos come out at, upright: the photo connection turns them
+    /// a quarter-turn. `nil` before the camera has opened.
+    func uprightPhotoSize() async -> PixelSize? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                let dimensions = self.photoOutput.maxPhotoDimensions
+                guard dimensions.width > 0, dimensions.height > 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let short = Int(min(dimensions.width, dimensions.height))
+                let long = Int(max(dimensions.width, dimensions.height))
+                continuation.resume(returning: PixelSize(width: short, height: long))
+            }
+        }
+    }
+
+    func hasTorch() async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: self.input?.device.hasTorch ?? false) }
+        }
+    }
+
+    /// JPEG frames at most `maxPixelSize` on the long side, one per
+    /// `interval` at most, upright like the photos. The video output is
+    /// attached while the stream is read and removed when it ends.
+    func previewFrames(maxPixelSize: Int, interval: Duration) async -> AsyncStream<Data> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Data.self, bufferingPolicy: .bufferingNewest(1))
+        let encoder = PreviewFrameEncoder(maxPixelSize: maxPixelSize, interval: interval, sink: continuation)
+        await withCheckedContinuation { (attached: CheckedContinuation<Void, Never>) in
+            queue.async {
+                self.attachPreview(encoder)
+                attached.resume()
+            }
+        }
+        continuation.onTermination = { [weak self] _ in
+            self?.queue.async { self?.detachPreview(encoder) }
+        }
+        return stream
+    }
+
+    /// Queue-only.
+    private func attachPreview(_ encoder: PreviewFrameEncoder) {
+        if previewOutput == nil {
+            let output = AVCaptureVideoDataOutput()
+            output.alwaysDiscardsLateVideoFrames = true
+            output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            session.beginConfiguration()
+            if session.canAddOutput(output) {
+                session.addOutput(output)
+            }
+            session.commitConfiguration()
+            if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
+            }
+            previewOutput = output
+        }
+        previewEncoder = encoder
+        previewOutput?.setSampleBufferDelegate(encoder, queue: encoder.queue)
+    }
+
+    /// Queue-only. A newer stream's encoder is left alone.
+    private func detachPreview(_ encoder: PreviewFrameEncoder) {
+        guard previewEncoder === encoder, let output = previewOutput else { return }
+        output.setSampleBufferDelegate(nil, queue: nil)
+        session.beginConfiguration()
+        session.removeOutput(output)
+        session.commitConfiguration()
+        previewOutput = nil
+        previewEncoder = nil
+    }
+}
+
+/// Turns camera frames into small JPEGs, no more often than `interval`.
+///
+/// AVFoundation calls the delegate on `queue` only, one frame at a time, and
+/// `lastSent` and the Core Image context are touched nowhere else. That is
+/// the justification for `@unchecked Sendable`.
+nonisolated final class PreviewFrameEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    let queue = DispatchQueue(label: "com.nsluke.RiftboundScanner.previewFrames")
+    private let maxPixelSize: Int
+    private let interval: TimeInterval
+    private let sink: AsyncStream<Data>.Continuation
+    private let context = CIContext()
+    private var lastSent: TimeInterval = 0
+
+    init(maxPixelSize: Int, interval: Duration, sink: AsyncStream<Data>.Continuation) {
+        self.maxPixelSize = maxPixelSize
+        self.interval = interval.seconds
+        self.sink = sink
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastSent >= interval, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        lastSent = now
+        let frame = CIImage(cvPixelBuffer: pixels)
+        let scale = min(1, CGFloat(maxPixelSize) / max(frame.extent.width, frame.extent.height))
+        let scaled = frame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        guard let image = context.createCGImage(scaled, from: scaled.extent), let jpeg = try? ImageFile.encode(image, as: .jpeg(quality: 0.5)) else { return }
+        sink.yield(jpeg)
+    }
+}
+#endif

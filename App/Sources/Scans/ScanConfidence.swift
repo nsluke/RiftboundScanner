@@ -165,10 +165,14 @@ nonisolated enum ReviewKind: Hashable, Sendable {
     case possibleDuplicate
     /// Nothing in the index resembled the photo (`ScanTier.unknown`); a `human` label.
     case unknown
+    /// Opened from the batch's screen without needing a look: a confident
+    /// scan, or one with a verdict already. A `human` label, which
+    /// supersedes any verdict it had.
+    case opened
 
     var source: DecisionSource {
         switch self {
-        case .uncertain, .pickPrinting, .possibleDuplicate, .unknown: .human
+        case .uncertain, .pickPrinting, .possibleDuplicate, .unknown, .opened: .human
         case .audit: .audit
         case .spotCheck: .spotCheck
         }

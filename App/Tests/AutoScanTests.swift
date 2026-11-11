@@ -179,6 +179,17 @@ struct AutoScanTests {
         #expect(model.records.count == 1)
     }
 
+    @Test func aFeedThatNeverReportsAlsoEndsTheRunAsAnEmptyHopper() async {
+        let feeder = StubFeeder(script: [.fed, .failed(.timedOut)])
+        let model = makeModel(feeder: feeder)
+        await model.start()
+        model.connectFeeder()
+        model.startAutoScan()
+        await model.autoScanTask?.value
+
+        #expect(model.autoScan == .ended(.init(fed: 1, identified: 1), reason: .hopperEmpty))
+    }
+
     @Test func recognitionFailureStopsFeedingAndDiscardsTheQueue() async {
         let feeder = StubFeeder(script: [.fed, .fed, .fed, .fed, .fed])
         let model = makeModel(feeder: feeder, identifier: StubIdentifier(outcome: .failure(StubFailure())))

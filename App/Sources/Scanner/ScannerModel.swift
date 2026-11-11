@@ -13,6 +13,7 @@ nonisolated enum ScanProblem: Error, Hashable {
         switch error {
         case let problem as ScanProblem: self = problem
         case let cameraError as CameraError: self = .camera(cameraError.message)
+        case let remote as RemoteCameraFailure: self = .camera(remote.message)
         case is PhotoDecoder.Failure: self = .decoding
         default: self = .recognition(String(describing: error))
         }
@@ -97,13 +98,12 @@ final class ScannerModel {
         case failed(ScanProblem)
     }
 
-    /// A scan awaiting the user's verdict; nothing is written until they give one.
+    /// A photo just taken by hand, already saved as a pending scan, while the
+    /// user looks at it in the same one-at-a-time view as every other scan.
     struct PendingScan: Identifiable {
         let record: ScanRecord
         let photo: CGImage
         let rectified: CGImage
-        let photoData: Data
-        let rectifiedData: Data
 
         var id: ScanRecord.ID { record.id }
     }
@@ -282,17 +282,35 @@ final class ScannerModel {
         if batch == nil {
             await loadLatestBatch()
         }
+        // The screen calls this from `.task(id:)`, which cancels the call for
+        // a source that has since changed but cannot stop it. Loading sets
+        // `batch` before reading the records, so the newer call skips the
+        // load and brings the camera up first; a stale `.searching` finishing
+        // afterwards would put a running camera back to "Starting…".
+        guard !Task.isCancelled else { return }
         switch source {
         case .searching:
             if cameraState != .denied {
                 cameraState = .starting
             }
-        case .using:
+        case .using(let device):
             await start()
+            takeFeederFromIPhone(for: device)
         case .none:
             await cameraWentAway(.noCamera, reason: .cameraDisconnected(String(localized: "The camera")))
         case .lost(let device):
             await cameraWentAway(.disconnected(device.name), reason: .cameraDisconnected(device.name))
+        }
+    }
+
+    /// When the iPhone app becomes the camera, the phone has just let go of
+    /// the feeder (`handFeederToMac`), so the Mac connects to it. The driver
+    /// keeps looking until the phone's link is down.
+    private func takeFeederFromIPhone(for device: CameraDevice) {
+        guard device.kind == .iPhoneApp else { return }
+        switch feeder.state {
+        case .idle, .failed: connectFeeder()
+        case .scanning, .connecting, .ready, .feeding: break
         }
     }
 
@@ -335,16 +353,22 @@ final class ScannerModel {
             let (captured, image) = try await capturePhoto()
             phase = .recognizing(image)
             let identified = try await identify(captured, decoded: image)
-            phase = .reviewing(PendingScan(
-                record: identified.record,
-                photo: image,
-                rectified: identified.rectified,
-                photoData: captured.jpeg,
-                rectifiedData: identified.rectifiedData
-            ))
+            // Saved pending at once, as a fed card is: the view it opens in
+            // reads and decides stored scans, and a skipped one stays in the
+            // batch to review later.
+            try await store.append(identified.record, photo: captured.jpeg, rectified: identified.rectifiedData)
+            records.append(identified.record)
+            phase = .reviewing(PendingScan(record: identified.record, photo: image, rectified: identified.rectified))
         } catch {
-            phase = .failed(ScanProblem(error))
+            phase = .failed(error is ScanStoreError ? .storage(String(describing: error)) : ScanProblem(error))
         }
+    }
+
+    /// The view the photo just taken opens in: the review queue's, on that
+    /// one scan, with the batch's rule. `nil` without a batch.
+    func review(of pending: PendingScan) -> ReviewQueueModel? {
+        guard let batch else { return nil }
+        return ReviewQueueModel(batch: batch, store: store, directory: directory, vault: vault, rule: confidenceRule(), mode: .browse(ids: [pending.id], start: pending.id))
     }
 
     /// A photo that has been taken and cropped but not yet identified. Holds
@@ -429,6 +453,13 @@ final class ScannerModel {
     func disconnectFeeder() {
         stopAutoScan()
         feeder.disconnect()
+    }
+
+    /// Lets go of the feeder so the Mac can take it (ADR-004): a Bluetooth
+    /// accessory takes one connection at a time, and stops advertising while
+    /// this phone holds it. Explicit, so the driver does not reconnect.
+    func handFeederToMac() {
+        disconnectFeeder()
     }
 
     /// Feeds, photographs and saves cards (verdict pending) until the user
@@ -525,7 +556,7 @@ final class ScannerModel {
                 try await feeder.feedOneCard()
             } catch is CancellationError {
                 return .stoppedByUser
-            } catch FeederError.timedOut {
+            } catch FeederError.hopperEmpty, FeederError.timedOut {
                 return .hopperEmpty
             } catch let error as FeederError {
                 return .feederFailed(error)
@@ -588,23 +619,37 @@ final class ScannerModel {
 
     /// Saves the pending scan, then records the user's verdict as a `human`
     /// decision through the store, the one path every verdict takes.
-    func resolve(_ verdict: Verdict) async {
+    /// Back to the camera once the photo just taken has been looked at:
+    /// picks up whatever its view decided. Skipped, it stays pending in the
+    /// batch; deleted, it leaves the scanner's list.
+    func finishReviewing() async {
         guard case .reviewing(let pending) = phase else { return }
+        phase = .idle
         do {
-            try await store.append(pending.record, photo: pending.photoData, rectified: pending.rectifiedData)
-            let decided = try await store.decide(pending.record.id, in: pending.record.batchID, DecisionInput(verdict, source: .human))
-            records.append(decided)
-            savedVerdictCount += 1
-            phase = .idle
+            guard let stored = try await store.records(in: pending.record.batchID).first(where: { $0.id == pending.id }) else { return }
+            if stored.verdict == .voided {
+                records.removeAll { $0.id == stored.id }
+            } else {
+                records = records.map { $0.id == stored.id ? stored : $0 }
+                if stored.verdict != .pending {
+                    savedVerdictCount += 1
+                }
+            }
         } catch {
             storageProblem = .storage(String(describing: error))
         }
     }
 
-    /// Drops the pending scan without saving it.
-    func retake() {
-        if case .reviewing = phase {
-            phase = .idle
+    /// Takes the photo just taken back out of the batch, with the `voided`
+    /// decision Delete writes, and goes back to the camera.
+    func retake() async {
+        guard case .reviewing(let pending) = phase else { return }
+        phase = .idle
+        records.removeAll { $0.id == pending.id }
+        do {
+            _ = try await store.decide(pending.id, in: pending.record.batchID, DecisionInput(.voided, source: .human))
+        } catch {
+            storageProblem = .storage(String(describing: error))
         }
     }
 
@@ -640,7 +685,8 @@ final class ScannerModel {
         do {
             if let latest = try await store.batches().first {
                 batch = latest
-                records = try await store.records(in: latest.id)
+                // Deleted scans are out of the batch, as a retake leaves it.
+                records = try await store.records(in: latest.id).filter { $0.verdict != .voided }
             } else {
                 try await createBatch(.calibration(label: ""))
             }

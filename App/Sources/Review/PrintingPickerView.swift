@@ -108,11 +108,14 @@ struct FinishToggle: View {
                         Text(finish.label)
                             .font(.footnote.weight(.semibold))
                             .padding(.horizontal, 14)
-                            .frame(minHeight: 36)
-                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: Self.height)
+                            .frame(maxWidth: Self.maxWidth)
                             .background(isSelected ? Theme.amber : Theme.surface, in: Capsule())
                             .overlay(Capsule().stroke(isSelected ? Theme.amber : Theme.hairline, lineWidth: 1))
+                            .contentShape(Capsule())
                     }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(finish.key, modifiers: .option)
                     .foregroundStyle(isSelected ? Theme.ground : Theme.text)
                     .accessibilityLabel(finish.label)
                     .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -127,6 +130,26 @@ struct FinishToggle: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Finish")
+    }
+
+    #if os(macOS)
+    /// Beside the verdict buttons in a side panel, a pair of small chips
+    /// (⌥N, ⌥F) rather than a full-width control that outweighs them.
+    private static let height: CGFloat = 26
+    private static let maxWidth: CGFloat? = nil
+    #else
+    private static let height: CGFloat = 36
+    private static let maxWidth: CGFloat? = .infinity
+    #endif
+}
+
+private extension Finish {
+    /// ⌥ plus this key picks the finish on the Mac.
+    var key: KeyEquivalent {
+        switch self {
+        case .normal: "n"
+        case .foil: "f"
+        }
     }
 }
 

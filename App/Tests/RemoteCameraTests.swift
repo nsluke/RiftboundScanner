@@ -349,6 +349,27 @@ nonisolated struct FakePhoneConnector: RemoteCameraConnecting {
     }
 }
 
+/// Counts how many links were opened.
+nonisolated final class CountingConnector: RemoteCameraConnecting {
+    let inner: FakePhoneConnector
+    private let count = Mutex(0)
+
+    init(inner: FakePhoneConnector) {
+        self.inner = inner
+    }
+
+    var connections: Int { count.withLock { $0 } }
+
+    func handles(_ id: CameraDevice.ID) -> Bool {
+        inner.handles(id)
+    }
+
+    func connect(_ id: CameraDevice.ID) async throws -> any RemoteCameraChannel {
+        count.withLock { $0 += 1 }
+        return try await inner.connect(id)
+    }
+}
+
 @Suite("The Mac's camera")
 struct MacCameraTests {
     private let phone = RemoteCameraBrowser.device(named: "Lukes-iPhone")
@@ -381,6 +402,19 @@ struct MacCameraTests {
         #expect(await local.calls == ["use iphone-a", "requestAccess", "start", "capture"])
     }
 
+    @Test func switchesRunOneAtATimeAndAnOpenLinkIsKept() async throws {
+        let connector = CountingConnector(inner: FakePhoneConnector(source: FakeRemoteSource()))
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac")
+
+        async let first = camera.use(phone.id)
+        async let second = camera.use(phone.id)
+        let sizes = await [first, second]
+
+        #expect(sizes == [PixelSize(width: 3024, height: 4032), PixelSize(width: 3024, height: 4032)])
+        #expect(connector.connections == 1, "the second switch found the link open and kept it")
+        #expect(try await camera.capturePhoto() == Data("photo-1".utf8))
+    }
+
     @Test func anUnreachablePhoneIsReportedWhenTheScannerStarts() async throws {
         var connector = FakePhoneConnector(source: FakeRemoteSource())
         connector.reachable = false
@@ -398,6 +432,9 @@ struct MacCameraTests {
         #expect(phone.name.contains("Lukes-iPhone"))
         #expect(CameraSelection.preferred(among: [.builtIn, .iPhone, phone], saved: nil) == phone)
         #expect(CameraSelection.source(after: .using(.iPhone), devices: [.iPhone, phone], saved: nil) == .using(phone), "it takes over from Continuity Camera when it appears")
+        #expect(CameraSelection.source(after: .lost(.iPhone), devices: [.builtIn, phone], saved: CameraDevice.iPhone.id) == .using(phone), "Continuity Camera drops out when the app takes the phone's camera; the app takes over")
+        #expect(CameraSelection.source(after: .using(.builtIn), devices: [.builtIn, phone], saved: CameraDevice.builtIn.id) == .using(.builtIn), "a camera picked by hand and still there is kept")
+        #expect(CameraSelection.source(after: .lost(phone), devices: [.iPhone], saved: nil) == .lost(phone), "closing Camera for Mac waits for it rather than switching lenses mid-run")
     }
 }
 #endif

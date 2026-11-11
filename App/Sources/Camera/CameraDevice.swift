@@ -91,7 +91,8 @@ nonisolated enum CameraSelection {
     ///
     /// - A camera in use that disconnects becomes `lost`, never a silent
     ///   switch: the next photo would come from a camera aimed elsewhere.
-    /// - A lost camera that reconnects is used again; until then it stays lost.
+    /// - A lost camera that reconnects is used again; until then it stays
+    ///   lost, unless the iPhone app appears as a camera (ADR-004).
     /// - A camera the user did not save gives way when the saved camera
     ///   appears, or when a more preferred kind does (an iPhone that joins
     ///   after launch replaces the built-in camera picked in the meantime).
@@ -108,7 +109,17 @@ nonisolated enum CameraSelection {
             }
             return best.id == saved || best.kind < inUse.kind ? .using(best) : .using(connected)
         case .lost(let missing):
-            return devices.first(where: { $0.id == missing.id }).map(CameraSource.using) ?? .lost(missing)
+            if let back = devices.first(where: { $0.id == missing.id }) {
+                return .using(back)
+            }
+            // Continuity Camera drops out exactly when the iPhone app takes
+            // the phone's camera for the Mac (ADR-004): the same phone on the
+            // same stand, which only advertises because someone opened
+            // Camera for Mac for this.
+            if let app = devices.first(where: { $0.kind == .iPhoneApp }) {
+                return .using(app)
+            }
+            return .lost(missing)
         }
     }
 }

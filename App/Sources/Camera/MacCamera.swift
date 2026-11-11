@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import RiftboundRecognizer
+import os
 
 /// The camera the Mac's scan page photographs through: the Mac's own capture
 /// engine (Continuity Camera, USB, built-in) or the iPhone app over the
@@ -11,7 +12,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
 
     private enum Route {
         case local
-        case remote(RemoteCameraSession)
+        case remote(RemoteCameraSession, device: CameraDevice.ID, info: RemoteCameraInfo)
         /// The iPhone app was chosen but could not be reached.
         case remoteUnavailable(RemoteCameraFailure)
     }
@@ -22,6 +23,10 @@ actor MacCamera: CameraOperating, CameraSwitching {
     private let makeSession: @Sendable (any RemoteCameraChannel) -> RemoteCameraSession
     private var route = Route.local
     private var forwarding: Task<Void, Never>?
+    /// The switch in progress. Switches run one after another: two at once
+    /// would open two links, and the phone keeps only the newer.
+    private var switching: Task<PixelSize?, Never>?
+    private let logger = Logger(subsystem: "com.nsluke.RiftboundScanner", category: "remoteCamera")
 
     /// The iPhone app's live frames as JPEGs, for the viewfinder; empty while
     /// a camera on this Mac is in use, whose preview is the capture session's.
@@ -44,6 +49,20 @@ actor MacCamera: CameraOperating, CameraSwitching {
     // MARK: - CameraSwitching
 
     func use(_ device: CameraDevice.ID) async -> PixelSize? {
+        let previous = switching
+        let next = Task {
+            _ = await previous?.value
+            return await self.switchCamera(to: device)
+        }
+        switching = next
+        return await next.value
+    }
+
+    private func switchCamera(to device: CameraDevice.ID) async -> PixelSize? {
+        // The same phone, still linked: nothing to reopen.
+        if case .remote(let session, let current, let info) = route, current == device, await session.isOpen {
+            return info.photoSize
+        }
         await closeRemote()
         guard remote.handles(device) else {
             route = .local
@@ -55,10 +74,12 @@ actor MacCamera: CameraOperating, CameraSwitching {
         do {
             let session = makeSession(try await remote.connect(device))
             let info = try await session.open(name: hostName)
-            route = .remote(session)
+            route = .remote(session, device: device, info: info)
             forward(session.previews)
+            logger.notice("Using \(info.deviceName, privacy: .public)'s Riftbound app: photos \(info.photoSize.width)×\(info.photoSize.height), torch \(info.hasTorch)")
             return info.photoSize
         } catch {
+            logger.error("Could not use \(device.rawValue, privacy: .public): \(String(describing: error), privacy: .public)")
             route = .remoteUnavailable(error as? RemoteCameraFailure ?? .closed)
             return nil
         }
@@ -84,7 +105,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
         switch route {
         case .local:
             try await local.start()
-        case .remote(let session):
+        case .remote(let session, _, _):
             guard await session.isOpen else { throw RemoteCameraFailure.closed }
         case .remoteUnavailable(let failure):
             throw failure
@@ -102,7 +123,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
     func setTorch(_ isOn: Bool) async throws {
         switch route {
         case .local: try await local.setTorch(isOn)
-        case .remote(let session): try await session.setTorch(isOn)
+        case .remote(let session, _, _): try await session.setTorch(isOn)
         case .remoteUnavailable(let failure): throw failure
         }
     }
@@ -110,7 +131,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
     func capturePhoto() async throws -> Data {
         switch route {
         case .local: try await local.capturePhoto()
-        case .remote(let session): try await session.capture()
+        case .remote(let session, _, _): try await session.capture()
         case .remoteUnavailable(let failure): throw failure
         }
     }
@@ -129,7 +150,7 @@ actor MacCamera: CameraOperating, CameraSwitching {
     private func closeRemote() async {
         forwarding?.cancel()
         forwarding = nil
-        if case .remote(let session) = route {
+        if case .remote(let session, _, _) = route {
             await session.close()
         }
     }

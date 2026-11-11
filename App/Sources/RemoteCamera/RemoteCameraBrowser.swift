@@ -2,6 +2,7 @@ import Foundation
 import Synchronization
 #if os(macOS)
 import Network
+import os
 
 /// Opens a link to an iPhone app the picker lists as a camera.
 nonisolated protocol RemoteCameraConnecting: Sendable {
@@ -18,6 +19,7 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
     static let idPrefix = "riftcam:"
 
     private let endpoints = Mutex<[CameraDevice.ID: NWEndpoint]>([:])
+    private let logger = Logger(subsystem: "com.nsluke.RiftboundScanner", category: "remoteCamera")
 
     init() {}
 
@@ -38,13 +40,21 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
                     devices.append(device)
                 }
                 self?.endpoints.withLock { $0 = found }
+                self?.logger.notice("iPhone apps found: \(devices.map(\.name), privacy: .public)")
                 continuation.yield(devices.sorted { $0.name < $1.name })
             }
-            browser.stateUpdateHandler = { state in
+            browser.stateUpdateHandler = { [weak self] state in
                 switch state {
-                case .ready: continuation.yield([])
-                case .failed, .cancelled: continuation.yield([])
-                default: break
+                case .ready:
+                    continuation.yield([])
+                case .waiting(let error), .failed(let error):
+                    // Local Network access refused lands here as a policy error.
+                    self?.logger.error("Looking for iPhone apps stopped: \(String(describing: error), privacy: .public)")
+                    continuation.yield([])
+                case .cancelled:
+                    continuation.yield([])
+                default:
+                    break
                 }
             }
             continuation.onTermination = { _ in browser.cancel() }

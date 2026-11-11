@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import RiftboundRecognizer
 import Synchronization
 import Testing
@@ -335,7 +336,7 @@ nonisolated struct FakePhoneConnector: RemoteCameraConnecting {
     var reachable = true
 
     func handles(_ id: CameraDevice.ID) -> Bool {
-        id.rawValue.hasPrefix(RemoteCameraBrowser.idPrefix)
+        id.isIPhoneApp
     }
 
     func connect(_ id: CameraDevice.ID) async throws -> any RemoteCameraChannel {
@@ -558,5 +559,11 @@ struct CameraForMacModelTests {
         }
         #expect(try await second.capture() == Data("photo-1".utf8), "the newer link keeps working")
         running.cancel()
+    }
+
+    @Test func aBlockedListenerSaysLocalNetworkIsOff() {
+        let denied = NWError.dns(DNSServiceErrorType(kDNSServiceErr_PolicyDenied))
+        #expect(RemoteCameraListener.problem(denied).contains("Local Network"))
+        #expect(!RemoteCameraListener.problem(.posix(.ENETDOWN)).contains("Local Network"))
     }
 }

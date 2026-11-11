@@ -16,10 +16,14 @@ nonisolated final class NetworkRemoteCameraChannel: RemoteCameraChannel, @unchec
     private let continuation: AsyncThrowingStream<RemoteCameraFrame, any Error>.Continuation
     private var decoder = RemoteCameraFrameCodec.Decoder()
 
-    /// Both ends use plain TCP on a network they share (Wi-Fi, or the USB
-    /// link when the phone is plugged into the Mac); peer-to-peer Wi-Fi is off.
+    /// Both ends use TCP over any network they share (Wi-Fi, or the USB link
+    /// when the phone is plugged into the Mac) and over peer-to-peer Wi-Fi,
+    /// which is how Continuity Camera reaches the phone: the phone need not
+    /// be on the Mac's Wi-Fi network, only have Wi-Fi on.
     static var parameters: NWParameters {
-        NWParameters.tcp
+        let parameters = NWParameters.tcp
+        parameters.includePeerToPeer = true
+        return parameters
     }
 
     /// Takes over `connection`, which may not be started yet.

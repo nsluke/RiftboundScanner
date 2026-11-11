@@ -19,6 +19,14 @@ struct CameraSelectionTests {
         #expect(CameraSelection.preferred(among: [.iPhone, .webcam], saved: CameraDevice.builtIn.id) == .iPhone, "a saved camera that is gone falls back to preference order")
     }
 
+    @Test func aSavedIPhoneAppIsWaitedForWithoutTakingAnIPhoneThroughContinuity() {
+        let app = CameraDevice.phoneApp
+        #expect(CameraSelection.preferred(among: [.iPhone, .builtIn], saved: app.id) == .builtIn, "Continuity Camera would push the app off the phone's screen")
+        #expect(CameraSelection.source(after: .searching, devices: [.iPhone, .builtIn], saved: app.id) == .using(.builtIn))
+        #expect(CameraSelection.source(after: .using(.builtIn), devices: [.iPhone, .builtIn, app], saved: app.id) == .using(app), "the app takes over once it advertises")
+        #expect(CameraSelection.preferred(among: [.iPhone, .builtIn], saved: CameraDevice.webcam.id) == .iPhone, "only a saved iPhone app holds Continuity Camera back")
+    }
+
     @Test func startsWithThePreferredCameraOrNone() {
         #expect(CameraSelection.source(after: .searching, devices: [.builtIn, .iPhone], saved: nil) == .using(.iPhone))
         #expect(CameraSelection.source(after: .searching, devices: [], saved: nil) == CameraSource.none)

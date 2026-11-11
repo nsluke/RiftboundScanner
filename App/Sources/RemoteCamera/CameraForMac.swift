@@ -66,9 +66,15 @@ nonisolated struct RemoteCameraListener: RemoteCameraAdvertising {
                 }
             }
             listener.stateUpdateHandler = { state in
-                if case .failed(let error) = state {
-                    continuation.yield(.failed(error.localizedDescription))
+                switch state {
+                case .failed(let error):
+                    continuation.yield(.failed(Self.problem(error)))
                     continuation.finish()
+                case .waiting(let error):
+                    // Not advertised yet; it carries on by itself once allowed.
+                    continuation.yield(.failed(Self.problem(error)))
+                default:
+                    break
                 }
             }
             listener.newConnectionHandler = { connection in
@@ -77,6 +83,14 @@ nonisolated struct RemoteCameraListener: RemoteCameraAdvertising {
             continuation.onTermination = { _ in listener.cancel() }
             listener.start(queue: DispatchQueue(label: "com.nsluke.RiftboundScanner.remoteCameraListener"))
         }
+    }
+
+    /// Why the service is not advertised, in words the screen can show.
+    static func problem(_ error: NWError) -> String {
+        if case .dns(let code) = error, code == DNSServiceErrorType(kDNSServiceErr_PolicyDenied) {
+            return String(localized: "Local Network access is off, so the Mac can't find this iPhone. Turn on Riftbound Scanner in Settings › Privacy & Security › Local Network.")
+        }
+        return error.localizedDescription
     }
 }
 

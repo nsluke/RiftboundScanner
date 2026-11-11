@@ -16,15 +16,13 @@ nonisolated protocol RemoteCameraConnecting: Sendable {
 /// the one the picker chooses. A phone that closes the screen drops off the
 /// list, which the camera source treats as a camera that went away.
 nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConnecting {
-    static let idPrefix = "riftcam:"
-
     private let endpoints = Mutex<[CameraDevice.ID: NWEndpoint]>([:])
     private let logger = Logger(subsystem: "com.nsluke.RiftboundScanner", category: "remoteCamera")
 
     init() {}
 
     func handles(_ id: CameraDevice.ID) -> Bool {
-        id.rawValue.hasPrefix(Self.idPrefix)
+        id.isIPhoneApp
     }
 
     func devices() -> AsyncStream<[CameraDevice]> {
@@ -42,17 +40,17 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
         guard !loop.isStopped else { return }
         let browser = NWBrowser(for: .bonjour(type: RemoteCameraWire.serviceType, domain: nil), using: NetworkRemoteCameraChannel.parameters)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            var found: [CameraDevice.ID: NWEndpoint] = [:]
-            var devices: [CameraDevice] = []
+            // Keyed by name: a phone seen on Wi-Fi and peer-to-peer is one camera.
+            var found: [CameraDevice.ID: (device: CameraDevice, endpoint: NWEndpoint)] = [:]
             for result in results {
                 guard case .service(let name, _, _, _) = result.endpoint else { continue }
                 let device = Self.device(named: name)
-                found[device.id] = result.endpoint
-                devices.append(device)
+                found[device.id] = (device, result.endpoint)
             }
-            self?.endpoints.withLock { $0 = found }
+            let devices = found.values.map(\.device).sorted { $0.name < $1.name }
+            self?.endpoints.withLock { $0 = found.mapValues(\.endpoint) }
             self?.logger.notice("iPhone apps found: \(devices.map(\.name), privacy: .public)")
-            continuation.yield(devices.sorted { $0.name < $1.name })
+            continuation.yield(devices)
         }
         browser.stateUpdateHandler = { [weak self] state in
             switch state {
@@ -85,7 +83,7 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
     /// How a phone's service appears in the picker; the torch is always there.
     static func device(named service: String) -> CameraDevice {
         CameraDevice(
-            id: CameraDevice.ID(rawValue: idPrefix + service),
+            id: CameraDevice.ID(rawValue: CameraDevice.ID.iPhoneAppPrefix + service),
             name: String(localized: "\(service) (Riftbound app)"),
             kind: .iPhoneApp,
             hasTorch: true

@@ -50,6 +50,16 @@ nonisolated struct CameraDevice: Hashable, Sendable, Identifiable {
     }
 }
 
+nonisolated extension CameraDevice.ID {
+    /// Starts the id of every iPhone app found on the network (ADR-004).
+    static let iPhoneAppPrefix = "riftcam:"
+
+    /// Whether this names an iPhone app rather than a camera on the Mac.
+    var isIPhoneApp: Bool {
+        rawValue.hasPrefix(Self.iPhoneAppPrefix)
+    }
+}
+
 /// Which camera the scanner is using as cameras come and go.
 nonisolated enum CameraSource: Hashable, Sendable {
     /// Discovery has not reported yet.
@@ -78,11 +88,17 @@ nonisolated enum CameraSelection {
     /// The camera to use when the choice is open: the saved one while it is
     /// connected, otherwise the first iPhone, then an external camera, then
     /// the built-in one. Ties keep discovery order.
+    ///
+    /// While a saved iPhone app is away, no iPhone is taken through Continuity
+    /// Camera: that takes the phone's camera and pushes the app's Camera for
+    /// Mac screen aside, so the app could never come back (ADR-004). Picking
+    /// a Continuity Camera iPhone from the menu still works.
     static func preferred(among devices: [CameraDevice], saved: CameraDevice.ID?) -> CameraDevice? {
         if let saved, let device = devices.first(where: { $0.id == saved }) {
             return device
         }
-        return devices.enumerated()
+        let candidates = saved?.isIPhoneApp == true ? devices.filter { $0.kind != .continuity } : devices
+        return candidates.enumerated()
             .min { ($0.element.kind, $0.offset) < ($1.element.kind, $1.offset) }?
             .element
     }

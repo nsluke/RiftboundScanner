@@ -138,6 +138,21 @@ struct ScannerModelTests {
         #expect(model.isBusy == false && model.problem == nil, "the camera is free for the next photo")
     }
 
+    @Test func resumingABatchLeavesItsDeletedScansOut() async throws {
+        let store = InMemoryScanStore()
+        let batch = Fixtures.batch()
+        await store.save(batch)
+        try await store.append(Fixtures.record(batch: batch.id), photo: Data(), rectified: nil)
+        try await store.append(Fixtures.record(batch: batch.id, verdict: .voided), photo: Data(), rectified: nil)
+        let model = makeModel(store: store)
+
+        await model.start()
+
+        #expect(model.batch?.id == batch.id)
+        #expect(model.records.count == 1)
+        #expect(model.summary.total == 1, "the Scan tab's count leaves deleted scans out")
+    }
+
     @Test func retakeTakesThePhotoBackOutOfTheBatch() async throws {
         let store = InMemoryScanStore()
         let model = makeModel(store: store)

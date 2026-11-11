@@ -685,7 +685,8 @@ final class ScannerModel {
         do {
             if let latest = try await store.batches().first {
                 batch = latest
-                records = try await store.records(in: latest.id)
+                // Deleted scans are out of the batch, as a retake leaves it.
+                records = try await store.records(in: latest.id).filter { $0.verdict != .voided }
             } else {
                 try await createBatch(.calibration(label: ""))
             }

@@ -29,37 +29,52 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
 
     func devices() -> AsyncStream<[CameraDevice]> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let browser = NWBrowser(for: .bonjour(type: RemoteCameraWire.serviceType, domain: nil), using: NetworkRemoteCameraChannel.parameters)
-            browser.browseResultsChangedHandler = { [weak self] results, _ in
-                var found: [CameraDevice.ID: NWEndpoint] = [:]
-                var devices: [CameraDevice] = []
-                for result in results {
-                    guard case .service(let name, _, _, _) = result.endpoint else { continue }
-                    let device = Self.device(named: name)
-                    found[device.id] = result.endpoint
-                    devices.append(device)
-                }
-                self?.endpoints.withLock { $0 = found }
-                self?.logger.notice("iPhone apps found: \(devices.map(\.name), privacy: .public)")
-                continuation.yield(devices.sorted { $0.name < $1.name })
-            }
-            browser.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    continuation.yield([])
-                case .waiting(let error), .failed(let error):
-                    // Local Network access refused lands here as a policy error.
-                    self?.logger.error("Looking for iPhone apps stopped: \(String(describing: error), privacy: .public)")
-                    continuation.yield([])
-                case .cancelled:
-                    continuation.yield([])
-                default:
-                    break
-                }
-            }
-            continuation.onTermination = { _ in browser.cancel() }
-            browser.start(queue: DispatchQueue(label: "com.nsluke.RiftboundScanner.remoteCameraBrowser"))
+            let loop = BrowseLoop()
+            continuation.onTermination = { _ in loop.stop() }
+            browse(into: continuation, loop: loop)
         }
+    }
+
+    /// Starts one browser. A failed browse is replaced after a pause rather
+    /// than left failed: a Local Network permission granted while the app
+    /// runs, or a network that comes back, only counts for a new browse.
+    private func browse(into continuation: AsyncStream<[CameraDevice]>.Continuation, loop: BrowseLoop) {
+        guard !loop.isStopped else { return }
+        let browser = NWBrowser(for: .bonjour(type: RemoteCameraWire.serviceType, domain: nil), using: NetworkRemoteCameraChannel.parameters)
+        browser.browseResultsChangedHandler = { [weak self] results, _ in
+            var found: [CameraDevice.ID: NWEndpoint] = [:]
+            var devices: [CameraDevice] = []
+            for result in results {
+                guard case .service(let name, _, _, _) = result.endpoint else { continue }
+                let device = Self.device(named: name)
+                found[device.id] = result.endpoint
+                devices.append(device)
+            }
+            self?.endpoints.withLock { $0 = found }
+            self?.logger.notice("iPhone apps found: \(devices.map(\.name), privacy: .public)")
+            continuation.yield(devices.sorted { $0.name < $1.name })
+        }
+        browser.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                continuation.yield([])
+            case .waiting(let error):
+                self?.logger.error("Looking for iPhone apps is waiting: \(String(describing: error), privacy: .public)")
+                continuation.yield([])
+            case .failed(let error):
+                self?.logger.error("Looking for iPhone apps failed, trying again: \(String(describing: error), privacy: .public)")
+                continuation.yield([])
+                browser.cancel()
+                loop.queue.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    self?.browse(into: continuation, loop: loop)
+                }
+            case .cancelled, .setup:
+                break
+            @unknown default:
+                break
+            }
+        }
+        loop.run(browser)
     }
 
     func connect(_ id: CameraDevice.ID) async throws -> any RemoteCameraChannel {
@@ -78,6 +93,26 @@ nonisolated final class RemoteCameraBrowser: CameraDiscovering, RemoteCameraConn
     }
 }
 
+/// The browser a discovery stream is running, and whether the stream ended.
+nonisolated private final class BrowseLoop: Sendable {
+    let queue = DispatchQueue(label: "com.nsluke.RiftboundScanner.remoteCameraBrowser")
+    private let current = Mutex<NWBrowser?>(nil)
+    private let stopped = Mutex(false)
+
+    var isStopped: Bool {
+        stopped.withLock { $0 }
+    }
+
+    func run(_ browser: NWBrowser) {
+        current.withLock { $0 = browser }
+        browser.start(queue: queue)
+    }
+
+    func stop() {
+        stopped.withLock { $0 = true }
+        current.withLock { $0?.cancel() }
+    }
+}
 #endif
 
 /// Several discoveries as one list: the Mac's own cameras beside the iPhone

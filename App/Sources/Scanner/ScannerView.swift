@@ -146,6 +146,7 @@ struct ScannerView: View {
     /// through this phone's close-focus lens (ADR-004).
     private var cameraForMacButton: some View {
         Button {
+            model.handFeederToMac()
             isServingMac = true
         } label: {
             Image(systemName: "macbook.and.iphone")

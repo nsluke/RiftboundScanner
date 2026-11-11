@@ -15,6 +15,7 @@ final class StubFeeder: FeederControlling {
 
     private(set) var state: FeederState
     private(set) var feedCount = 0
+    private(set) var connectCount = 0
     private(set) var stopCount = 0
     private(set) var disconnectCount = 0
     private var script: [FeedOutcome]
@@ -27,6 +28,7 @@ final class StubFeeder: FeederControlling {
     }
 
     func connect() {
+        connectCount += 1
         state = .ready(firmwareVersion: firmwareVersion)
     }
 

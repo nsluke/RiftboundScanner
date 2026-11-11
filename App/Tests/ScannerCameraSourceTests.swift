@@ -187,3 +187,58 @@ private actor GatedRecordsStore: ScanStoring {
     nonisolated func photoURL(for record: ScanRecord) -> URL { base.photoURL(for: record) }
     nonisolated func rectifiedURL(for record: ScanRecord) -> URL? { base.rectifiedURL(for: record) }
 }
+
+/// The feeder takes one Bluetooth connection at a time, so it changes hands
+/// with the camera (ADR-004): the phone lets go when it becomes the Mac's
+/// camera, and the Mac picks it up.
+@Suite("Feeder hand-off to the Mac")
+struct FeederHandOffTests {
+    private let phoneApp = CameraDevice(id: CameraDevice.ID(rawValue: "riftcam:Lukes-iPhone"), name: "Lukes-iPhone (Riftbound app)", kind: .iPhoneApp, hasTorch: true)
+
+    private func makeModel(feeder: StubFeeder) -> ScannerModel {
+        ScannerModel(
+            camera: RecordingCamera(),
+            feeder: feeder,
+            identifier: StubIdentifier(outcome: .success(Fixtures.result(cards: [Fixtures.vi, Fixtures.jinx]))),
+            store: InMemoryScanStore(),
+            vault: Fixtures.vault,
+            directory: Fixtures.directory,
+            makeBatch: Fixtures.makeBatch,
+            now: { Fixtures.epoch },
+            makeID: Fixtures.unsampledIDs,
+            duplicateGuard: .off,
+            settleDelay: .zero
+        )
+    }
+
+    @Test func thePhoneLetsGoOfTheFeederForTheMac() {
+        let feeder = StubFeeder(state: .ready(firmwareVersion: "0.1.5"))
+        let model = makeModel(feeder: feeder)
+
+        model.handFeederToMac()
+
+        #expect(feeder.disconnectCount == 1)
+        #expect(feeder.state == .idle)
+    }
+
+    @Test func theMacConnectsTheFeederWhenTheIPhoneAppBecomesItsCamera() async {
+        let feeder = StubFeeder()
+        let model = makeModel(feeder: feeder)
+
+        await model.follow(.using(phoneApp))
+
+        #expect(model.cameraState == .ready)
+        #expect(feeder.connectCount == 1)
+        await model.follow(.using(phoneApp))
+        #expect(feeder.connectCount == 1, "a feeder already connected is left alone")
+    }
+
+    @Test func anotherCameraLeavesTheFeederToTheUser() async {
+        let feeder = StubFeeder()
+        let model = makeModel(feeder: feeder)
+
+        await model.follow(.using(.iPhone))
+
+        #expect(feeder.connectCount == 0)
+    }
+}

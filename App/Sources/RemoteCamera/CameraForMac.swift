@@ -221,9 +221,9 @@ struct CameraForMacView: View {
         case .starting:
             String(localized: "The Mac will find this iPhone once the camera is running.")
         case .waiting(let name):
-            String(localized: "On the Mac, choose \(name) (Riftbound app) in the Scan tab's camera menu. Keep this screen open and the phone on the stand.")
+            String(localized: "The Mac switches to \(name) (Riftbound app) on its own and connects to the feeder, which this phone has let go of. Keep this screen open and the phone on the stand.")
         case .serving:
-            String(localized: "The Mac takes the photos and drives the feeder. Keep this screen open until the run is done.")
+            String(localized: "The Mac takes the photos and drives the feeder. Keep this screen open until the run is done; connect the feeder here again afterwards.")
         case .failed(let message):
             message
         }

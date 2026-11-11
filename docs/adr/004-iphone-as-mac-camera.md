@@ -15,7 +15,7 @@ The Mac scans through the iPhone over Continuity Camera, and Continuity Camera o
 
 ## Consequences
 
-- Both apps ask for Local Network access once, and both list `_riftcam._tcp` in `NSBonjourServices`. The link also allows peer-to-peer Wi-Fi, so it works without a shared network.
+- Both apps ask for Local Network access once, and both list `_riftcam._tcp` in `NSBonjourServices`. The phone and the Mac must share a network: a sandboxed Mac app's browse with peer-to-peer Wi-Fi fails with `NoAuth`, so it is off.
 - The iPhone must stay on the Camera for Mac screen with its screen on: iOS stops the camera of an app that leaves the foreground. Leaving the screen turns the torch off.
 - A photo is 3–5 MB; at Wi-Fi speeds it adds about a third of a second per card. A capture that gets no answer in 20 s fails the card rather than stalling the run.
 - Both apps must come from builds with the same wire version.

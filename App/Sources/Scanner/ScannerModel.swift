@@ -294,12 +294,24 @@ final class ScannerModel {
             if cameraState != .denied {
                 cameraState = .starting
             }
-        case .using:
+        case .using(let device):
             await start()
+            takeFeederFromIPhone(for: device)
         case .none:
             await cameraWentAway(.noCamera, reason: .cameraDisconnected(String(localized: "The camera")))
         case .lost(let device):
             await cameraWentAway(.disconnected(device.name), reason: .cameraDisconnected(device.name))
+        }
+    }
+
+    /// When the iPhone app becomes the camera, the phone has just let go of
+    /// the feeder (`handFeederToMac`), so the Mac connects to it. The driver
+    /// keeps looking until the phone's link is down.
+    private func takeFeederFromIPhone(for device: CameraDevice) {
+        guard device.kind == .iPhoneApp else { return }
+        switch feeder.state {
+        case .idle, .failed: connectFeeder()
+        case .scanning, .connecting, .ready, .feeding: break
         }
     }
 
@@ -436,6 +448,13 @@ final class ScannerModel {
     func disconnectFeeder() {
         stopAutoScan()
         feeder.disconnect()
+    }
+
+    /// Lets go of the feeder so the Mac can take it (ADR-004): a Bluetooth
+    /// accessory takes one connection at a time, and stops advertising while
+    /// this phone holds it. Explicit, so the driver does not reconnect.
+    func handFeederToMac() {
+        disconnectFeeder()
     }
 
     /// Feeds, photographs and saves cards (verdict pending) until the user

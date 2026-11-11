@@ -16,12 +16,10 @@ nonisolated final class NetworkRemoteCameraChannel: RemoteCameraChannel, @unchec
     private let continuation: AsyncThrowingStream<RemoteCameraFrame, any Error>.Continuation
     private var decoder = RemoteCameraFrameCodec.Decoder()
 
-    /// Both ends use these: TCP, peer-to-peer Wi-Fi allowed so the link works
-    /// without a shared network too.
+    /// Both ends use plain TCP on the network they share. Peer-to-peer Wi-Fi
+    /// is left off: a sandboxed Mac app's browse for it fails with `NoAuth`.
     static var parameters: NWParameters {
-        let parameters = NWParameters.tcp
-        parameters.includePeerToPeer = true
-        return parameters
+        NWParameters.tcp
     }
 
     /// Takes over `connection`, which may not be started yet.

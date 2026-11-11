@@ -20,8 +20,20 @@ nonisolated final class NetworkRemoteCameraChannel: RemoteCameraChannel, @unchec
     /// when the phone is plugged into the Mac) and over peer-to-peer Wi-Fi,
     /// which is how Continuity Camera reaches the phone: the phone need not
     /// be on the Mac's Wi-Fi network, only have Wi-Fi on.
+    ///
+    /// Keepalives find a phone that went away without closing the link: on
+    /// 10 Nov 2026 an app replaced by an install left the Mac holding an
+    /// "established" link over the USB network, showing a frozen picture.
+    /// After 2 s without a byte the Mac probes every second and gives up
+    /// after 3 unanswered probes; a live phone sends preview frames several
+    /// times a second, so it is never probed.
     static var parameters: NWParameters {
-        let parameters = NWParameters.tcp
+        let tcp = NWProtocolTCP.Options()
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 2
+        tcp.keepaliveInterval = 1
+        tcp.keepaliveCount = 3
+        let parameters = NWParameters(tls: nil, tcp: tcp)
         parameters.includePeerToPeer = true
         return parameters
     }

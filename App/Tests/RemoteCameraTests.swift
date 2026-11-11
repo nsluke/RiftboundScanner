@@ -376,6 +376,41 @@ nonisolated final class FlakyConnector: RemoteCameraConnecting {
     }
 }
 
+/// Serves one phone at a time and can drop its end of the link, as an app
+/// replaced by an install does, or stop answering.
+nonisolated final class DroppableConnector: RemoteCameraConnecting {
+    let source: FakeRemoteSource
+    private let state = Mutex<(phone: LoopbackChannel?, reachable: Bool)>((nil, true))
+
+    init(source: FakeRemoteSource) {
+        self.source = source
+    }
+
+    var isReachable: Bool {
+        get { state.withLock { $0.reachable } }
+        set { state.withLock { $0.reachable = newValue } }
+    }
+
+    func handles(_ id: CameraDevice.ID) -> Bool {
+        id.isIPhoneApp
+    }
+
+    func connect(_ id: CameraDevice.ID) async throws -> any RemoteCameraChannel {
+        guard isReachable else { throw RemoteCameraFailure.timedOut }
+        let (mac, phone) = LoopbackChannel.pair()
+        state.withLock { $0.phone = phone }
+        let source = source
+        Task {
+            await RemoteCameraHost(source: source, deviceName: "Lukes-iPhone").serve(phone) { _ in }
+        }
+        return mac
+    }
+
+    func dropLink() async {
+        await state.withLock { $0.phone }?.close()
+    }
+}
+
 /// Counts how many links were opened.
 nonisolated final class CountingConnector: RemoteCameraConnecting {
     let inner: FakePhoneConnector
@@ -471,6 +506,49 @@ struct MacCameraTests {
         try await camera.start()
 
         #expect(try await camera.capturePhoto() == Data("photo-1".utf8))
+    }
+
+    /// A phone that goes away without the Mac closing the link is noticed:
+    /// the viewfinder is cleared, photos fail, and the phone is tried again
+    /// until it answers, so reopening Camera for Mac is all it takes.
+    @Test(.timeLimit(.minutes(1)))
+    func aDroppedLinkClearsThePictureAndReconnectsWhenThePhoneIsBack() async throws {
+        let connector = DroppableConnector(source: FakeRemoteSource())
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac", pause: { _ in try await Task.sleep(for: .milliseconds(5)) })
+        var previews = camera.previews.makeAsyncIterator()
+        #expect(await camera.use(phone.id) == PixelSize(width: 3024, height: 4032))
+
+        connector.isReachable = false
+        await connector.dropLink()
+
+        var cleared = false
+        while let frame = await previews.next() {
+            if frame == nil {
+                cleared = true
+                break
+            }
+        }
+        #expect(cleared, "the viewfinder stops showing the last frame")
+        await #expect(throws: RemoteCameraFailure.closed) {
+            try await camera.capturePhoto()
+        }
+
+        connector.isReachable = true
+        #expect(await eventually { (try? await camera.capturePhoto()) != nil }, "the phone is picked up again on its own")
+    }
+
+    /// Bonjour can still list a phone whose app has closed, so no change in
+    /// the camera list would prompt a retry: the Mac keeps trying on its own.
+    @Test(.timeLimit(.minutes(1)))
+    func aPhoneThatCouldNotBeReachedIsPickedUpWhenItAnswers() async throws {
+        let connector = DroppableConnector(source: FakeRemoteSource())
+        connector.isReachable = false
+        let camera = MacCamera(local: FakeLocalCamera(), remote: connector, hostName: "Mac", pause: { _ in try await Task.sleep(for: .milliseconds(5)) })
+        #expect(await camera.use(phone.id) == nil)
+
+        connector.isReachable = true
+
+        #expect(await eventually { (try? await camera.capturePhoto()) != nil })
     }
 
     @Test func theIPhoneAppIsListedAsTheBestCamera() {

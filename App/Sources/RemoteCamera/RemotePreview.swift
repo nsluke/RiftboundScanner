@@ -4,19 +4,24 @@ import Foundation
 import SwiftUI
 
 /// The iPhone app's live picture on the Mac (ADR-004): the newest JPEG frame,
-/// decoded off the main actor. Runs for the app's lifetime from the root
-/// view, since its frame stream can be read only once.
+/// decoded off the main actor, or none once the link drops. Runs for the
+/// app's lifetime from the root view, since its frame stream can be read
+/// only once.
 @Observable
 final class RemotePreviewModel {
     private(set) var image: CGImage?
-    private let frames: AsyncStream<Data>
+    private let frames: AsyncStream<Data?>
 
-    init(frames: AsyncStream<Data>) {
+    init(frames: AsyncStream<Data?>) {
         self.frames = frames
     }
 
     func run() async {
         for await jpeg in frames {
+            guard let jpeg else {
+                image = nil
+                continue
+            }
             if let decoded = try? await PhotoDecoder.decode(jpeg, maxPixelSize: 1600) {
                 image = decoded
             }

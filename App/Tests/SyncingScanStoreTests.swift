@@ -25,7 +25,11 @@ struct SyncingScanStoreTests {
         try await store.save(batch)
         let record = Fixtures.record(batch: batch.id)
         try await store.append(record, photo: Data(), rectified: nil)
-        #expect(try syncJSON(for: batch.id, store: store)[record.id].record == .notEligible, "a pending scan uploads nothing yet")
+        let waiting = try syncJSON(for: batch.id, store: store)[record.id]
+        #expect(waiting.record == .queued, "a scan waiting for a person goes up whole, so the Mac can review it (ADR-003)")
+        #expect(waiting.photo == .queued)
+        #expect(waiting.photoSmall == .queued)
+        #expect(waiting.canvas == .notEligible)
 
         let decided = try await store.decide(record.id, in: batch.id, DecisionInput(.correct, source: .autoAccepted))
         #expect(decided.decisions.map(\.seq) == [1])
@@ -37,7 +41,7 @@ struct SyncingScanStoreTests {
         #expect(scan.record == .queued)
         #expect(scan.photoSmall == .queued, "every decided scan sends photo_small")
         #expect(scan.canvas == .notEligible, "a machine decision earns no canvas")
-        #expect(scan.photo == .notEligible)
+        #expect(scan.photo == .notEligible, "the photo queued for review elsewhere is withdrawn: decided here before it went")
         #expect(scan.items.isEmpty, "items are derived by the engine's reconcile, not written on decide")
         #expect(scan.uploadedSeq == 0)
     }
@@ -56,6 +60,35 @@ struct SyncingScanStoreTests {
         #expect(state[confirmed.id].photo == .notEligible, "a right answer needs no full photo")
         #expect(state[corrected.id].canvas == .queued)
         #expect(state[corrected.id].photo == .queued, "a wrong recogniser answer keeps the evidence")
+    }
+
+    /// ADR-002 decision 4's tiers, widened by ADR-003 for a scan that waits
+    /// for a person: its record and full photo go up so another device can
+    /// review it.
+    @Test func aPhotoAlreadySentForReviewStaysSent() async throws {
+        let store = makeStore()
+        try await store.save(batch)
+        let record = Fixtures.record(batch: batch.id)
+        try await store.append(record, photo: Data(), rectified: nil)
+        try await store.updateSyncState(for: batch.id) { $0[record.id].photo = .uploaded(Fixtures.epoch) }
+
+        _ = try await store.decide(record.id, in: batch.id, DecisionInput(.correct, source: .human))
+
+        #expect(await store.syncState(for: batch.id)[record.id].photo == .uploaded(Fixtures.epoch))
+    }
+
+    @Test func uploadTiersFollowTheLatestDecision() {
+        let pending = Fixtures.record(batch: batch.id)
+        #expect(UploadTiers.wantsRecord(pending))
+        #expect(UploadTiers.eligibleAssets(for: pending) == [.photoSmall, .photo])
+        let accepted = Fixtures.record(batch: batch.id, verdict: .correct, source: .autoAccepted)
+        #expect(UploadTiers.eligibleAssets(for: accepted) == [.photoSmall], "a right machine answer needs no full photo")
+        let confirmed = Fixtures.record(batch: batch.id, verdict: .correct)
+        #expect(UploadTiers.eligibleAssets(for: confirmed) == [.photoSmall, .canvas])
+        let corrected = Fixtures.record(batch: batch.id, verdict: .corrected(Fixtures.jinx.id))
+        #expect(UploadTiers.eligibleAssets(for: corrected) == [.photoSmall, .canvas, .photo])
+        let voided = Fixtures.record(batch: batch.id, verdict: .voided)
+        #expect(UploadTiers.eligibleAssets(for: voided).isEmpty)
     }
 
     @Test func aLongerLogReQueuesAnUploadedRecord() async throws {

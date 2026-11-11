@@ -17,6 +17,7 @@ struct RootView: View {
     @State private var sync: SyncEngine
     #if os(macOS)
     @State private var cameraSource: CameraSourceModel
+    @State private var serverBatches: ServerBatchesModel
     #endif
     private let deckDependencies: DeckDependencies
 
@@ -59,6 +60,7 @@ struct RootView: View {
         _sync = State(wrappedValue: dependencies.makeSyncEngine())
         #if os(macOS)
         _cameraSource = State(wrappedValue: dependencies.platform.makeCameraSource())
+        _serverBatches = State(wrappedValue: dependencies.platform.makeServerBatches())
         #endif
     }
 
@@ -86,7 +88,7 @@ struct RootView: View {
             }
             Tab("History", systemImage: "list.bullet.rectangle", value: RootTab.history) {
                 NavigationStack {
-                    HistoryView(model: history, store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, index: dependencies.index, rule: dependencies.confidenceRule)
+                    HistoryView(model: history, serverBatches: serverBatchesForHistory, store: dependencies.store, directory: dependencies.directory, vault: dependencies.vault, index: dependencies.index, rule: dependencies.confidenceRule)
                 }
             }
             Tab("Settings", systemImage: "gearshape", value: RootTab.settings) {
@@ -108,6 +110,15 @@ struct RootView: View {
             @unknown default: break
             }
         }
+    }
+
+    /// The server's batches for History to import; only the Mac offers them.
+    private var serverBatchesForHistory: ServerBatchesModel? {
+        #if os(macOS)
+        serverBatches
+        #else
+        nil
+        #endif
     }
 
     /// The Scan tab's screen; the Mac's also takes the camera picker.

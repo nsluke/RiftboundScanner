@@ -525,6 +525,17 @@ collection server) and user-selected files (exports). The feeder is the same
 Connect. One window only: the camera, the feeder link and the sync engine
 belong to a single scanner.
 
+**Reviewing what the iPhone scanned** ([ADR-003](docs/adr/003-mac-review-station.md)).
+Continuity Camera only ever gives the Mac the iPhone's main lens, which cannot
+focus on a card that close, so the sharp way to scan is the iPhone app, whose
+dual-wide camera drops to the 0.5× lens up close. Every scan that waits for a
+person uploads its record and full photo, and History on the Mac lists those
+batches under **On the server**. **Import to review** copies one into the
+Mac's store (`ServerBatchImporter`; an interrupted import resumes), then the
+triage grid and fix panel work as for a batch scanned here, and the verdicts
+go back to the server as the next decision of each scan. Review a batch on one
+device: the server refuses whichever decision log arrives second.
+
 ### Talking to the collection server
 
 The app is a client of the [RiftboundCollection](../RiftboundCollection) server

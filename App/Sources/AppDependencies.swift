@@ -164,32 +164,43 @@ nonisolated struct AppDependencies: Sendable {
                     now: now
                 )
             },
-            platform: .live(camera: camera)
+            platform: .live(camera: camera, server: client, store: store, directory: CardDirectory(index: cardIndex), index: summary)
         )
     }
 }
 
 #if os(macOS)
 /// The Mac's own collaborators. The camera picker discovers Continuity Camera
-/// iPhones and other cameras and points the shared engine at the chosen one.
+/// iPhones and other cameras and points the shared engine at the chosen one,
+/// and History imports batches an iPhone left on the server (ADR-003).
 nonisolated struct PlatformDependencies: Sendable {
     /// Built on the main actor by the root view, like the feeder.
     let makeCameraSource: @MainActor @Sendable () -> CameraSourceModel
+    let makeServerBatches: @MainActor @Sendable () -> ServerBatchesModel
 
-    static func live(camera: CaptureEngine) -> PlatformDependencies {
-        PlatformDependencies {
-            CameraSourceModel(
-                discovery: LiveCameraDiscovery(),
-                camera: camera,
-                preferences: DefaultsCameraPreferenceStore(defaults: .standard)
-            )
-        }
+    static func live(camera: CaptureEngine, server: any ServerScanReading, store: any ScanStoring, directory: CardDirectory, index: IndexSummary) -> PlatformDependencies {
+        PlatformDependencies(
+            makeCameraSource: {
+                CameraSourceModel(
+                    discovery: LiveCameraDiscovery(),
+                    camera: camera,
+                    preferences: DefaultsCameraPreferenceStore(defaults: .standard)
+                )
+            },
+            makeServerBatches: {
+                ServerBatchesModel(
+                    server: server,
+                    importer: ServerBatchImporter(server: server, store: store, directory: directory, index: index)
+                )
+            }
+        )
     }
 }
 #else
-/// The iPhone has nothing beyond the shared graph: one back camera, no picker.
+/// The iPhone has nothing beyond the shared graph: one back camera, no
+/// picker, and it captures the batches the Mac imports rather than importing.
 nonisolated struct PlatformDependencies: Sendable {
-    static func live(camera: CaptureEngine) -> PlatformDependencies {
+    static func live(camera: CaptureEngine, server: any ServerScanReading, store: any ScanStoring, directory: CardDirectory, index: IndexSummary) -> PlatformDependencies {
         PlatformDependencies()
     }
 }

@@ -314,3 +314,39 @@ actor HTTPCollectionClient: CollectionServing {
         return text.isEmpty ? nil : text
     }
 }
+
+nonisolated extension HTTPCollectionClient: ServerScanReading {
+    /// The server's page cap for scan listings.
+    private static let pageSize = 1000
+
+    func scanBatches() async throws(ServerError) -> [ServerScanBatch] {
+        try await everyPage("api/scans/batches", query: [])
+    }
+
+    func scanIDs(inBatch id: UUID) async throws(ServerError) -> [UUID] {
+        let rows: [ServerScanSummary] = try await everyPage("api/scans", query: [URLQueryItem(name: "batch_id", value: id.uuidString)])
+        return rows.map(\.id)
+    }
+
+    func scan(id: UUID) async throws(ServerError) -> ServerScan {
+        try await get("api/scans/\(id.uuidString)")
+    }
+
+    func asset(_ kind: AssetKind, scanID: UUID) async throws(ServerError) -> Data {
+        try await send(.get, "api/scans/\(scanID.uuidString)/\(kind.rawValue)").data
+    }
+
+    private func everyPage<Item: Decodable & Sendable>(_ path: String, query: [URLQueryItem]) async throws(ServerError) -> [Item] {
+        var items: [Item] = []
+        while true {
+            let page: ServerPage<Item> = try await get(path, query: query + [
+                URLQueryItem(name: "limit", value: String(Self.pageSize)),
+                URLQueryItem(name: "offset", value: String(items.count)),
+            ])
+            items += page.items
+            if page.items.isEmpty || items.count >= page.total {
+                return items
+            }
+        }
+    }
+}

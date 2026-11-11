@@ -196,8 +196,15 @@ actor SyncingScanStore: ScanStoring, ScanRecordStamping {
                 if record.decisions.count > scan.uploadedSeq { scan.record = .queued }
             }
         }
-        for kind in UploadTiers.eligibleAssets(for: record) where scan[kind] == .notEligible {
+        let eligible = UploadTiers.eligibleAssets(for: record)
+        for kind in eligible where scan[kind] == .notEligible {
             scan[kind] = .queued
+        }
+        // A full photo queued only so another device could review the scan
+        // (ADR-003) is not worth sending once a decision made here first
+        // earns none.
+        if !record.decisions.isEmpty, !eligible.contains(.photo), scan.photo == .queued {
+            scan.photo = .notEligible
         }
         if record.verdict == .voided {
             // Whatever was still owed for this scan is no longer worth the bytes.
@@ -216,5 +223,30 @@ actor SyncingScanStore: ScanStoring, ScanRecordStamping {
         let folder = batchSyncDirectory(for: state.batchID)
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         try encoder.encode(state).write(to: syncFileURL(for: state.batchID), options: .atomic)
+    }
+}
+
+extension SyncingScanStore: ServerHeldMarking {
+    /// The batch came from the server, so it is already there.
+    func markBatchHeldByServer(_ id: ScanBatch.ID) throws {
+        let at = now()
+        try updateSyncState(for: id) { state in
+            if !state.batchMeta.isUploaded {
+                state.batchMeta = .uploaded(at)
+            }
+        }
+    }
+
+    /// The record and the assets came from the server: nothing is owed until
+    /// a decision made here extends the log.
+    func markHeldByServer(_ record: ScanRecord, assets: Set<AssetKind>) throws {
+        let at = now()
+        try updateSyncState(for: record.batchID) { state in
+            state[record.id].record = .uploaded(at)
+            state[record.id].uploadedSeq = record.decisions.count
+            for kind in assets {
+                state[record.id][kind] = .uploaded(at)
+            }
+        }
     }
 }

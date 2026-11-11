@@ -30,16 +30,18 @@ struct ScannerView: View {
     var body: some View {
         layout
             .sheet(item: pendingScan) { pending in
-                ScanReviewView(
-                    record: pending.record,
-                    photo: pending.photo,
-                    rectified: pending.rectified,
-                    directory: directory,
-                    onVerdict: { verdict in Task { await model.resolve(verdict) } },
-                    onRetake: { model.retake() }
-                )
-                .interactiveDismissDisabled()
-                .sheetSizing(minWidth: 520, minHeight: 680)
+                if let review = model.review(of: pending) {
+                    NavigationStack {
+                        ReviewQueueView(model: review, closesWhenDone: true)
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Retake") { Task { await model.retake() } }
+                                }
+                            }
+                    }
+                    .interactiveDismissDisabled()
+                    .sheetSizing(minWidth: 900, minHeight: 640)
+                }
             }
             .alert("Scan failed", isPresented: isShowingProblem, presenting: model.problem) { _ in
                 Button("OK") { model.dismissProblem() }
@@ -612,7 +614,7 @@ struct ScannerView: View {
     private var pendingScan: Binding<ScannerModel.PendingScan?> {
         Binding(
             get: { model.pendingScan },
-            set: { if $0 == nil { model.retake() } }
+            set: { if $0 == nil { Task { await model.finishReviewing() } } }
         )
     }
 

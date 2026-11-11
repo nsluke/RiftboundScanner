@@ -518,7 +518,10 @@ an imported server batch) opens one screen, `BatchReviewView`. It opens on
 **To review**: on the Mac the triage grid, then the one-at-a-time queue for
 the flagged and the rest; on the iPhone the queue. **All scans** shows the
 whole batch by what it needs; any scan opened there goes to the same
-one-at-a-time view and fix panel, decided or not (`ReviewRoute.scans`).
+one-at-a-time view and fix panel, decided or not (`ReviewRoute.scans`). So
+does a photo taken by hand: it is saved pending like a fed card and opens in
+that view at once; a verdict closes it, Skip leaves it pending in the batch,
+and Retake deletes it.
 **Delete** takes a scan out of the batch with a `voided` decision: it leaves
 review, the collection and the label count, and syncs like any verdict.
 

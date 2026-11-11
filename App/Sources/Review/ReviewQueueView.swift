@@ -6,9 +6,13 @@ import SwiftUI
 /// settle it: Return accepts, F fixes the match, → skips to the next scan and
 /// ← goes back to the one before. The iPhone fixes a match in a sheet; the
 /// Mac puts the fix panel in the side panel, beside the full-size scan, and
-/// opens it at once for a scan the triage grid flagged.
+/// opens it at once for a scan the triage grid flagged. Every scan anyone
+/// looks at, queued, opened from a batch or just photographed, is shown here.
 struct ReviewQueueView: View {
     @State private var model: ReviewQueueModel
+    /// Closes the screen once the last scan has its answer instead of saying
+    /// so: a photo just taken goes straight back to the camera.
+    let closesWhenDone: Bool
     @Environment(\.dismiss) private var dismiss
     /// For the fix sheet's explanation of what the server said about a scan.
     @Environment(SyncEngine.self) private var sync: SyncEngine?
@@ -16,8 +20,9 @@ struct ReviewQueueView: View {
     @State private var fixing: FixMatchModel?
     @State private var dragOffset: CGFloat = 0
 
-    init(model: @autoclosure @escaping () -> ReviewQueueModel) {
+    init(model: @autoclosure @escaping () -> ReviewQueueModel, closesWhenDone: Bool = false) {
         _model = State(wrappedValue: model())
+        self.closesWhenDone = closesWhenDone
     }
 
     var body: some View {
@@ -77,6 +82,11 @@ struct ReviewQueueView: View {
         #endif
         .onChange(of: model.current?.id, initial: true) { _, _ in
             fixing = model.currentIsFlagged ? makeFix() : nil
+        }
+        .onChange(of: model.progress) { _, progress in
+            if closesWhenDone, case .done = progress {
+                dismiss()
+            }
         }
         .alert("Couldn't save", isPresented: isShowingStorageProblem, presenting: model.storageProblem) { _ in
             Button("OK") { model.dismissStorageProblem() }

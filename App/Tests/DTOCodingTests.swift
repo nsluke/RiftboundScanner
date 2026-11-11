@@ -127,6 +127,21 @@ struct DTOCodingTests {
         #expect(meta.exemplarCount == 312)
     }
 
+    /// A perceptual hash's 64 bits survive a record's trip through
+    /// `JSONValue` (`ScanUpload.record`, then the Mac's import): as a `Double`
+    /// the last digits were lost, e.g. 9696124170471946035 came back ...6000.
+    @Test func largeIntegersStayExact() throws {
+        let json = #"{"bits":9696124170471946035,"low":-9007199254740993,"seq":3,"score":0.875}"#
+        let value = try JSONValue(data: Data(json.utf8))
+        #expect(value["bits"] == .unsignedInteger(9_696_124_170_471_946_035))
+        #expect(value["low"] == .integer(-9_007_199_254_740_993))
+        #expect(value["seq"] == .number(3), "small integers stay numbers")
+        #expect(value["score"] == .number(0.875))
+        let again = try JSONValue(data: JSONEncoder.scanStore.encode(value))
+        #expect(again == value)
+        #expect(String(decoding: try JSONEncoder.scanStore.encode(value), as: UTF8.self).contains("9696124170471946035"))
+    }
+
     /// The shape `GET /api/learning/stats` serves (RiftboundCollection
     /// `learning/stats.py`): counts grouped by topic, not a flat object.
     @Test func learningStatsDecodeTheServerShape() throws {
